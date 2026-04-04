@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --bg-page: #f5efe6;
+  --bg-panel: #fffaf4;
+  --bg-sidebar: #452a1c;
+  --bg-sidebar-secondary: #5a3a28;
+  --accent: #c86d35;
+  --accent-soft: #f4d2ba;
+  --border: #e5d5c6;
+  --text-primary: #2e2018;
+  --text-muted: #71584a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--bg-page);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(244, 210, 186, 0.55), transparent 28%),
+    linear-gradient(180deg, #f8f2ea 0%, #f5efe6 55%, #f1e8dd 100%);
+  color: var(--text-primary);
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+.font-display {
+  font-family: "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  letter-spacing: 0.02em;
+}
+
+.surface-card {
+  border: 1px solid rgba(229, 213, 198, 0.9);
+  background: rgba(255, 250, 244, 0.94);
+  box-shadow: 0 16px 40px rgba(69, 42, 28, 0.08);
+}
+
+.wood-surface {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent),
+    linear-gradient(160deg, #5d3a29 0%, #452a1c 50%, #392115 100%);
+}
+
+.badge-ring {
+  box-shadow: inset 0 0 0 1px rgba(69, 42, 28, 0.08);
+}
