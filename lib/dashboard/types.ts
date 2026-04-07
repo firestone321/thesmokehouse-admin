@@ -5,6 +5,9 @@ export const dashboardBoardStatuses = ["pending", "paid", "smoking", "ready"] as
 export type DashboardOrderStatus = (typeof dashboardOrderStatuses)[number];
 export type DashboardBoardStatus = (typeof dashboardBoardStatuses)[number];
 export type InventoryAlertLevel = "low" | "critical";
+export type ServiceAlertLevel = "notice" | "warning" | "critical";
+export type OrderAlertFlag = "low_stock" | "delayed" | "overdue" | "blocked";
+export type PitStatusTone = "steady" | "watch" | "critical";
 export type StatTone = "neutral" | "accent" | "success";
 export type ActionIntent = "primary" | "secondary" | "danger";
 
@@ -23,7 +26,14 @@ export interface DashboardOrder {
   total: number;
   createdAt: string;
   pickupTimeLabel: string;
+  stageLabel?: string;
+  promisedHandoffAt?: string | null;
   smokingStartedAt?: string | null;
+  estimatedFinishAt?: string | null;
+  stationAssignment?: string | null;
+  queuePosition?: number | null;
+  alertFlags?: OrderAlertFlag[];
+  holdReason?: string | null;
   readyAt?: string | null;
 }
 
@@ -33,6 +43,9 @@ export interface InventoryAlert {
   level: InventoryAlertLevel;
   note: string;
   actionLabel?: string;
+  remainingKg?: number;
+  parKg?: number;
+  station?: string;
 }
 
 export interface SidebarNavItem {
@@ -46,6 +59,7 @@ export interface DashboardStat {
   value: string;
   supportingText: string;
   tone: StatTone;
+  emphasis?: "dominant" | "standard" | "quiet";
 }
 
 export interface KitchenQueueEntry {
@@ -60,8 +74,43 @@ export interface OrderActionDescriptor {
   disabledReason: string;
 }
 
+export interface ServiceAlert {
+  id: string;
+  title: string;
+  detail: string;
+  level: ServiceAlertLevel;
+  owner: string;
+  dueLabel: string;
+  orderNumber?: string;
+}
+
+export interface InventoryPressureItem {
+  id: string;
+  itemName: string;
+  remainingKg: number;
+  parKg: number;
+  committedKg: number;
+  station: string;
+  nextDeliveryLabel: string;
+  level: InventoryAlertLevel;
+}
+
+export interface PitStatus {
+  id: string;
+  name: string;
+  temperatureLabel: string;
+  loadLabel: string;
+  nextCheckLabel: string;
+  fuelLabel: string;
+  note: string;
+  tone: PitStatusTone;
+}
+
 export interface DashboardSeedData {
   orders: DashboardOrder[];
   inventoryAlerts: InventoryAlert[];
+  serviceAlerts: ServiceAlert[];
+  inventoryPressure: InventoryPressureItem[];
+  pitStatuses: PitStatus[];
   generatedAt: string;
 }

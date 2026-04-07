@@ -7,8 +7,8 @@ interface DashboardShellProps {
 
 export function DashboardShell({ children }: DashboardShellProps) {
   return (
-    <div className="min-h-screen bg-cream">
-      <div className="mx-auto grid min-h-screen max-w-[1680px] grid-cols-1 gap-4 px-4 py-4 lg:grid-cols-[280px_minmax(0,1fr)] lg:px-6 lg:py-6">
+    <div className="min-h-screen bg-[#F4F6F8]">
+      <div className="mx-auto grid min-h-screen max-w-[1720px] grid-cols-1 gap-4 px-3 py-3 lg:grid-cols-[208px_minmax(0,1fr)] lg:px-5 lg:py-5 2xl:grid-cols-[212px_minmax(0,1fr)]">
         <AdminSidebar />
         <main>{children}</main>
       </div>
