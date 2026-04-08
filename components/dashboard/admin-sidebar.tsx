@@ -1,5 +1,6 @@
 "use client";
 
+import { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -55,7 +56,13 @@ function OpsNote() {
   );
 }
 
-export function AdminSidebar() {
+export function AdminSidebar({
+  userEmail,
+  logoutSlot
+}: {
+  userEmail?: string | null;
+  logoutSlot?: ReactNode;
+}) {
   const pathname = usePathname();
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const quickAccessItems = useMemo(
@@ -113,10 +120,12 @@ export function AdminSidebar() {
             <span className="h-2 w-2 rounded-full bg-[#2E7D32]" />
             Lunch service live
           </div>
+          {userEmail ? <p className="mt-3 text-sm text-[#CDD2D8]">{userEmail}</p> : null}
         </div>
 
         <SidebarNav />
         <div className="mt-auto">
+          {logoutSlot ? <div className="mb-3">{logoutSlot}</div> : null}
           <OpsNote />
         </div>
       </aside>
@@ -147,6 +156,7 @@ export function AdminSidebar() {
             <SidebarNav compact onNavigate={() => setIsDrawerOpen(false)} />
 
             <div className="mt-auto pt-4">
+              {logoutSlot ? <div className="mb-3">{logoutSlot}</div> : null}
               <OpsNote />
             </div>
           </div>
