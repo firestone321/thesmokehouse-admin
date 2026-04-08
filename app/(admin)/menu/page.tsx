@@ -250,7 +250,7 @@ export default async function MenuPage({
               </select>
               <div className="grid gap-2">
                 <label className="text-sm font-semibold text-[#111418]" htmlFor="menu-preparation-flow">
-                  Item type
+                  Preparation type
                 </label>
                 <select
                   id="menu-preparation-flow"
@@ -263,7 +263,7 @@ export default async function MenuPage({
                   <option value="drink">Drink</option>
                 </select>
                 <p className="text-xs leading-5 text-[#6B7280]">
-                  Choose the kind of item this is.
+                  Choose how this item is prepared or handled.
                 </p>
               </div>
               <div className="grid gap-2">
