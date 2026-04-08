@@ -53,6 +53,13 @@ export interface MenuCategoryRecord {
   isActive: boolean;
 }
 
+export interface PortionTypeOption {
+  id: number;
+  code: string;
+  label: string;
+  isAssigned: boolean;
+}
+
 export interface MenuComponentRecord {
   id: number;
   inventoryItemId: number;
@@ -66,6 +73,7 @@ export interface MenuItemRecord {
   code: string;
   name: string;
   description: string | null;
+  imageUrl: string | null;
   basePrice: number;
   prepType: PrepType;
   isActive: boolean;

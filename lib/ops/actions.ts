@@ -5,6 +5,10 @@ import { redirect } from "next/navigation";
 import { createAdminSupabaseClient } from "@/lib/supabase/server";
 import { toCode, toInteger, toNumber, toOptionalText } from "@/lib/ops/utils";
 
+const menuImageBucket = "menu-item-images";
+const maxMenuImageBytes = 5 * 1024 * 1024;
+const allowedMenuImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+
 function requiredText(formData: FormData, key: string) {
   const value = String(formData.get(key) ?? "").trim();
 
@@ -20,6 +24,64 @@ function revalidateOperationalPaths() {
   revalidatePath("/inventory");
   revalidatePath("/menu");
   revalidatePath("/orders");
+}
+
+function buildMenuRedirectUrl(options?: { editMenuItemId?: string | null; error?: string | null }) {
+  const params = new URLSearchParams();
+
+  if (options?.editMenuItemId) {
+    params.set("edit", options.editMenuItemId);
+  }
+
+  if (options?.error) {
+    params.set("error", options.error);
+  }
+
+  const query = params.toString();
+  return query.length > 0 ? `/menu?${query}` : "/menu";
+}
+
+function getOptionalImageFile(formData: FormData, key: string) {
+  const value = formData.get(key);
+
+  if (!(value instanceof File) || value.size === 0) {
+    return null;
+  }
+
+  if (!allowedMenuImageTypes.has(value.type)) {
+    throw new Error("Menu image must be a JPG, PNG, or WebP file.");
+  }
+
+  if (value.size > maxMenuImageBytes) {
+    throw new Error("Menu image must be 5MB or smaller.");
+  }
+
+  return value;
+}
+
+async function uploadMenuItemImage(menuItemId: number, file: File) {
+  const supabase = createAdminSupabaseClient();
+  const filePath = `menu-items/${menuItemId}/cover`;
+  const arrayBuffer = await file.arrayBuffer();
+
+  const { error: uploadError } = await supabase.storage.from(menuImageBucket).upload(filePath, arrayBuffer, {
+    contentType: file.type,
+    upsert: true
+  });
+
+  if (uploadError) {
+    throw new Error(`Unable to upload menu image: ${uploadError.message}`);
+  }
+
+  const { data } = supabase.storage.from(menuImageBucket).getPublicUrl(filePath);
+  const { error: updateError } = await supabase
+    .from("menu_items")
+    .update({ image_url: data.publicUrl })
+    .eq("id", menuItemId);
+
+  if (updateError) {
+    throw new Error(`Unable to save menu image URL: ${updateError.message}`);
+  }
 }
 
 export async function saveInventoryItemAction(formData: FormData) {
@@ -110,7 +172,7 @@ export async function adjustInventoryItemAction(formData: FormData) {
 export async function saveMenuCategoryAction(formData: FormData) {
   const supabase = createAdminSupabaseClient();
   const name = requiredText(formData, "name");
-  const code = String(formData.get("code") ?? "").trim() || toCode(name);
+  const code = toCode(name);
   const sortOrder = toInteger(formData.get("sort_order"), 1);
 
   const { error } = await supabase.from("menu_categories").upsert(
@@ -136,8 +198,28 @@ export async function saveMenuCategoryAction(formData: FormData) {
 export async function saveMenuItemAction(formData: FormData) {
   const supabase = createAdminSupabaseClient();
   const menuItemId = String(formData.get("menu_item_id") ?? "").trim();
+  const imageFile = getOptionalImageFile(formData, "image");
   const name = requiredText(formData, "name");
-  const code = String(formData.get("code") ?? "").trim() || toCode(name);
+  let code = toCode(name);
+
+  if (menuItemId) {
+    const { data: existingMenuItem, error: existingMenuItemError } = await supabase
+      .from("menu_items")
+      .select("code")
+      .eq("id", Number(menuItemId))
+      .maybeSingle();
+
+    if (existingMenuItemError) {
+      throw new Error(`Unable to load existing menu item: ${existingMenuItemError.message}`);
+    }
+
+    if (!existingMenuItem) {
+      throw new Error(`Unable to find menu item ${menuItemId}`);
+    }
+
+    code = existingMenuItem.code;
+  }
+
   const payload = {
     code,
     name,
@@ -151,11 +233,44 @@ export async function saveMenuItemAction(formData: FormData) {
     is_available_today: formData.get("is_available_today") === "on"
   };
 
+  let conflictQuery = supabase
+    .from("menu_items")
+    .select("id, name")
+    .eq("portion_type_id", payload.portion_type_id);
+
+  if (menuItemId) {
+    conflictQuery = conflictQuery.neq("id", Number(menuItemId));
+  }
+
+  const { data: conflictingMenuItem, error: conflictError } = await conflictQuery.maybeSingle();
+
+  if (conflictError) {
+    throw new Error(`Unable to validate menu item portion type: ${conflictError.message}`);
+  }
+
+  if (conflictingMenuItem) {
+    const errorMessage = "That portion type is already linked to another menu item.";
+    redirect(buildMenuRedirectUrl({ editMenuItemId: menuItemId || null, error: errorMessage }));
+  }
+
   if (menuItemId) {
     const { error } = await supabase.from("menu_items").update(payload).eq("id", Number(menuItemId));
 
     if (error) {
+      if (error.message.includes("menu_items_portion_type_id_key")) {
+        redirect(
+          buildMenuRedirectUrl({
+            editMenuItemId: menuItemId,
+            error: "That portion type is already linked to another menu item."
+          })
+        );
+      }
+
       throw new Error(`Unable to update menu item: ${error.message}`);
+    }
+
+    if (imageFile) {
+      await uploadMenuItemImage(Number(menuItemId), imageFile);
     }
 
     revalidateOperationalPaths();
@@ -165,7 +280,15 @@ export async function saveMenuItemAction(formData: FormData) {
   const { data, error } = await supabase.from("menu_items").insert(payload).select("id").single();
 
   if (error || !data) {
+    if (error?.message.includes("menu_items_portion_type_id_key")) {
+      redirect(buildMenuRedirectUrl({ error: "That portion type is already linked to another menu item." }));
+    }
+
     throw new Error(`Unable to create menu item: ${error?.message ?? "Unknown error"}`);
+  }
+
+  if (imageFile) {
+    await uploadMenuItemImage(data.id, imageFile);
   }
 
   revalidateOperationalPaths();

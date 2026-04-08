@@ -11,7 +11,8 @@ export class OperationsSchemaMissingError extends Error {
 const requiredMigrationFiles = [
   "db/phase-01-reference-tables.sql",
   "db/phase-02-daily-stock.sql",
-  "db/phase-03-operations-core.sql"
+  "db/phase-03-operations-core.sql",
+  "db/phase-09-menu-item-images.sql"
 ];
 
 export function toOperationsError(error: { message: string } | null, context: string) {
@@ -26,7 +27,8 @@ export function toOperationsError(error: { message: string } | null, context: st
     normalized.includes("schema cache") ||
     normalized.includes("could not find the table") ||
     normalized.includes("could not find the function") ||
-    normalized.includes("relation") && normalized.includes("does not exist")
+    normalized.includes("relation") && normalized.includes("does not exist") ||
+    normalized.includes("column") && normalized.includes("does not exist")
   ) {
     return new OperationsSchemaMissingError(message, requiredMigrationFiles);
   }

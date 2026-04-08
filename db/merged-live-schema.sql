@@ -309,6 +309,7 @@ create table if not exists public.menu_items (
   portion_type_id bigint not null unique references public.portion_types(id) on update cascade on delete restrict,
   name text not null,
   description text,
+  image_url text,
   base_price integer not null default 0,
   prep_type text not null,
   is_active boolean not null default true,
@@ -325,6 +326,32 @@ create table if not exists public.menu_items (
 
 create index if not exists menu_items_category_active_idx
   on public.menu_items (menu_category_id, is_active, sort_order);
+
+alter table public.menu_items
+  add column if not exists image_url text;
+
+comment on column public.menu_items.image_url is
+  'Public Supabase storage URL for the current menu item image.';
+
+insert into storage.buckets (
+  id,
+  name,
+  public,
+  file_size_limit,
+  allowed_mime_types
+)
+values (
+  'menu-item-images',
+  'menu-item-images',
+  true,
+  5242880,
+  array['image/jpeg', 'image/png', 'image/webp']
+)
+on conflict (id) do update
+set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
 
 create table if not exists public.inventory_items (
   id bigint generated always as identity primary key,

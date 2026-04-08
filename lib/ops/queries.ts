@@ -10,6 +10,7 @@ import {
   MenuCategoryRecord,
   MenuComponentRecord,
   MenuItemRecord,
+  PortionTypeOption,
   OrderDetailRecord,
   OrderItemRecord,
   OrderListItem,
@@ -352,6 +353,7 @@ export async function getMenuPageData(editMenuItemId?: string | null) {
         code,
         name,
         description,
+        image_url,
         base_price,
         prep_type,
         is_active,
@@ -412,12 +414,6 @@ export async function getMenuPageData(editMenuItemId?: string | null) {
     };
   });
 
-  const portionTypes = (portionTypesResponse.data ?? []).map((portion: any) => ({
-    id: normalizeNumber(portion.id),
-    code: portion.code,
-    label: `${portion.name}${portion.portion_label ? ` (${portion.portion_label})` : ""}`
-  }));
-
   const menuItems: MenuItemRecord[] = (menuItemsResponse.data ?? []).map((item: any) => {
     const components: MenuComponentRecord[] = (item.menu_item_components ?? []).map((component: any) => ({
       id: normalizeNumber(component.id),
@@ -432,6 +428,7 @@ export async function getMenuPageData(editMenuItemId?: string | null) {
       code: item.code,
       name: item.name,
       description: item.description,
+      imageUrl: item.image_url,
       basePrice: normalizeNumber(item.base_price),
       prepType: item.prep_type,
       isActive: Boolean(item.is_active),
@@ -447,6 +444,17 @@ export async function getMenuPageData(editMenuItemId?: string | null) {
 
   const selectedMenuItemId = editMenuItemId ? normalizeNumber(editMenuItemId) : null;
   const selectedMenuItem = menuItems.find((item) => item.id === selectedMenuItemId) ?? null;
+  const assignedPortionTypeIds = new Set(menuItems.map((item) => item.portionTypeId));
+  const portionTypes: PortionTypeOption[] = (portionTypesResponse.data ?? []).map((portion: any) => {
+    const portionTypeId = normalizeNumber(portion.id);
+
+    return {
+      id: portionTypeId,
+      code: portion.code,
+      label: `${portion.name}${portion.portion_label ? ` (${portion.portion_label})` : ""}`,
+      isAssigned: assignedPortionTypeIds.has(portionTypeId) && selectedMenuItem?.portionTypeId !== portionTypeId
+    };
+  });
 
   return {
     categories,

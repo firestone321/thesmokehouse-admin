@@ -24,6 +24,7 @@ export default async function MenuPage({
 }) {
   const params = await searchParams;
   const editMenuItemId = getFirstValue(params.edit) ?? null;
+  const errorMessage = getFirstValue(params.error) ?? null;
   let data;
 
   try {
@@ -56,6 +57,12 @@ export default async function MenuPage({
         </div>
       </section>
 
+      {errorMessage ? (
+        <section className="rounded-[28px] border border-[#F4C7C7] bg-[#FFF8F8] px-5 py-4 text-sm leading-6 text-[#8A1C1C]">
+          {errorMessage}
+        </section>
+      ) : null}
+
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_380px]">
         <section className="space-y-4">
           <section className="surface-card rounded-[32px] p-5">
@@ -69,7 +76,15 @@ export default async function MenuPage({
                 menuItems.map((item) => (
                   <article key={item.id} className="rounded-[24px] border border-[#E4E7EB] bg-white px-4 py-4">
                     <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                      <div className="space-y-2">
+                      <div className="flex gap-4">
+                        <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-[20px] bg-[#F8FAFB] text-[11px] font-semibold uppercase tracking-[0.14em] text-[#9CA3AF]">
+                          {item.imageUrl ? (
+                            <img src={item.imageUrl} alt={item.name} className="h-full w-full object-cover" />
+                          ) : (
+                            "No image"
+                          )}
+                        </div>
+                        <div className="space-y-2">
                         <div className="flex flex-wrap items-center gap-2">
                           <h3 className="text-lg font-semibold text-[#111418]">{item.name}</h3>
                           <span
@@ -92,6 +107,7 @@ export default async function MenuPage({
                         </p>
                         {item.description ? <p className="text-sm leading-6 text-[#6B7280]">{item.description}</p> : null}
                         <p className="text-sm font-semibold text-[#111418]">{formatCurrency(item.basePrice)}</p>
+                        </div>
                       </div>
 
                       <div className="flex flex-wrap gap-2 xl:justify-end">
@@ -151,23 +167,25 @@ export default async function MenuPage({
             </div>
             <form action={saveMenuCategoryAction} className="mt-4 grid gap-3">
               <input
-                name="code"
-                placeholder="Code, e.g. drinks"
-                className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
-              />
-              <input
                 name="name"
                 required
                 placeholder="Category name"
                 className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
               />
-              <input
-                type="number"
-                min="1"
-                name="sort_order"
-                defaultValue="1"
-                className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
-              />
+              <p className="text-xs leading-5 text-[#6B7280]">Code will be generated automatically from the category name.</p>
+              <div className="grid gap-2">
+                <label className="text-sm font-semibold text-[#111418]" htmlFor="category-sort-order">
+                  Sort order
+                </label>
+                <input
+                  id="category-sort-order"
+                  type="number"
+                  min="1"
+                  name="sort_order"
+                  defaultValue="1"
+                  className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
+                />
+              </div>
               <button type="submit" className="rounded-2xl bg-[#111418] px-4 py-2.5 text-sm font-semibold text-white">
                 Save category
               </button>
@@ -186,18 +204,13 @@ export default async function MenuPage({
             <form action={saveMenuItemAction} className="mt-4 grid gap-3">
               {selectedMenuItem ? <input type="hidden" name="menu_item_id" value={selectedMenuItem.id} /> : null}
               <input
-                name="code"
-                defaultValue={selectedMenuItem?.code}
-                placeholder="Code, e.g. beef_ribs"
-                className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
-              />
-              <input
                 name="name"
                 required
                 defaultValue={selectedMenuItem?.name}
                 placeholder="Display name"
                 className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
               />
+              <p className="text-xs leading-5 text-[#6B7280]">Code is generated automatically from the name when the item is created.</p>
               <textarea
                 name="description"
                 rows={3}
@@ -226,35 +239,73 @@ export default async function MenuPage({
               >
                 <option value="">Select portion type</option>
                 {portionTypes.map((portion) => (
-                  <option key={portion.id} value={portion.id}>
-                    {portion.label}
+                  <option
+                    key={portion.id}
+                    value={portion.id}
+                    disabled={portion.isAssigned}
+                  >
+                    {portion.label}{portion.isAssigned ? " - already linked" : ""}
                   </option>
                 ))}
               </select>
-              <select
-                name="prep_type"
-                defaultValue={selectedMenuItem?.prepType ?? "smoked"}
-                className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
-              >
-                <option value="smoked">Smoked</option>
-                <option value="packed">Packed</option>
-                <option value="drink">Drink</option>
-              </select>
-              <input
-                type="number"
-                min="0"
-                name="base_price"
-                required
-                defaultValue={selectedMenuItem?.basePrice ?? 0}
-                className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
-              />
-              <input
-                type="number"
-                min="1"
-                name="sort_order"
-                defaultValue={selectedMenuItem?.sortOrder ?? menuItems.length + 1}
-                className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
-              />
+              <div className="grid gap-2">
+                <label className="text-sm font-semibold text-[#111418]" htmlFor="menu-preparation-flow">
+                  Item type
+                </label>
+                <select
+                  id="menu-preparation-flow"
+                  name="prep_type"
+                  defaultValue={selectedMenuItem?.prepType ?? "smoked"}
+                  className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
+                >
+                  <option value="smoked">Roasted</option>
+                  <option value="packed">Kitchen</option>
+                  <option value="drink">Drink</option>
+                </select>
+                <p className="text-xs leading-5 text-[#6B7280]">
+                  Choose the kind of item this is.
+                </p>
+              </div>
+              <div className="grid gap-2">
+                <label className="text-sm font-semibold text-[#111418]" htmlFor="menu-base-price">
+                  Base price
+                </label>
+                <input
+                  id="menu-base-price"
+                  type="number"
+                  min="0"
+                  name="base_price"
+                  required
+                  defaultValue={selectedMenuItem?.basePrice ?? 0}
+                  placeholder="Base price"
+                  className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
+                />
+              </div>
+              <input type="hidden" name="sort_order" value={selectedMenuItem?.sortOrder ?? menuItems.length + 1} />
+              {selectedMenuItem?.imageUrl ? (
+                <div className="overflow-hidden rounded-[24px] border border-[#E4E7EB] bg-white">
+                  <img
+                    src={selectedMenuItem.imageUrl}
+                    alt={selectedMenuItem.name}
+                    className="h-52 w-full object-cover"
+                  />
+                </div>
+              ) : null}
+              <div className="grid gap-2">
+                <label className="text-sm font-semibold text-[#111418]" htmlFor="menu-image">
+                  Menu image
+                </label>
+                <input
+                  id="menu-image"
+                  type="file"
+                  name="image"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
+                />
+                <p className="text-xs leading-5 text-[#6B7280]">
+                  Upload a JPG, PNG, or WebP image up to 5MB. A new upload replaces the current image for this item.
+                </p>
+              </div>
               <label className="flex items-center gap-2 text-sm text-[#6B7280]">
                 <input type="checkbox" name="is_active" defaultChecked={selectedMenuItem?.isActive ?? true} />
                 Active
