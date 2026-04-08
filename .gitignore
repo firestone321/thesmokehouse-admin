@@ -3,5 +3,6 @@ node_modules
 dist
 coverage
 *.log
+progress-log.md
 .env.local
 tsconfig.tsbuildinfo

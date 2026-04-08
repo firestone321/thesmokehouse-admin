@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo, useState } from "react";
-import { sidebarNavItems } from "@/lib/dashboard/mock-data";
+import { adminNavItems } from "@/lib/admin/nav";
 
 const quickAccessLabels = new Set(["Dashboard", "Orders", "Inventory", "Kitchen Queue"]);
 
@@ -12,7 +12,7 @@ function SidebarNav({ compact = false, onNavigate }: { compact?: boolean; onNavi
 
   return (
     <nav className={compact ? "space-y-1.5" : "mt-4 space-y-1.5"}>
-      {sidebarNavItems.map((item) => {
+      {adminNavItems.map((item) => {
         const isActive = pathname === item.href;
 
         return (
@@ -43,24 +43,14 @@ function SidebarNav({ compact = false, onNavigate }: { compact?: boolean; onNavi
   );
 }
 
-function ShiftSnapshot() {
+function OpsNote() {
   return (
     <div className="rounded-3xl border border-white/8 bg-white/5 p-4">
-      <p className="text-[11px] uppercase tracking-[0.22em] text-[#AEB6C2]">Shift snapshot</p>
-      <div className="mt-3 space-y-3 text-sm text-[#CDD2D8]">
-        <div className="flex items-center justify-between gap-3">
-          <span>Front counter</span>
-          <span className="text-[#E6E8EB]">2 open tabs</span>
-        </div>
-        <div className="flex items-center justify-between gap-3">
-          <span>Pits online</span>
-          <span className="text-[#E6E8EB]">3 of 3</span>
-        </div>
-        <div className="flex items-center justify-between gap-3">
-          <span>Hot hold</span>
-          <span className="text-[#E6E8EB]">2 orders</span>
-        </div>
-      </div>
+      <p className="text-[11px] uppercase tracking-[0.22em] text-[#AEB6C2]">Operational note</p>
+      <p className="mt-3 text-sm leading-6 text-[#CDD2D8]">
+        Dashboard metrics now come from live Supabase reads. Staff and settings remain intentionally deferred until the
+        core inventory, menu, and order workflows settle.
+      </p>
     </div>
   );
 }
@@ -69,7 +59,7 @@ export function AdminSidebar() {
   const pathname = usePathname();
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const quickAccessItems = useMemo(
-    () => sidebarNavItems.filter((item) => quickAccessLabels.has(item.label)),
+    () => adminNavItems.filter((item) => quickAccessLabels.has(item.label)),
     []
   );
 
@@ -127,7 +117,7 @@ export function AdminSidebar() {
 
         <SidebarNav />
         <div className="mt-auto">
-          <ShiftSnapshot />
+          <OpsNote />
         </div>
       </aside>
 
@@ -157,7 +147,7 @@ export function AdminSidebar() {
             <SidebarNav compact onNavigate={() => setIsDrawerOpen(false)} />
 
             <div className="mt-auto pt-4">
-              <ShiftSnapshot />
+              <OpsNote />
             </div>
           </div>
         </div>
