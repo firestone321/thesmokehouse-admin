@@ -1,10 +1,12 @@
-const CACHE_NAME = "smokehouse-admin-v1";
+const CACHE_NAME = "smokehouse-admin-v2";
 const OFFLINE_URL = "/offline";
 const APP_ASSETS = [
   OFFLINE_URL,
   "/manifest.webmanifest",
+  "/icons/logo-square.png",
   "/icons/icon-192.png",
-  "/icons/icon-512.png"
+  "/icons/icon-512.png",
+  "/icons/logo-bigger.jpg"
 ];
 
 self.addEventListener("install", (event) => {

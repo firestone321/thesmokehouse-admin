@@ -1,6 +1,7 @@
 "use client";
 
 import { ReactNode } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -75,9 +76,14 @@ export function AdminSidebar({
       <div className="space-y-3 lg:hidden">
         <div className="wood-surface sticky top-3 z-30 rounded-[24px] border border-white/5 px-4 py-4 text-[#E6E8EB] shadow-[0_18px_36px_rgba(15,23,42,0.14)]">
           <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-[10px] uppercase tracking-[0.24em] text-[#AEB6C2]">Smokehouse Ops</p>
-              <p className="mt-1 truncate text-base font-semibold text-[#E6E8EB]">Kitchen Command</p>
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+                <Image src="/icons/logo-bigger.jpg" alt="The Smoke House logo" fill className="object-cover" sizes="48px" priority />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] uppercase tracking-[0.24em] text-[#AEB6C2]">Smokehouse Ops</p>
+                <p className="mt-1 truncate text-base font-semibold text-[#E6E8EB]">Kitchen Command</p>
+              </div>
             </div>
             <button
               type="button"
@@ -114,6 +120,16 @@ export function AdminSidebar({
 
       <aside className="wood-surface hidden flex-col rounded-[28px] border border-white/5 p-4 text-[#E6E8EB] shadow-[0_18px_36px_rgba(15,23,42,0.14)] lg:sticky lg:top-5 lg:flex lg:h-[calc(100vh-2.5rem)]">
         <div className="pb-4">
+          <div className="relative h-28 w-full overflow-hidden rounded-[24px] border border-white/8 bg-white/5">
+            <Image
+              src="/icons/logo-bigger.jpg"
+              alt="The Smoke House logo"
+              fill
+              className="object-cover"
+              sizes="208px"
+              priority
+            />
+          </div>
           <p className="text-[11px] uppercase tracking-[0.28em] text-[#AEB6C2]">Smokehouse Ops</p>
           <h1 className="pt-2 text-xl font-semibold text-[#E6E8EB]">Kitchen Command</h1>
           <div className="mt-3 flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-[#AEB6C2]">
@@ -140,7 +156,10 @@ export function AdminSidebar({
           />
           <div className="wood-surface fixed inset-y-0 right-0 z-50 flex w-[min(88vw,340px)] flex-col border-l border-white/10 px-4 py-5 text-[#E6E8EB] shadow-[-20px_0_48px_rgba(15,23,42,0.28)]">
             <div className="flex items-start justify-between gap-3 pb-4">
-              <div>
+              <div className="min-w-0">
+                <div className="relative mb-3 h-16 w-full overflow-hidden rounded-[20px] border border-white/8 bg-white/5">
+                  <Image src="/icons/logo-bigger.jpg" alt="The Smoke House logo" fill className="object-cover" sizes="260px" />
+                </div>
                 <p className="text-[10px] uppercase tracking-[0.24em] text-[#AEB6C2]">Navigation</p>
                 <h2 className="mt-2 text-lg font-semibold text-[#E6E8EB]">Service tools</h2>
               </div>

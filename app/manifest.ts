@@ -22,6 +22,11 @@ export default function manifest(): MetadataRoute.Manifest {
         src: "/icons/icon-512.png",
         sizes: "512x512",
         type: "image/png"
+      },
+      {
+        src: "/icons/logo-square.png",
+        sizes: "622x523",
+        type: "image/png"
       }
     ],
     shortcuts: [
