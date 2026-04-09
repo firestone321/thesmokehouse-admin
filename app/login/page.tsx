@@ -31,9 +31,9 @@ export default async function LoginPage({
         <section className="wood-surface hidden rounded-[36px] border border-white/5 p-8 text-[#E6E8EB] shadow-[0_24px_64px_rgba(15,23,42,0.18)] lg:flex lg:flex-col lg:justify-between">
           <div>
             <div className="relative mb-6 h-28 w-full overflow-hidden rounded-[28px] border border-white/8 bg-white/5">
-              <Image src="/icons/logo-bigger.jpg" alt="The Smoke House logo" fill className="object-cover" sizes="540px" priority />
+              <Image src="/icons/logo-bigger.jpg" alt="Firestone Country Smokehouse logo" fill className="object-cover" sizes="540px" priority />
             </div>
-            <p className="text-[11px] uppercase tracking-[0.28em] text-[#AEB6C2]">Smokehouse Admin</p>
+            <p className="text-[11px] uppercase tracking-[0.28em] text-[#AEB6C2]">Firestone Country Smokehouse Admin</p>
             <h1 className="mt-4 text-4xl font-semibold leading-tight">Sign in with a magic link.</h1>
             <p className="mt-4 max-w-xl text-sm leading-7 text-[#CDD2D8]">
               Enter a staff email that already exists in Supabase Auth. We&apos;ll send a one-time link and keep
@@ -50,7 +50,7 @@ export default async function LoginPage({
 
         <section className="surface-card my-auto rounded-[36px] px-6 py-6 shadow-[0_24px_64px_rgba(15,23,42,0.08)] sm:px-8 sm:py-8">
           <div className="relative mb-5 h-20 w-full overflow-hidden rounded-[24px] border border-[#E5E7EB] bg-[#F8FAFB] lg:hidden">
-            <Image src="/icons/logo-bigger.jpg" alt="The Smoke House logo" fill className="object-cover" sizes="420px" priority />
+            <Image src="/icons/logo-bigger.jpg" alt="Firestone Country Smokehouse logo" fill className="object-cover" sizes="420px" priority />
           </div>
           <p className="text-[11px] uppercase tracking-[0.22em] text-[#6B7280]">Sign in</p>
           <h2 className="mt-3 text-3xl font-semibold">Get your magic link</h2>

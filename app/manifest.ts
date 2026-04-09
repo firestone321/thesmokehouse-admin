@@ -2,9 +2,9 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Smokehouse Admin",
-    short_name: "Smokehouse",
-    description: "Installable operations dashboard for Smokehouse orders, inventory, and menu management.",
+    name: "Firestone Country Smokehouse Admin",
+    short_name: "Firestone Admin",
+    description: "Installable operations dashboard for Firestone Country Smokehouse orders, inventory, and menu management.",
     start_url: "/login",
     scope: "/",
     display: "standalone",

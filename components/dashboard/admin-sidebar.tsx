@@ -78,10 +78,10 @@ export function AdminSidebar({
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
               <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-white/5">
-                <Image src="/icons/logo-bigger.jpg" alt="The Smoke House logo" fill className="object-cover" sizes="48px" priority />
+                <Image src="/icons/logo-bigger.jpg" alt="Firestone Country Smokehouse logo" fill className="object-cover" sizes="48px" priority />
               </div>
               <div className="min-w-0">
-                <p className="text-[10px] uppercase tracking-[0.24em] text-[#AEB6C2]">Smokehouse Ops</p>
+                <p className="text-[10px] uppercase tracking-[0.24em] text-[#AEB6C2]">Firestone Country Smokehouse</p>
                 <p className="mt-1 truncate text-base font-semibold text-[#E6E8EB]">Kitchen Command</p>
               </div>
             </div>
@@ -123,14 +123,14 @@ export function AdminSidebar({
           <div className="relative h-28 w-full overflow-hidden rounded-[24px] border border-white/8 bg-white/5">
             <Image
               src="/icons/logo-bigger.jpg"
-              alt="The Smoke House logo"
+              alt="Firestone Country Smokehouse logo"
               fill
               className="object-cover"
               sizes="208px"
               priority
             />
           </div>
-          <p className="text-[11px] uppercase tracking-[0.28em] text-[#AEB6C2]">Smokehouse Ops</p>
+          <p className="text-[11px] uppercase tracking-[0.28em] text-[#AEB6C2]">Firestone Country Smokehouse</p>
           <h1 className="pt-2 text-xl font-semibold text-[#E6E8EB]">Kitchen Command</h1>
           <div className="mt-3 flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-[#AEB6C2]">
             <span className="h-2 w-2 rounded-full bg-[#2E7D32]" />
@@ -158,7 +158,7 @@ export function AdminSidebar({
             <div className="flex items-start justify-between gap-3 pb-4">
               <div className="min-w-0">
                 <div className="relative mb-3 h-16 w-full overflow-hidden rounded-[20px] border border-white/8 bg-white/5">
-                  <Image src="/icons/logo-bigger.jpg" alt="The Smoke House logo" fill className="object-cover" sizes="260px" />
+                  <Image src="/icons/logo-bigger.jpg" alt="Firestone Country Smokehouse logo" fill className="object-cover" sizes="260px" />
                 </div>
                 <p className="text-[10px] uppercase tracking-[0.24em] text-[#AEB6C2]">Navigation</p>
                 <h2 className="mt-2 text-lg font-semibold text-[#E6E8EB]">Service tools</h2>

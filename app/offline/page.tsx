@@ -10,7 +10,7 @@ export default function OfflinePage() {
     <main className="min-h-screen bg-[#f6efe7] px-4 py-10">
       <div className="mx-auto max-w-xl rounded-3xl border border-[#dfd2c2] bg-white p-8 shadow-sm">
         <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#a0562c]">Offline</p>
-        <h1 className="mt-2 text-3xl font-bold text-[#2d2219]">Smokehouse Admin is offline</h1>
+        <h1 className="mt-2 text-3xl font-bold text-[#2d2219]">Firestone Country Smokehouse Admin is offline</h1>
         <p className="mt-3 text-sm text-[#5f5348]">
           Reconnect to sync live orders, inventory, and dashboard metrics. Static app assets stay available, but operational data needs the network.
         </p>
