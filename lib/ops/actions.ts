@@ -84,6 +84,113 @@ async function uploadMenuItemImage(menuItemId: number, file: File) {
   }
 }
 
+async function saveMenuItemRecord(formData: FormData) {
+  const supabase = createAdminSupabaseClient();
+  const menuItemId = String(formData.get("menu_item_id") ?? "").trim();
+  const name = requiredText(formData, "name");
+  let code = toCode(name);
+
+  if (menuItemId) {
+    const { data: existingMenuItem, error: existingMenuItemError } = await supabase
+      .from("menu_items")
+      .select("code")
+      .eq("id", Number(menuItemId))
+      .maybeSingle();
+
+    if (existingMenuItemError) {
+      throw new Error(`Unable to load existing menu item: ${existingMenuItemError.message}`);
+    }
+
+    if (!existingMenuItem) {
+      throw new Error(`Unable to find menu item ${menuItemId}`);
+    }
+
+    code = existingMenuItem.code;
+  }
+
+  const payload = {
+    code,
+    name,
+    description: toOptionalText(formData.get("description")),
+    base_price: toInteger(formData.get("base_price"), 0),
+    prep_type: requiredText(formData, "prep_type"),
+    menu_category_id: toInteger(formData.get("menu_category_id")),
+    portion_type_id: toInteger(formData.get("portion_type_id")),
+    sort_order: toInteger(formData.get("sort_order"), 1),
+    is_active: formData.get("is_active") === "on",
+    is_available_today: formData.get("is_available_today") === "on"
+  };
+
+  let conflictQuery = supabase
+    .from("menu_items")
+    .select("id, name")
+    .eq("portion_type_id", payload.portion_type_id);
+
+  if (menuItemId) {
+    conflictQuery = conflictQuery.neq("id", Number(menuItemId));
+  }
+
+  const { data: conflictingMenuItem, error: conflictError } = await conflictQuery.maybeSingle();
+
+  if (conflictError) {
+    throw new Error(`Unable to validate menu item portion type: ${conflictError.message}`);
+  }
+
+  if (conflictingMenuItem) {
+    return {
+      ok: false as const,
+      error: "That portion type is already linked to another menu item.",
+      menuItemId: menuItemId ? Number(menuItemId) : null
+    };
+  }
+
+  if (menuItemId) {
+    const { error } = await supabase.from("menu_items").update(payload).eq("id", Number(menuItemId));
+
+    if (error) {
+      if (error.message.includes("menu_items_portion_type_id_key")) {
+        return {
+          ok: false as const,
+          error: "That portion type is already linked to another menu item.",
+          menuItemId: Number(menuItemId)
+        };
+      }
+
+      throw new Error(`Unable to update menu item: ${error.message}`);
+    }
+
+    revalidateOperationalPaths();
+
+    return {
+      ok: true as const,
+      menuItemId: Number(menuItemId),
+      mode: "updated" as const
+    };
+  }
+
+  const { data, error } = await supabase.from("menu_items").insert(payload).select("id").single();
+
+  if (error || !data) {
+    if (error?.message.includes("menu_items_portion_type_id_key")) {
+      return {
+        ok: false as const,
+        error: "That portion type is already linked to another menu item.",
+        menuItemId: null
+      };
+    }
+
+    throw new Error(`Unable to create menu item: ${error?.message ?? "Unknown error"}`);
+  }
+
+  revalidateOperationalPaths();
+
+  return {
+    ok: true as const,
+    menuItemId: data.id,
+    mode: "created" as const
+  };
+}
+
 export async function saveInventoryItemAction(formData: FormData) {
   const supabase = createAdminSupabaseClient();
   const inventoryItemId = String(formData.get("inventory_item_id") ?? "").trim();
@@ -196,103 +303,41 @@ export async function saveMenuCategoryAction(formData: FormData) {
 }
 
 export async function saveMenuItemAction(formData: FormData) {
-  const supabase = createAdminSupabaseClient();
-  const menuItemId = String(formData.get("menu_item_id") ?? "").trim();
   const imageFile = getOptionalImageFile(formData, "image");
-  const name = requiredText(formData, "name");
-  let code = toCode(name);
+  const result = await saveMenuItemRecord(formData);
 
-  if (menuItemId) {
-    const { data: existingMenuItem, error: existingMenuItemError } = await supabase
-      .from("menu_items")
-      .select("code")
-      .eq("id", Number(menuItemId))
-      .maybeSingle();
-
-    if (existingMenuItemError) {
-      throw new Error(`Unable to load existing menu item: ${existingMenuItemError.message}`);
-    }
-
-    if (!existingMenuItem) {
-      throw new Error(`Unable to find menu item ${menuItemId}`);
-    }
-
-    code = existingMenuItem.code;
-  }
-
-  const payload = {
-    code,
-    name,
-    description: toOptionalText(formData.get("description")),
-    base_price: toInteger(formData.get("base_price"), 0),
-    prep_type: requiredText(formData, "prep_type"),
-    menu_category_id: toInteger(formData.get("menu_category_id")),
-    portion_type_id: toInteger(formData.get("portion_type_id")),
-    sort_order: toInteger(formData.get("sort_order"), 1),
-    is_active: formData.get("is_active") === "on",
-    is_available_today: formData.get("is_available_today") === "on"
-  };
-
-  let conflictQuery = supabase
-    .from("menu_items")
-    .select("id, name")
-    .eq("portion_type_id", payload.portion_type_id);
-
-  if (menuItemId) {
-    conflictQuery = conflictQuery.neq("id", Number(menuItemId));
-  }
-
-  const { data: conflictingMenuItem, error: conflictError } = await conflictQuery.maybeSingle();
-
-  if (conflictError) {
-    throw new Error(`Unable to validate menu item portion type: ${conflictError.message}`);
-  }
-
-  if (conflictingMenuItem) {
-    const errorMessage = "That portion type is already linked to another menu item.";
-    redirect(buildMenuRedirectUrl({ editMenuItemId: menuItemId || null, error: errorMessage }));
-  }
-
-  if (menuItemId) {
-    const { error } = await supabase.from("menu_items").update(payload).eq("id", Number(menuItemId));
-
-    if (error) {
-      if (error.message.includes("menu_items_portion_type_id_key")) {
-        redirect(
-          buildMenuRedirectUrl({
-            editMenuItemId: menuItemId,
-            error: "That portion type is already linked to another menu item."
-          })
-        );
-      }
-
-      throw new Error(`Unable to update menu item: ${error.message}`);
-    }
-
-    if (imageFile) {
-      await uploadMenuItemImage(Number(menuItemId), imageFile);
-    }
-
-    revalidateOperationalPaths();
-    redirect(`/menu?edit=${menuItemId}`);
-  }
-
-  const { data, error } = await supabase.from("menu_items").insert(payload).select("id").single();
-
-  if (error || !data) {
-    if (error?.message.includes("menu_items_portion_type_id_key")) {
-      redirect(buildMenuRedirectUrl({ error: "That portion type is already linked to another menu item." }));
-    }
-
-    throw new Error(`Unable to create menu item: ${error?.message ?? "Unknown error"}`);
+  if (!result.ok) {
+    redirect(buildMenuRedirectUrl({ editMenuItemId: result.menuItemId ? String(result.menuItemId) : null, error: result.error }));
   }
 
   if (imageFile) {
-    await uploadMenuItemImage(data.id, imageFile);
+    await uploadMenuItemImage(result.menuItemId, imageFile);
   }
 
   revalidateOperationalPaths();
-  redirect(`/menu?edit=${data.id}`);
+  redirect(`/menu?edit=${result.menuItemId}`);
+}
+
+export async function saveMenuItemDetailsAction(formData: FormData) {
+  return saveMenuItemRecord(formData);
+}
+
+export async function uploadMenuItemImageAction(formData: FormData) {
+  const menuItemId = toInteger(formData.get("menu_item_id"));
+  const imageFile = getOptionalImageFile(formData, "image");
+
+  if (!imageFile) {
+    return {
+      ok: true as const
+    };
+  }
+
+  await uploadMenuItemImage(menuItemId, imageFile);
+  revalidateOperationalPaths();
+
+  return {
+    ok: true as const
+  };
 }
 
 export async function deleteMenuItemAction(formData: FormData) {

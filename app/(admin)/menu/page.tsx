@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { SchemaSetupNotice } from "@/components/admin/schema-setup-notice";
+import { MenuItemForm } from "@/components/menu/menu-item-form";
 import {
   addMenuItemComponentAction,
   deleteMenuItemAction,
   removeMenuItemComponentAction,
   saveMenuCategoryAction,
-  saveMenuItemAction,
   toggleMenuItemActiveAction,
   toggleMenuItemAvailabilityAction
 } from "@/lib/ops/actions";
@@ -201,127 +201,13 @@ export default async function MenuPage({
                 {selectedMenuItem ? selectedMenuItem.name : "Create a sellable item"}
               </h2>
             </div>
-            <form action={saveMenuItemAction} className="mt-4 grid gap-3">
-              {selectedMenuItem ? <input type="hidden" name="menu_item_id" value={selectedMenuItem.id} /> : null}
-              <input
-                name="name"
-                required
-                defaultValue={selectedMenuItem?.name}
-                placeholder="Display name"
-                className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
-              />
-              <p className="text-xs leading-5 text-[#6B7280]">Code is generated automatically from the name when the item is created.</p>
-              <textarea
-                name="description"
-                rows={3}
-                defaultValue={selectedMenuItem?.description ?? ""}
-                placeholder="Short description"
-                className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-3 text-sm text-[#111418]"
-              />
-              <select
-                name="menu_category_id"
-                defaultValue={selectedMenuItem?.categoryId}
-                required
-                className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
-              >
-                <option value="">Select category</option>
-                {categories.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </select>
-              <select
-                name="portion_type_id"
-                defaultValue={selectedMenuItem?.portionTypeId}
-                required
-                className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
-              >
-                <option value="">Select portion type</option>
-                {portionTypes.map((portion) => (
-                  <option
-                    key={portion.id}
-                    value={portion.id}
-                    disabled={portion.isAssigned}
-                  >
-                    {portion.label}{portion.isAssigned ? " - already linked" : ""}
-                  </option>
-                ))}
-              </select>
-              <div className="grid gap-2">
-                <label className="text-sm font-semibold text-[#111418]" htmlFor="menu-preparation-flow">
-                  Preparation type
-                </label>
-                <select
-                  id="menu-preparation-flow"
-                  name="prep_type"
-                  defaultValue={selectedMenuItem?.prepType ?? "smoked"}
-                  className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
-                >
-                  <option value="smoked">Roasted</option>
-                  <option value="packed">Kitchen</option>
-                  <option value="drink">Drink</option>
-                </select>
-                <p className="text-xs leading-5 text-[#6B7280]">
-                  Choose how this item is prepared or handled.
-                </p>
-              </div>
-              <div className="grid gap-2">
-                <label className="text-sm font-semibold text-[#111418]" htmlFor="menu-base-price">
-                  Base price
-                </label>
-                <input
-                  id="menu-base-price"
-                  type="number"
-                  min="0"
-                  name="base_price"
-                  required
-                  defaultValue={selectedMenuItem?.basePrice ?? 0}
-                  placeholder="Base price"
-                  className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
-                />
-              </div>
-              <input type="hidden" name="sort_order" value={selectedMenuItem?.sortOrder ?? menuItems.length + 1} />
-              {selectedMenuItem?.imageUrl ? (
-                <div className="overflow-hidden rounded-[24px] border border-[#E4E7EB] bg-white">
-                  <img
-                    src={selectedMenuItem.imageUrl}
-                    alt={selectedMenuItem.name}
-                    className="h-52 w-full object-cover"
-                  />
-                </div>
-              ) : null}
-              <div className="grid gap-2">
-                <label className="text-sm font-semibold text-[#111418]" htmlFor="menu-image">
-                  Menu image
-                </label>
-                <input
-                  id="menu-image"
-                  type="file"
-                  name="image"
-                  accept="image/png,image/jpeg,image/webp"
-                  className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
-                />
-                <p className="text-xs leading-5 text-[#6B7280]">
-                  Upload a JPG, PNG, or WebP image up to 5MB. A new upload replaces the current image for this item.
-                </p>
-              </div>
-              <label className="flex items-center gap-2 text-sm text-[#6B7280]">
-                <input type="checkbox" name="is_active" defaultChecked={selectedMenuItem?.isActive ?? true} />
-                Active
-              </label>
-              <label className="flex items-center gap-2 text-sm text-[#6B7280]">
-                <input
-                  type="checkbox"
-                  name="is_available_today"
-                  defaultChecked={selectedMenuItem?.isAvailableToday ?? true}
-                />
-                Available today
-              </label>
-              <button type="submit" className="rounded-2xl bg-[#111418] px-4 py-2.5 text-sm font-semibold text-white">
-                {selectedMenuItem ? "Save menu item" : "Create menu item"}
-              </button>
-            </form>
+            <MenuItemForm
+              key={selectedMenuItem?.id ?? "new-menu-item"}
+              categories={categories}
+              portionTypes={portionTypes}
+              selectedMenuItem={selectedMenuItem}
+              nextSortOrder={menuItems.length + 1}
+            />
 
             {selectedMenuItem ? (
               <form action={deleteMenuItemAction} className="mt-3">
