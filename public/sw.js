@@ -3,10 +3,10 @@ const OFFLINE_URL = "/offline";
 const APP_ASSETS = [
   OFFLINE_URL,
   "/manifest.webmanifest",
-  "/icons/logo-square.png",
+  "/icons/logo-bigger.jpg",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
-  "/icons/logo-bigger.jpg"
+  "/icons/logo-square.png"
 ];
 
 self.addEventListener("install", (event) => {
