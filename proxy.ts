@@ -3,7 +3,7 @@ import { createServerClient } from "@supabase/ssr";
 import { isLocalAuthBypassEnabledForRequest } from "@/lib/auth/local-bypass";
 import { getSupabasePublishableKey, getSupabaseUrl } from "@/lib/supabase/shared";
 
-const protectedPaths = ["/", "/dashboard", "/inventory", "/kitchen-queue", "/menu", "/orders", "/settings", "/staff"];
+const protectedPaths = ["/", "/dashboard", "/menu", "/orders", "/procurement", "/inventory", "/kitchen-queue", "/settings", "/staff"];
 
 function isProtectedPath(pathname: string) {
   return protectedPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`));

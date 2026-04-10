@@ -11,6 +11,9 @@ import {
   MenuComponentRecord,
   MenuItemRecord,
   PortionTypeOption,
+  ProcurementActivityRecord,
+  ProcurementInventoryOption,
+  ProcurementPageData,
   OrderDetailRecord,
   OrderItemRecord,
   OrderListItem,
@@ -20,8 +23,16 @@ import {
 import { toOperationsError } from "@/lib/ops/errors";
 import { getUgandaDayRange, getUgandaServiceDate, isDailyStockLow } from "@/lib/ops/utils";
 
-function ensureNoError(error: { message: string } | null, context: string) {
-  const mappedError = toOperationsError(error, context);
+const procurementMigrationFiles = [
+  "db/phase-01-reference-tables.sql",
+  "db/phase-02-daily-stock.sql",
+  "db/phase-03-operations-core.sql",
+  "db/phase-09-menu-item-images.sql",
+  "db/phase-10-procurement.sql"
+];
+
+function ensureNoError(error: { message: string } | null, context: string, migrationFiles?: string[]) {
+  const mappedError = toOperationsError(error, context, migrationFiles);
 
   if (mappedError) {
     throw mappedError;
@@ -81,6 +92,34 @@ function mapDailyStockRow(row: any): DailyStockRow {
     remainingQuantity,
     isInitialized: Boolean(row.is_initialized),
     isLowStock: isDailyStockLow(startingQuantity, remainingQuantity)
+  };
+}
+
+function mapProcurementActivity(row: any): ProcurementActivityRecord {
+  const quantityReceived = normalizeNumber(row.quantity_received);
+  const allocatedToHalves = normalizeNumber(row.allocated_to_halves);
+  const allocatedToQuarters = normalizeNumber(row.allocated_to_quarters);
+  const isWholeChicken = row.protein_code === "whole_chicken";
+
+  return {
+    id: normalizeNumber(row.id),
+    intakeType: row.intake_type,
+    proteinCode: row.protein_code,
+    inventoryItemId: row.inventory_item_id ? normalizeNumber(row.inventory_item_id) : null,
+    itemName: row.item_name,
+    supplierName: row.supplier_name,
+    deliveryDate: row.delivery_date,
+    quantityReceived,
+    unitName: row.unit_name,
+    unitCost: row.unit_cost === null ? null : normalizeNumber(row.unit_cost),
+    note: row.note,
+    allocatedToHalves,
+    allocatedToQuarters,
+    theoreticalHalfYield: isWholeChicken ? quantityReceived * 2 : 0,
+    theoreticalQuarterYield: isWholeChicken ? quantityReceived * 4 : 0,
+    sellableHalves: allocatedToHalves * 2,
+    sellableQuarters: allocatedToQuarters * 4,
+    createdAt: row.created_at
   };
 }
 
@@ -322,6 +361,46 @@ export async function getInventoryPageData(selectedItemId?: string | null) {
     inventoryItems,
     selectedItem,
     movementHistory
+  };
+}
+
+export async function getProcurementPageData(): Promise<ProcurementPageData> {
+  noStore();
+
+  const supabase = createAdminSupabaseClient();
+  const serviceDate = getUgandaServiceDate();
+
+  const [inventoryItemsResponse, recentActivityResponse] = await Promise.all([
+    supabase
+      .from("inventory_items")
+      .select("id, code, name, unit_name, current_quantity, reorder_threshold")
+      .eq("is_active", true)
+      .order("name", { ascending: true }),
+    supabase
+      .from("procurement_receipts")
+      .select(
+        "id, intake_type, protein_code, inventory_item_id, item_name, supplier_name, delivery_date, quantity_received, unit_name, unit_cost, note, allocated_to_halves, allocated_to_quarters, created_at"
+      )
+      .order("created_at", { ascending: false })
+      .limit(12)
+  ]);
+
+  ensureNoError(inventoryItemsResponse.error, "Unable to load tracked supply items");
+  ensureNoError(recentActivityResponse.error, "Unable to load procurement activity", procurementMigrationFiles);
+
+  const inventoryItems: ProcurementInventoryOption[] = (inventoryItemsResponse.data ?? []).map((item: any) => ({
+    id: normalizeNumber(item.id),
+    code: item.code,
+    name: item.name,
+    unitName: item.unit_name,
+    currentQuantity: normalizeNumber(item.current_quantity),
+    reorderThreshold: normalizeNumber(item.reorder_threshold)
+  }));
+
+  return {
+    serviceDate,
+    inventoryItems,
+    recentActivity: (recentActivityResponse.data ?? []).map(mapProcurementActivity)
   };
 }
 

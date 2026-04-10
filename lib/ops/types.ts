@@ -1,10 +1,14 @@
 export const orderStatuses = ["new", "confirmed", "in_prep", "on_smoker", "ready", "completed", "cancelled"] as const;
 export const prepTypes = ["smoked", "packed", "drink"] as const;
 export const movementTypes = ["adjustment", "restock", "usage", "waste"] as const;
+export const procurementIntakeTypes = ["protein", "supply"] as const;
+export const proteinProcurementCodes = ["beef", "whole_chicken", "goat"] as const;
 
 export type OrderStatus = (typeof orderStatuses)[number];
 export type PrepType = (typeof prepTypes)[number];
 export type InventoryMovementType = (typeof movementTypes)[number];
+export type ProcurementIntakeType = (typeof procurementIntakeTypes)[number];
+export type ProteinProcurementCode = (typeof proteinProcurementCodes)[number];
 
 export interface InventoryItemRecord {
   id: number;
@@ -26,6 +30,42 @@ export interface InventoryMovementRecord {
   resultingQuantity: number;
   note: string | null;
   createdAt: string;
+}
+
+export interface ProcurementInventoryOption {
+  id: number;
+  code: string;
+  name: string;
+  unitName: string;
+  currentQuantity: number;
+  reorderThreshold: number;
+}
+
+export interface ProcurementActivityRecord {
+  id: number;
+  intakeType: ProcurementIntakeType;
+  proteinCode: ProteinProcurementCode | null;
+  inventoryItemId: number | null;
+  itemName: string;
+  supplierName: string;
+  deliveryDate: string;
+  quantityReceived: number;
+  unitName: string;
+  unitCost: number | null;
+  note: string | null;
+  allocatedToHalves: number;
+  allocatedToQuarters: number;
+  theoreticalHalfYield: number;
+  theoreticalQuarterYield: number;
+  sellableHalves: number;
+  sellableQuarters: number;
+  createdAt: string;
+}
+
+export interface ProcurementPageData {
+  serviceDate: string;
+  inventoryItems: ProcurementInventoryOption[];
+  recentActivity: ProcurementActivityRecord[];
 }
 
 export interface DailyStockRow {

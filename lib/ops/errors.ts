@@ -15,7 +15,11 @@ const requiredMigrationFiles = [
   "db/phase-09-menu-item-images.sql"
 ];
 
-export function toOperationsError(error: { message: string } | null, context: string) {
+export function toOperationsError(
+  error: { message: string } | null,
+  context: string,
+  migrationFiles: string[] = requiredMigrationFiles
+) {
   if (!error) {
     return null;
   }
@@ -30,7 +34,7 @@ export function toOperationsError(error: { message: string } | null, context: st
     normalized.includes("relation") && normalized.includes("does not exist") ||
     normalized.includes("column") && normalized.includes("does not exist")
   ) {
-    return new OperationsSchemaMissingError(message, requiredMigrationFiles);
+    return new OperationsSchemaMissingError(message, migrationFiles);
   }
 
   return new Error(message);

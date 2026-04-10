@@ -21,6 +21,7 @@ function requiredText(formData: FormData, key: string) {
 
 function revalidateOperationalPaths() {
   revalidatePath("/dashboard");
+  revalidatePath("/procurement");
   revalidatePath("/inventory");
   revalidatePath("/menu");
   revalidatePath("/orders");
@@ -274,6 +275,71 @@ export async function adjustInventoryItemAction(formData: FormData) {
 
   revalidateOperationalPaths();
   redirect(`/inventory?item=${inventoryItemId}`);
+}
+
+export async function recordProteinProcurementAction(formData: FormData) {
+  const supabase = createAdminSupabaseClient();
+  const proteinCode = requiredText(formData, "protein_code");
+  const supplierName = requiredText(formData, "supplier_name");
+  const deliveryDate = requiredText(formData, "delivery_date");
+  const quantityReceived = toNumber(formData.get("quantity_received"));
+  const unitName = requiredText(formData, "unit_name");
+  const unitCost = toOptionalText(formData.get("unit_cost"));
+  const note = toOptionalText(formData.get("note"));
+  const allocatedToHalves = toInteger(formData.get("allocated_to_halves"), 0);
+  const allocatedToQuarters = toInteger(formData.get("allocated_to_quarters"), 0);
+
+  const { error } = await supabase.rpc("record_procurement_receipt", {
+    p_intake_type: "protein",
+    p_protein_code: proteinCode,
+    p_inventory_item_id: null,
+    p_supplier_name: supplierName,
+    p_delivery_date: deliveryDate,
+    p_quantity_received: quantityReceived,
+    p_unit_name: unitName,
+    p_unit_cost: unitCost ? toNumber(unitCost) : null,
+    p_note: note,
+    p_allocated_to_halves: allocatedToHalves,
+    p_allocated_to_quarters: allocatedToQuarters
+  });
+
+  if (error) {
+    throw new Error(`Unable to record protein procurement: ${error.message}`);
+  }
+
+  revalidateOperationalPaths();
+  redirect("/procurement");
+}
+
+export async function recordSupplyProcurementAction(formData: FormData) {
+  const supabase = createAdminSupabaseClient();
+  const inventoryItemId = toInteger(formData.get("inventory_item_id"));
+  const supplierName = requiredText(formData, "supplier_name");
+  const deliveryDate = requiredText(formData, "delivery_date");
+  const quantityReceived = toNumber(formData.get("quantity_received"));
+  const unitCost = toOptionalText(formData.get("unit_cost"));
+  const note = toOptionalText(formData.get("note"));
+
+  const { error } = await supabase.rpc("record_procurement_receipt", {
+    p_intake_type: "supply",
+    p_protein_code: null,
+    p_inventory_item_id: inventoryItemId,
+    p_supplier_name: supplierName,
+    p_delivery_date: deliveryDate,
+    p_quantity_received: quantityReceived,
+    p_unit_name: null,
+    p_unit_cost: unitCost ? toNumber(unitCost) : null,
+    p_note: note,
+    p_allocated_to_halves: 0,
+    p_allocated_to_quarters: 0
+  });
+
+  if (error) {
+    throw new Error(`Unable to record supply procurement: ${error.message}`);
+  }
+
+  revalidateOperationalPaths();
+  redirect("/procurement");
 }
 
 export async function saveMenuCategoryAction(formData: FormData) {
