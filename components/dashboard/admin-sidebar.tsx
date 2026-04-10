@@ -45,18 +45,6 @@ function SidebarNav({ compact = false, onNavigate }: { compact?: boolean; onNavi
   );
 }
 
-function OpsNote() {
-  return (
-    <div className="rounded-3xl border border-white/8 bg-white/5 p-4">
-      <p className="text-[11px] uppercase tracking-[0.22em] text-[#AEB6C2]">Operational note</p>
-      <p className="mt-3 text-sm leading-6 text-[#CDD2D8]">
-        Dashboard metrics now come from live Supabase reads. Staff and settings remain intentionally deferred until the
-        core inventory, menu, and order workflows settle.
-      </p>
-    </div>
-  );
-}
-
 export function AdminSidebar({
   userEmail,
   logoutSlot
@@ -140,10 +128,7 @@ export function AdminSidebar({
         </div>
 
         <SidebarNav />
-        <div className="mt-auto">
-          {logoutSlot ? <div className="mb-3">{logoutSlot}</div> : null}
-          <OpsNote />
-        </div>
+        {logoutSlot ? <div className="mt-auto">{logoutSlot}</div> : null}
       </aside>
 
       {isDrawerOpen ? (
@@ -174,10 +159,7 @@ export function AdminSidebar({
 
             <SidebarNav compact onNavigate={() => setIsDrawerOpen(false)} />
 
-            <div className="mt-auto pt-4">
-              {logoutSlot ? <div className="mb-3">{logoutSlot}</div> : null}
-              <OpsNote />
-            </div>
+            {logoutSlot ? <div className="mt-auto pt-4">{logoutSlot}</div> : null}
           </div>
         </div>
       ) : null}
