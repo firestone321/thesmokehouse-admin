@@ -11,9 +11,12 @@ import {
   MenuComponentRecord,
   MenuItemRecord,
   PortionTypeOption,
+  FinishedStockRecord,
+  ProcessingBatchRecord,
   ProcurementActivityRecord,
   ProcurementInventoryOption,
   ProcurementPageData,
+  ProcurementPortionOption,
   OrderDetailRecord,
   OrderItemRecord,
   OrderListItem,
@@ -28,7 +31,8 @@ const procurementMigrationFiles = [
   "db/phase-02-daily-stock.sql",
   "db/phase-03-operations-core.sql",
   "db/phase-09-menu-item-images.sql",
-  "db/phase-10-procurement.sql"
+  "db/phase-10-procurement.sql",
+  "db/phase-11-finished-stock.sql"
 ];
 
 function ensureNoError(error: { message: string } | null, context: string, migrationFiles?: string[]) {
@@ -95,7 +99,13 @@ function mapDailyStockRow(row: any): DailyStockRow {
   };
 }
 
-function mapProcurementActivity(row: any): ProcurementActivityRecord {
+function mapProcurementActivity(
+  row: any,
+  options?: {
+    processedHalves?: number;
+    processedQuarters?: number;
+  }
+): ProcurementActivityRecord {
   const quantityReceived = normalizeNumber(row.quantity_received);
   const allocatedToHalves = normalizeNumber(row.allocated_to_halves);
   const allocatedToQuarters = normalizeNumber(row.allocated_to_quarters);
@@ -119,6 +129,38 @@ function mapProcurementActivity(row: any): ProcurementActivityRecord {
     theoreticalQuarterYield: isWholeChicken ? quantityReceived * 4 : 0,
     sellableHalves: allocatedToHalves * 2,
     sellableQuarters: allocatedToQuarters * 4,
+    processedHalves: normalizeNumber(options?.processedHalves),
+    processedQuarters: normalizeNumber(options?.processedQuarters),
+    createdAt: row.created_at
+  };
+}
+
+function mapFinishedStock(row: any): FinishedStockRecord {
+  const portionName = row.portion_types?.name ?? "Portion";
+  const portionLabel = row.portion_types?.portion_label ? `${portionName} (${row.portion_types.portion_label})` : portionName;
+
+  return {
+    portionTypeId: normalizeNumber(row.portion_type_id),
+    portionCode: row.portion_types?.code ?? "",
+    portionLabel,
+    proteinCode: row.portion_types?.proteins?.code ?? null,
+    currentQuantity: normalizeNumber(row.current_quantity),
+    updatedAt: row.updated_at
+  };
+}
+
+function mapProcessingBatch(row: any): ProcessingBatchRecord {
+  return {
+    id: normalizeNumber(row.id),
+    procurementReceiptId: normalizeNumber(row.procurement_receipt_id),
+    receiptItemName: row.procurement_receipts?.item_name ?? "Receipt",
+    portionTypeId: normalizeNumber(row.portion_type_id),
+    portionCode: row.portion_types?.code ?? "",
+    portionName: row.portion_types?.portion_label
+      ? `${row.portion_types.name} (${row.portion_types.portion_label})`
+      : row.portion_types?.name ?? "Portion",
+    quantityProduced: normalizeNumber(row.quantity_produced),
+    note: row.note,
     createdAt: row.created_at
   };
 }
@@ -370,23 +412,88 @@ export async function getProcurementPageData(): Promise<ProcurementPageData> {
   const supabase = createAdminSupabaseClient();
   const serviceDate = getUgandaServiceDate();
 
-  const [inventoryItemsResponse, recentActivityResponse] = await Promise.all([
+  const [
+    inventoryItemsResponse,
+    portionOptionsResponse,
+    finishedStockResponse,
+    recentActivityResponse,
+    recentProcessingBatchesResponse
+  ] = await Promise.all([
     supabase
       .from("inventory_items")
       .select("id, code, name, unit_name, current_quantity, reorder_threshold")
       .eq("is_active", true)
       .order("name", { ascending: true }),
     supabase
+      .from("portion_types")
+      .select(
+        `
+        id,
+        code,
+        name,
+        portion_label,
+        proteins (
+          code
+        )
+      `
+      )
+      .eq("is_active", true)
+      .not("protein_id", "is", null)
+      .order("sort_order", { ascending: true }),
+    supabase
+      .from("finished_stock")
+      .select(
+        `
+        portion_type_id,
+        current_quantity,
+        updated_at,
+        portion_types (
+          code,
+          name,
+          portion_label,
+          proteins (
+            code
+          )
+        )
+      `
+      )
+      .order("updated_at", { ascending: false }),
+    supabase
       .from("procurement_receipts")
       .select(
         "id, intake_type, protein_code, inventory_item_id, item_name, supplier_name, delivery_date, quantity_received, unit_name, unit_cost, note, allocated_to_halves, allocated_to_quarters, created_at"
       )
       .order("created_at", { ascending: false })
-      .limit(12)
+      .limit(12),
+    supabase
+      .from("processing_batches")
+      .select(
+        `
+        id,
+        procurement_receipt_id,
+        portion_type_id,
+        quantity_produced,
+        note,
+        created_at,
+        portion_types (
+          code,
+          name,
+          portion_label
+        ),
+        procurement_receipts (
+          item_name
+        )
+      `
+      )
+      .order("created_at", { ascending: false })
+      .limit(20)
   ]);
 
   ensureNoError(inventoryItemsResponse.error, "Unable to load tracked supply items");
+  ensureNoError(portionOptionsResponse.error, "Unable to load sellable portion options");
+  ensureNoError(finishedStockResponse.error, "Unable to load finished frozen stock", procurementMigrationFiles);
   ensureNoError(recentActivityResponse.error, "Unable to load procurement activity", procurementMigrationFiles);
+  ensureNoError(recentProcessingBatchesResponse.error, "Unable to load processing batch history", procurementMigrationFiles);
 
   const inventoryItems: ProcurementInventoryOption[] = (inventoryItemsResponse.data ?? []).map((item: any) => ({
     id: normalizeNumber(item.id),
@@ -397,10 +504,46 @@ export async function getProcurementPageData(): Promise<ProcurementPageData> {
     reorderThreshold: normalizeNumber(item.reorder_threshold)
   }));
 
+  const portionOptions: ProcurementPortionOption[] = (portionOptionsResponse.data ?? []).map((portion: any) => ({
+    id: normalizeNumber(portion.id),
+    code: portion.code,
+    name: portion.name,
+    portionLabel: portion.portion_label,
+    proteinCode: portion.proteins?.code ?? null
+  }));
+
+  const finishedStock = (finishedStockResponse.data ?? []).map(mapFinishedStock);
+  const recentProcessingBatches = (recentProcessingBatchesResponse.data ?? []).map(mapProcessingBatch);
+  const processedByReceipt = new Map<number, { halves: number; quarters: number }>();
+
+  recentProcessingBatches.forEach((batch) => {
+    const current = processedByReceipt.get(batch.procurementReceiptId) ?? { halves: 0, quarters: 0 };
+
+    if (batch.portionCode === "chicken_half") {
+      current.halves += batch.quantityProduced;
+    }
+
+    if (batch.portionCode === "chicken_quarter") {
+      current.quarters += batch.quantityProduced;
+    }
+
+    processedByReceipt.set(batch.procurementReceiptId, current);
+  });
+
   return {
     serviceDate,
     inventoryItems,
-    recentActivity: (recentActivityResponse.data ?? []).map(mapProcurementActivity)
+    portionOptions,
+    finishedStock,
+    recentActivity: (recentActivityResponse.data ?? []).map((row: any) => {
+      const processed = processedByReceipt.get(normalizeNumber(row.id));
+
+      return mapProcurementActivity(row, {
+        processedHalves: processed?.halves ?? 0,
+        processedQuarters: processed?.quarters ?? 0
+      });
+    }),
+    recentProcessingBatches
   };
 }
 

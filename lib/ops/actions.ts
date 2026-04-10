@@ -342,6 +342,28 @@ export async function recordSupplyProcurementAction(formData: FormData) {
   redirect("/procurement");
 }
 
+export async function processProcurementReceiptToFinishedStockAction(formData: FormData) {
+  const supabase = createAdminSupabaseClient();
+  const procurementReceiptId = toInteger(formData.get("procurement_receipt_id"));
+  const portionTypeId = toInteger(formData.get("portion_type_id"));
+  const quantityProduced = toInteger(formData.get("quantity_produced"));
+  const note = toOptionalText(formData.get("note"));
+
+  const { error } = await supabase.rpc("process_procurement_receipt_to_finished_stock", {
+    p_procurement_receipt_id: procurementReceiptId,
+    p_portion_type_id: portionTypeId,
+    p_quantity_produced: quantityProduced,
+    p_note: note
+  });
+
+  if (error) {
+    throw new Error(`Unable to process procurement receipt into finished stock: ${error.message}`);
+  }
+
+  revalidateOperationalPaths();
+  redirect("/procurement");
+}
+
 export async function saveMenuCategoryAction(formData: FormData) {
   const supabase = createAdminSupabaseClient();
   const name = requiredText(formData, "name");

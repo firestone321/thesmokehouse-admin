@@ -1,4 +1,5 @@
 import { SchemaSetupNotice } from "@/components/admin/schema-setup-notice";
+import { ProcessingBatchForm } from "@/components/procurement/processing-batch-form";
 import { ProteinIntakeForm } from "@/components/procurement/protein-intake-form";
 import { SupplyIntakeForm } from "@/components/procurement/supply-intake-form";
 import { OperationsSchemaMissingError } from "@/lib/ops/errors";
@@ -27,9 +28,14 @@ export default async function ProcurementPage() {
   }
 
   const wholeChickenReceipts = data.recentActivity.filter((entry) => entry.proteinCode === "whole_chicken");
+  const proteinReceipts = data.recentActivity.filter((entry) => entry.intakeType === "protein");
   const totalWholeChickensPlanned = wholeChickenReceipts.reduce((sum, entry) => sum + entry.quantityReceived, 0);
   const totalAllocatedBirds = wholeChickenReceipts.reduce(
     (sum, entry) => sum + entry.allocatedToHalves + entry.allocatedToQuarters,
+    0
+  );
+  const totalProcessedChickenPortions = wholeChickenReceipts.reduce(
+    (sum, entry) => sum + entry.processedHalves + entry.processedQuarters,
     0
   );
 
@@ -76,15 +82,16 @@ export default async function ProcurementPage() {
           <p className="mt-2 text-sm leading-6 text-[#6B7280]">Whole chickens already planned into half or quarter production.</p>
         </article>
         <article className="rounded-[26px] border border-[#E4E7EB] bg-white px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-          <p className="text-[10px] uppercase tracking-[0.22em] text-[#6B7280]">Supply side ready</p>
-          <p className="mt-3 text-3xl font-semibold text-[#111418]">{data.inventoryItems.filter((item) => item.currentQuantity > item.reorderThreshold).length}</p>
-          <p className="mt-2 text-sm leading-6 text-[#6B7280]">Tracked items currently above their reorder threshold after audit counts.</p>
+          <p className="text-[10px] uppercase tracking-[0.22em] text-[#6B7280]">Chicken portions processed</p>
+          <p className="mt-3 text-3xl font-semibold text-[#111418]">{totalProcessedChickenPortions}</p>
+          <p className="mt-2 text-sm leading-6 text-[#6B7280]">Half and quarter portions already added into finished frozen stock.</p>
         </article>
       </section>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="space-y-4">
           <ProteinIntakeForm defaultDeliveryDate={data.serviceDate} />
+          <ProcessingBatchForm portionOptions={data.portionOptions} proteinReceipts={proteinReceipts} />
           <SupplyIntakeForm defaultDeliveryDate={data.serviceDate} inventoryItems={data.inventoryItems} />
         </div>
 
@@ -96,14 +103,13 @@ export default async function ProcurementPage() {
             </div>
             <div className="mt-4 space-y-3 text-sm leading-6 text-[#6B7280]">
               <p className="rounded-[22px] bg-[#F8FAFB] px-4 py-4">
-                Protein receipts are logged here first so the kitchen can plan intake without automatically inflating live
-                sellable stock.
+                Protein receipts are logged here first so raw meat intake is captured before the batch is processed.
+              </p>
+              <p className="rounded-[22px] bg-[#F8FAFB] px-4 py-4">
+                Processing is where pre-roasted meat becomes finished frozen stock that can later be thawed and lightly grilled for pickup.
               </p>
               <p className="rounded-[22px] bg-[#F8FAFB] px-4 py-4">
                 Supply receipts are logged here and also posted into tracked inventory as a <span className="font-semibold text-[#111418]">restock</span>.
-              </p>
-              <p className="rounded-[22px] bg-[#F8FAFB] px-4 py-4">
-                Inventory adjustments remain available on the inventory page for corrections, waste, usage, and audit fixes.
               </p>
             </div>
           </section>
@@ -169,6 +175,75 @@ export default async function ProcurementPage() {
                 <div className="rounded-[22px] bg-[#F8FAFB] px-4 py-4 text-sm leading-6 text-[#6B7280]">
                   No procurement activity has been logged yet. Your first delivery will appear here with supplier, quantity,
                   and chicken yield planning details where applicable.
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section className="surface-card rounded-[32px] p-5">
+            <div className="flex items-end justify-between gap-3 border-b border-[#EEF2F6] pb-4">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Finished Frozen Stock</p>
+                <h2 className="mt-2 text-xl font-semibold">What is ready for future orders</h2>
+              </div>
+              <span className="rounded-full bg-[#F3F4F6] px-3 py-1 text-xs font-semibold text-[#4B5563]">
+                {data.finishedStock.length}
+              </span>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {data.finishedStock.length > 0 ? (
+                data.finishedStock.map((item) => (
+                  <article key={item.portionTypeId} className="rounded-[22px] bg-[#F8FAFB] px-4 py-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <h3 className="text-base font-semibold text-[#111418]">{item.portionLabel}</h3>
+                        <p className="mt-1 text-sm text-[#6B7280]">{item.proteinCode ?? "General"}</p>
+                      </div>
+                      <p className="text-sm text-[#6B7280]">{formatDateTime(item.updatedAt)}</p>
+                    </div>
+                    <p className="mt-3 text-xl font-semibold text-[#111418]">{item.currentQuantity.toFixed(0)} portions</p>
+                  </article>
+                ))
+              ) : (
+                <div className="rounded-[22px] bg-[#F8FAFB] px-4 py-4 text-sm leading-6 text-[#6B7280]">
+                  No finished stock has been recorded yet. Process a batch after roasting and packing to build frozen sellable stock.
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section className="surface-card rounded-[32px] p-5">
+            <div className="flex items-end justify-between gap-3 border-b border-[#EEF2F6] pb-4">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Processing History</p>
+                <h2 className="mt-2 text-xl font-semibold">Recent finished-stock batches</h2>
+              </div>
+              <span className="rounded-full bg-[#F3F4F6] px-3 py-1 text-xs font-semibold text-[#4B5563]">
+                {data.recentProcessingBatches.length}
+              </span>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {data.recentProcessingBatches.length > 0 ? (
+                data.recentProcessingBatches.map((batch) => (
+                  <article key={batch.id} className="rounded-[22px] bg-[#F8FAFB] px-4 py-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <h3 className="text-base font-semibold text-[#111418]">{batch.portionName}</h3>
+                        <p className="mt-1 text-sm text-[#6B7280]">{batch.receiptItemName}</p>
+                      </div>
+                      <p className="text-sm text-[#6B7280]">{formatDateTime(batch.createdAt)}</p>
+                    </div>
+                    <p className="mt-3 text-sm leading-6 text-[#6B7280]">
+                      Added {batch.quantityProduced} finished portions into frozen stock
+                    </p>
+                    {batch.note ? <p className="mt-2 text-sm leading-6 text-[#6B7280]">{batch.note}</p> : null}
+                  </article>
+                ))
+              ) : (
+                <div className="rounded-[22px] bg-[#F8FAFB] px-4 py-4 text-sm leading-6 text-[#6B7280]">
+                  No processing batches have been recorded yet.
                 </div>
               )}
             </div>

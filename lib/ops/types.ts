@@ -59,13 +59,47 @@ export interface ProcurementActivityRecord {
   theoreticalQuarterYield: number;
   sellableHalves: number;
   sellableQuarters: number;
+  processedHalves: number;
+  processedQuarters: number;
+  createdAt: string;
+}
+
+export interface ProcurementPortionOption {
+  id: number;
+  code: string;
+  name: string;
+  portionLabel: string | null;
+  proteinCode: string | null;
+}
+
+export interface FinishedStockRecord {
+  portionTypeId: number;
+  portionCode: string;
+  portionLabel: string;
+  proteinCode: string | null;
+  currentQuantity: number;
+  updatedAt: string;
+}
+
+export interface ProcessingBatchRecord {
+  id: number;
+  procurementReceiptId: number;
+  receiptItemName: string;
+  portionTypeId: number;
+  portionCode: string;
+  portionName: string;
+  quantityProduced: number;
+  note: string | null;
   createdAt: string;
 }
 
 export interface ProcurementPageData {
   serviceDate: string;
   inventoryItems: ProcurementInventoryOption[];
+  portionOptions: ProcurementPortionOption[];
   recentActivity: ProcurementActivityRecord[];
+  finishedStock: FinishedStockRecord[];
+  recentProcessingBatches: ProcessingBatchRecord[];
 }
 
 export interface DailyStockRow {

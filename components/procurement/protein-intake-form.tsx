@@ -157,8 +157,8 @@ export function ProteinIntakeForm({ defaultDeliveryDate }: { defaultDeliveryDate
           <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Chicken Yield Planning</p>
           <h2 className="mt-2 text-xl font-semibold">Allocate whole chickens before prep</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6B7280]">
-            Theoretical yield is shown for planning only. These numbers do not become live sellable stock until a later
-            production flow moves them into daily stock.
+            Theoretical yield is shown for planning only. These numbers do not become finished stock until the kitchen
+            records an actual processing batch.
           </p>
         </div>
 
