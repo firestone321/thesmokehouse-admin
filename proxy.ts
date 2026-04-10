@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { isLocalAuthBypassEnabledForRequest } from "@/lib/auth/local-bypass";
 import { getSupabasePublishableKey, getSupabaseUrl } from "@/lib/supabase/shared";
 
 const protectedPaths = ["/", "/dashboard", "/inventory", "/kitchen-queue", "/menu", "/orders", "/settings", "/staff"];
@@ -9,6 +10,16 @@ function isProtectedPath(pathname: string) {
 }
 
 export async function proxy(request: NextRequest) {
+  if (isLocalAuthBypassEnabledForRequest(request)) {
+    if (request.nextUrl.pathname === "/login") {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
+
+    return NextResponse.next({
+      request
+    });
+  }
+
   let response = NextResponse.next({
     request
   });

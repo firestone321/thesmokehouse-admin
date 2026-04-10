@@ -1,6 +1,7 @@
 import Image from "next/image";
 import { redirect } from "next/navigation";
 import { sendMagicLinkAction } from "@/lib/auth/actions";
+import { isLocalAuthBypassEnabled } from "@/lib/auth/local-bypass";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 function getFirstValue(value?: string | string[]) {
@@ -12,14 +13,18 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const params = await searchParams;
+  const nextPath = getFirstValue(params.next) ?? "/dashboard";
+  const message = getFirstValue(params.message) ?? null;
+
+  if (await isLocalAuthBypassEnabled()) {
+    redirect(nextPath);
+  }
+
   const supabase = await createServerSupabaseClient();
   const {
     data: { user }
   } = await supabase.auth.getUser();
-
-  const params = await searchParams;
-  const nextPath = getFirstValue(params.next) ?? "/dashboard";
-  const message = getFirstValue(params.message) ?? null;
 
   if (user) {
     redirect(nextPath);
