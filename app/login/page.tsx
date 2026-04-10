@@ -35,10 +35,15 @@ export default async function LoginPage({
       <div className="mx-auto grid min-h-[calc(100vh-4rem)] max-w-6xl gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
         <section className="wood-surface hidden rounded-[36px] border border-white/5 p-8 text-[#E6E8EB] shadow-[0_24px_64px_rgba(15,23,42,0.18)] lg:flex lg:flex-col lg:justify-between">
           <div>
-            <div className="relative mb-6 h-28 w-full overflow-hidden rounded-[28px] border border-white/8 bg-white/5">
-              <Image src="/icons/logo-bigger.jpg" alt="Firestone Country Smokehouse logo" fill className="object-cover" sizes="540px" priority />
+            <div className="mb-6 flex items-center gap-4">
+              <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-[24px] border border-white/8 bg-white/5 p-2">
+                <Image src="/icons/logo-bigger.jpg" alt="Firestone Country Smokehouse logo" fill className="object-contain p-1" sizes="80px" priority />
+              </div>
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.28em] text-[#AEB6C2]">Firestone Country Smokehouse</p>
+                <p className="mt-2 text-sm text-[#CDD2D8]">Admin</p>
+              </div>
             </div>
-            <p className="text-[11px] uppercase tracking-[0.28em] text-[#AEB6C2]">Firestone Country Smokehouse Admin</p>
             <h1 className="mt-4 text-4xl font-semibold leading-tight">Sign in with a magic link.</h1>
             <p className="mt-4 max-w-xl text-sm leading-7 text-[#CDD2D8]">
               Enter a staff email that already exists in Supabase Auth. We&apos;ll send a one-time link and keep
@@ -54,8 +59,14 @@ export default async function LoginPage({
         </section>
 
         <section className="surface-card my-auto rounded-[36px] px-6 py-6 shadow-[0_24px_64px_rgba(15,23,42,0.08)] sm:px-8 sm:py-8">
-          <div className="relative mb-5 h-20 w-full overflow-hidden rounded-[24px] border border-[#E5E7EB] bg-[#F8FAFB] lg:hidden">
-            <Image src="/icons/logo-bigger.jpg" alt="Firestone Country Smokehouse logo" fill className="object-cover" sizes="420px" priority />
+          <div className="mb-5 flex items-center gap-4 lg:hidden">
+            <div className="relative h-[72px] w-[72px] shrink-0 overflow-hidden rounded-[22px] border border-[#E5E7EB] bg-[#F8FAFB] p-2">
+              <Image src="/icons/logo-bigger.jpg" alt="Firestone Country Smokehouse logo" fill className="object-contain p-1" sizes="72px" priority />
+            </div>
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.22em] text-[#6B7280]">Firestone Country Smokehouse</p>
+              <p className="mt-1 text-sm text-[#6B7280]">Admin</p>
+            </div>
           </div>
           <p className="text-[11px] uppercase tracking-[0.22em] text-[#6B7280]">Sign in</p>
           <h2 className="mt-3 text-3xl font-semibold">Get your magic link</h2>
