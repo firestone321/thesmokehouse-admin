@@ -25,7 +25,15 @@ create table if not exists public.procurement_receipts (
   updated_at timestamptz not null default now(),
   constraint procurement_receipts_intake_type_chk check (intake_type in ('protein', 'supply')),
   constraint procurement_receipts_protein_code_chk check (
-    protein_code is null or protein_code in ('beef', 'whole_chicken', 'goat')
+    protein_code is null or protein_code in (
+      'beef_ribs',
+      'beef_chunks',
+      'whole_chicken',
+      'goat_ribs',
+      'goat_chunks',
+      'beef',
+      'goat'
+    )
   ),
   constraint procurement_receipts_item_name_not_blank_chk check (btrim(item_name) <> ''),
   constraint procurement_receipts_supplier_name_not_blank_chk check (btrim(supplier_name) <> ''),
@@ -109,13 +117,25 @@ begin
   end if;
 
   if p_intake_type = 'protein' then
-    if p_protein_code not in ('beef', 'whole_chicken', 'goat') then
+    if p_protein_code not in (
+      'beef_ribs',
+      'beef_chunks',
+      'whole_chicken',
+      'goat_ribs',
+      'goat_chunks',
+      'beef',
+      'goat'
+    ) then
       raise exception 'Invalid protein procurement code: %', p_protein_code;
     end if;
 
     v_item_name := case p_protein_code
-      when 'beef' then 'Beef'
+      when 'beef_ribs' then 'Beef ribs'
+      when 'beef_chunks' then 'Beef chunks'
       when 'whole_chicken' then 'Whole chicken'
+      when 'goat_ribs' then 'Goat ribs'
+      when 'goat_chunks' then 'Goat chunks'
+      when 'beef' then 'Beef'
       when 'goat' then 'Goat meat'
     end;
 
@@ -123,8 +143,12 @@ begin
 
     if v_unit_name is null then
       v_unit_name := case p_protein_code
-        when 'beef' then 'kg'
+        when 'beef_ribs' then 'kg'
+        when 'beef_chunks' then 'kg'
         when 'whole_chicken' then 'bird'
+        when 'goat_ribs' then 'kg'
+        when 'goat_chunks' then 'kg'
+        when 'beef' then 'kg'
         when 'goat' then 'kg'
       end;
     end if;

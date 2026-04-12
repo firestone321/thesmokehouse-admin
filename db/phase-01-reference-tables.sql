@@ -125,12 +125,20 @@ values
     4
   ),
   (
-    'goat_chops',
+    'goat_ribs_350g',
     (select id from public.proteins where code = 'goat'),
     (select id from public.packaging_types where code = 'clamcraft_box'),
-    'Goat chops',
-    null,
+    'Goat ribs',
+    '350g',
     5
+  ),
+  (
+    'goat_chunks_350g',
+    (select id from public.proteins where code = 'goat'),
+    (select id from public.packaging_types where code = 'clamcraft_box'),
+    'Goat chunks',
+    '350g',
+    6
   ),
   (
     'juice',
@@ -138,7 +146,7 @@ values
     null,
     'Juice',
     null,
-    6
+    7
   )
 on conflict (code) do update
 set

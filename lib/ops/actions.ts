@@ -339,7 +339,7 @@ export async function recordSupplyProcurementAction(formData: FormData) {
   }
 
   revalidateOperationalPaths();
-  redirect("/procurement");
+  redirect(`/inventory?item=${inventoryItemId}`);
 }
 
 export async function processProcurementReceiptToFinishedStockAction(formData: FormData) {

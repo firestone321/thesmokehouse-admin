@@ -17,6 +17,7 @@ import {
   ProcurementInventoryOption,
   ProcurementPageData,
   ProcurementPortionOption,
+  ProteinReceiptSummary,
   OrderDetailRecord,
   OrderItemRecord,
   OrderListItem,
@@ -24,6 +25,7 @@ import {
   OrderStatusEventRecord
 } from "@/lib/ops/types";
 import { toOperationsError } from "@/lib/ops/errors";
+import { getAllowedPortionCodesForReceipt, getExpectedYieldEstimate } from "@/lib/ops/yield";
 import { getUgandaDayRange, getUgandaServiceDate, isDailyStockLow } from "@/lib/ops/utils";
 
 const procurementMigrationFiles = [
@@ -32,7 +34,8 @@ const procurementMigrationFiles = [
   "db/phase-03-operations-core.sql",
   "db/phase-09-menu-item-images.sql",
   "db/phase-10-procurement.sql",
-  "db/phase-11-finished-stock.sql"
+  "db/phase-11-finished-stock.sql",
+  "db/phase-12-split-red-meat-cuts.sql"
 ];
 
 function ensureNoError(error: { message: string } | null, context: string, migrationFiles?: string[]) {
@@ -342,16 +345,40 @@ export async function getInventoryPageData(selectedItemId?: string | null) {
   const supabase = createAdminSupabaseClient();
   const serviceDate = getUgandaServiceDate();
 
-  const [dailyStockResponse, itemsResponse] = await Promise.all([
+  const [dailyStockResponse, itemsResponse, proteinReceiptsResponse, portionOptionsResponse] = await Promise.all([
     supabase.rpc("get_daily_menu_stock", { p_stock_date: serviceDate }),
     supabase
       .from("inventory_items")
       .select("id, code, name, unit_name, current_quantity, reorder_threshold, is_active, updated_at")
-      .order("name", { ascending: true })
+      .order("name", { ascending: true }),
+    supabase
+      .from("procurement_receipts")
+      .select("protein_code, item_name, quantity_received, unit_name")
+      .eq("intake_type", "protein")
+      .eq("delivery_date", serviceDate)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("portion_types")
+      .select(
+        `
+        id,
+        code,
+        name,
+        portion_label,
+        proteins (
+          code
+        )
+      `
+      )
+      .eq("is_active", true)
+      .not("protein_id", "is", null)
+      .order("sort_order", { ascending: true })
   ]);
 
   ensureNoError(dailyStockResponse.error, "Unable to load daily stock");
   ensureNoError(itemsResponse.error, "Unable to load inventory items");
+  ensureNoError(proteinReceiptsResponse.error, "Unable to load today's protein receipts", procurementMigrationFiles);
+  ensureNoError(portionOptionsResponse.error, "Unable to load portion options", procurementMigrationFiles);
 
   const dailyStock = (dailyStockResponse.data ?? []).map(mapDailyStockRow);
   const inventoryItems: InventoryItemRecord[] = (itemsResponse.data ?? []).map((item: any) => {
@@ -370,6 +397,14 @@ export async function getInventoryPageData(selectedItemId?: string | null) {
       isLowStock: currentQuantity <= reorderThreshold
     };
   });
+
+  const portionOptions: ProcurementPortionOption[] = (portionOptionsResponse.data ?? []).map((portion: any) => ({
+    id: normalizeNumber(portion.id),
+    code: portion.code,
+    name: portion.name,
+    portionLabel: portion.portion_label,
+    proteinCode: portion.proteins?.code ?? null
+  }));
 
   const normalizedSelectedId = selectedItemId ? normalizeNumber(selectedItemId) : inventoryItems[0]?.id ?? null;
   const selectedItem = inventoryItems.find((item) => item.id === normalizedSelectedId) ?? null;
@@ -397,12 +432,89 @@ export async function getInventoryPageData(selectedItemId?: string | null) {
     }));
   }
 
+  const proteinReceiptMap = new Map<string, ProteinReceiptSummary>();
+
+  (proteinReceiptsResponse.data ?? []).forEach((row: any) => {
+    const proteinCode = row.protein_code as ProteinReceiptSummary["proteinCode"] | null;
+
+    if (!proteinCode) {
+      return;
+    }
+
+    const key = `${proteinCode}:${row.unit_name}`;
+    const existing = proteinReceiptMap.get(key);
+
+    if (existing) {
+      existing.totalReceived += normalizeNumber(row.quantity_received);
+      existing.receiptCount += 1;
+      return;
+    }
+
+    proteinReceiptMap.set(key, {
+      proteinCode,
+      itemName: row.item_name,
+      totalReceived: normalizeNumber(row.quantity_received),
+      unitName: row.unit_name,
+      receiptCount: 1,
+      expectedPortions: []
+    });
+  });
+
+  const proteinSortOrder = new Map<string, number>([
+    ["beef_ribs", 0],
+    ["beef_chunks", 1],
+    ["whole_chicken", 2],
+    ["goat_ribs", 3],
+    ["goat_chunks", 4],
+    ["beef", 5],
+    ["goat", 6]
+  ]);
+
+  const todayProteinReceipts = Array.from(proteinReceiptMap.values())
+    .map((receipt) => {
+      const allowedPortionCodes = new Set(getAllowedPortionCodesForReceipt(receipt.proteinCode));
+      const expectedPortions = portionOptions
+        .filter((portion) => allowedPortionCodes.has(portion.code))
+        .map((portion) => {
+          const estimate = getExpectedYieldEstimate({
+            proteinCode: receipt.proteinCode,
+            quantityReceived: receipt.totalReceived,
+            unitName: receipt.unitName,
+            portion
+          });
+
+          if (!estimate) {
+            return null;
+          }
+
+          return {
+            portionCode: portion.code,
+            portionName: portion.name,
+            portionLabel: portion.portionLabel,
+            expectedQuantity: estimate.quantity,
+            detail: estimate.detail
+          };
+        })
+        .filter((estimate): estimate is NonNullable<typeof estimate> => estimate !== null);
+
+      return {
+        ...receipt,
+        expectedPortions
+      };
+    })
+    .sort((left, right) => {
+    const leftOrder = proteinSortOrder.get(left.proteinCode) ?? 99;
+    const rightOrder = proteinSortOrder.get(right.proteinCode) ?? 99;
+    return leftOrder - rightOrder;
+  });
+
   return {
     serviceDate,
     dailyStock,
     inventoryItems,
     selectedItem,
-    movementHistory
+    movementHistory,
+    todayProteinReceipts
   };
 }
 

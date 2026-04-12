@@ -6,7 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { adminNavItems } from "@/lib/admin/nav";
 
-const quickAccessLabels = new Set(["Dashboard", "Orders", "Menu", "Procurement", "Inventory", "Kitchen Queue"]);
+const quickAccessLabels = new Set(["Dashboard", "Orders", "Menu", "Resupplies", "Inventory", "Kitchen Queue"]);
 const secondaryNavLabels = new Set(["Staff", "Settings"]);
 const primaryNavItems = adminNavItems.filter((item) => !secondaryNavLabels.has(item.label));
 const secondaryNavItems = adminNavItems.filter((item) => secondaryNavLabels.has(item.label));

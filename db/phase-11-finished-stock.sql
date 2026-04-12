@@ -4,7 +4,7 @@ begin;
 -- Purpose:
 -- 1. Track finished frozen sellable stock separately from raw procurement receipts.
 -- 2. Record processing batches that convert received meat into pre-roasted frozen portions.
--- 3. Keep chicken processing aligned with the planned halves and quarters from procurement.
+-- 3. Allow whole chicken receipts to be processed manually, while still honoring any saved plan when one exists.
 
 create table if not exists public.finished_stock (
   portion_type_id bigint primary key references public.portion_types(id) on update cascade on delete restrict,
@@ -120,6 +120,8 @@ begin
 
   v_receipt_protein_code := case
     when v_receipt.protein_code = 'whole_chicken' then 'chicken'
+    when v_receipt.protein_code in ('beef_ribs', 'beef_chunks') then 'beef'
+    when v_receipt.protein_code in ('goat_ribs', 'goat_chunks') then 'goat'
     else v_receipt.protein_code
   end;
 
@@ -127,12 +129,24 @@ begin
     raise exception 'Receipt protein % cannot be processed into portion %', v_receipt.protein_code, v_portion_type.code;
   end if;
 
+  if v_receipt.protein_code = 'beef_ribs' and v_portion_type.code <> 'beef_ribs_350g' then
+    raise exception 'Beef ribs receipts can only be processed into beef ribs portions';
+  end if;
+
+  if v_receipt.protein_code = 'beef_chunks' and v_portion_type.code <> 'beef_chunks_350g' then
+    raise exception 'Beef chunks receipts can only be processed into beef chunks portions';
+  end if;
+
+  if v_receipt.protein_code = 'goat_ribs' and v_portion_type.code <> 'goat_ribs_350g' then
+    raise exception 'Goat ribs receipts can only be processed into goat ribs portions';
+  end if;
+
+  if v_receipt.protein_code = 'goat_chunks' and v_portion_type.code <> 'goat_chunks_350g' then
+    raise exception 'Goat chunks receipts can only be processed into goat chunks portions';
+  end if;
+
   if v_receipt.protein_code = 'whole_chicken' then
-    if v_portion_type.code = 'chicken_half' then
-      v_allowed := v_receipt.allocated_to_halves * 2;
-    elsif v_portion_type.code = 'chicken_quarter' then
-      v_allowed := v_receipt.allocated_to_quarters * 4;
-    else
+    if v_portion_type.code not in ('chicken_half', 'chicken_quarter') then
       raise exception 'Whole chicken receipts can only be processed into chicken half or chicken quarter portions';
     end if;
 
@@ -142,8 +156,16 @@ begin
     where pb.procurement_receipt_id = p_procurement_receipt_id
       and pb.portion_type_id = p_portion_type_id;
 
-    if v_already_processed + p_quantity_produced > v_allowed then
-      raise exception 'Processing % would exceed the planned chicken yield for receipt %', p_quantity_produced, p_procurement_receipt_id;
+    if v_receipt.allocated_to_halves > 0 or v_receipt.allocated_to_quarters > 0 then
+      if v_portion_type.code = 'chicken_half' then
+        v_allowed := v_receipt.allocated_to_halves * 2;
+      else
+        v_allowed := v_receipt.allocated_to_quarters * 4;
+      end if;
+
+      if v_already_processed + p_quantity_produced > v_allowed then
+        raise exception 'Processing % would exceed the planned chicken yield for receipt %', p_quantity_produced, p_procurement_receipt_id;
+      end if;
     end if;
   end if;
 

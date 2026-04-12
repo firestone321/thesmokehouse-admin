@@ -27,7 +27,8 @@ select
     when 'beef_chunks_350g' then 'Beef chunks'
     when 'chicken_half' then 'Chicken half'
     when 'chicken_quarter' then 'Chicken quarter'
-    when 'goat_chops' then 'Goat chops'
+    when 'goat_ribs_350g' then 'Goat ribs'
+    when 'goat_chunks_350g' then 'Goat chunks'
     when 'juice' then 'Juice'
   end as name,
   case pt.code
@@ -35,12 +36,14 @@ select
     when 'beef_chunks_350g' then 'Packed beef chunks portion.'
     when 'chicken_half' then 'Half chicken smoked and boxed.'
     when 'chicken_quarter' then 'Quarter chicken smoked and boxed.'
-    when 'goat_chops' then 'Goat chops portion.'
+    when 'goat_ribs_350g' then 'Smoked goat ribs portion.'
+    when 'goat_chunks_350g' then 'Packed goat chunks portion.'
     when 'juice' then 'Fresh juice serving.'
   end as description,
   0 as base_price,
   case pt.code
     when 'beef_chunks_350g' then 'packed'
+    when 'goat_chunks_350g' then 'packed'
     when 'juice' then 'drink'
     else 'smoked'
   end as prep_type,
@@ -51,15 +54,16 @@ select
     when 'beef_chunks_350g' then 2
     when 'chicken_half' then 3
     when 'chicken_quarter' then 4
-    when 'goat_chops' then 5
-    when 'juice' then 6
+    when 'goat_ribs_350g' then 5
+    when 'goat_chunks_350g' then 6
+    when 'juice' then 7
   end as sort_order
 from public.portion_types pt
 join public.menu_categories mc
   on mc.code = case
     when pt.code in ('beef_ribs_350g', 'beef_chunks_350g') then 'beef'
     when pt.code in ('chicken_half', 'chicken_quarter') then 'chicken'
-    when pt.code = 'goat_chops' then 'goat'
+    when pt.code in ('goat_ribs_350g', 'goat_chunks_350g') then 'goat'
     when pt.code = 'juice' then 'drinks'
   end
 where pt.code in (
@@ -67,7 +71,8 @@ where pt.code in (
   'beef_chunks_350g',
   'chicken_half',
   'chicken_quarter',
-  'goat_chops',
+  'goat_ribs_350g',
+  'goat_chunks_350g',
   'juice'
 )
 on conflict (portion_type_id) do update

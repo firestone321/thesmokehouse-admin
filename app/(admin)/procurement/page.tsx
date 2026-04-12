@@ -1,7 +1,6 @@
 import { SchemaSetupNotice } from "@/components/admin/schema-setup-notice";
 import { ProcessingBatchForm } from "@/components/procurement/processing-batch-form";
 import { ProteinIntakeForm } from "@/components/procurement/protein-intake-form";
-import { SupplyIntakeForm } from "@/components/procurement/supply-intake-form";
 import { OperationsSchemaMissingError } from "@/lib/ops/errors";
 import { getProcurementPageData } from "@/lib/ops/queries";
 import { formatCurrency, formatDateTime, formatServiceDate } from "@/lib/ops/utils";
@@ -21,7 +20,7 @@ export default async function ProcurementPage() {
     data = await getProcurementPageData();
   } catch (error) {
     if (error instanceof OperationsSchemaMissingError) {
-      return <SchemaSetupNotice title="Procurement cannot load yet" error={error} />;
+      return <SchemaSetupNotice title="Resupplies cannot load yet" error={error} />;
     }
 
     throw error;
@@ -29,11 +28,8 @@ export default async function ProcurementPage() {
 
   const wholeChickenReceipts = data.recentActivity.filter((entry) => entry.proteinCode === "whole_chicken");
   const proteinReceipts = data.recentActivity.filter((entry) => entry.intakeType === "protein");
+  const totalProteinReceipts = proteinReceipts.length;
   const totalWholeChickensPlanned = wholeChickenReceipts.reduce((sum, entry) => sum + entry.quantityReceived, 0);
-  const totalAllocatedBirds = wholeChickenReceipts.reduce(
-    (sum, entry) => sum + entry.allocatedToHalves + entry.allocatedToQuarters,
-    0
-  );
   const totalProcessedChickenPortions = wholeChickenReceipts.reduce(
     (sum, entry) => sum + entry.processedHalves + entry.processedQuarters,
     0
@@ -44,11 +40,11 @@ export default async function ProcurementPage() {
       <section className="surface-card rounded-[32px] px-5 py-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
-            <p className="text-[11px] uppercase tracking-[0.22em] text-[#6B7280]">Procurement</p>
-            <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">Receiving and intake</h1>
+            <p className="text-[11px] uppercase tracking-[0.22em] text-[#6B7280]">Resupplies</p>
+            <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">Protein receiving and processing</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6B7280]">
-              Use procurement to record what came in, from whom, and how it should be planned before it becomes live
-              production or tracked supply stock.
+              Use this page for raw meat receiving and processing. Supply restocks now live on the Inventory page so
+              stock changes are visible in one place.
             </p>
           </div>
 
@@ -58,7 +54,7 @@ export default async function ProcurementPage() {
               <p className="mt-1 font-semibold text-[#111418]">{formatServiceDate(data.serviceDate)}</p>
             </div>
             <div className="rounded-[22px] bg-[#F8FAFB] px-4 py-3">
-              <p className="text-[10px] uppercase tracking-[0.18em] text-[#9CA3AF]">Recent receipts</p>
+              <p className="text-[10px] uppercase tracking-[0.18em] text-[#9CA3AF]">Recent deliveries</p>
               <p className="mt-1 font-semibold text-[#111418]">{data.recentActivity.length}</p>
             </div>
           </div>
@@ -67,19 +63,19 @@ export default async function ProcurementPage() {
 
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <article className="rounded-[26px] border border-[#E4E7EB] bg-white px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-          <p className="text-[10px] uppercase tracking-[0.22em] text-[#6B7280]">Tracked supply items</p>
-          <p className="mt-3 text-3xl font-semibold text-[#111418]">{data.inventoryItems.length}</p>
-          <p className="mt-2 text-sm leading-6 text-[#6B7280]">Active inventory items currently available for supply receiving.</p>
+          <p className="text-[10px] uppercase tracking-[0.22em] text-[#6B7280]">Protein receipts</p>
+          <p className="mt-3 text-3xl font-semibold text-[#111418]">{totalProteinReceipts}</p>
+          <p className="mt-2 text-sm leading-6 text-[#6B7280]">Recent raw protein deliveries recorded for intake and planning.</p>
         </article>
         <article className="rounded-[26px] border border-[#E4E7EB] bg-white px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
           <p className="text-[10px] uppercase tracking-[0.22em] text-[#6B7280]">Whole chickens logged</p>
           <p className="mt-3 text-3xl font-semibold text-[#111418]">{totalWholeChickensPlanned.toFixed(0)}</p>
-          <p className="mt-2 text-sm leading-6 text-[#6B7280]">Birds recorded in recent procurement activity for yield planning.</p>
+          <p className="mt-2 text-sm leading-6 text-[#6B7280]">Whole birds recorded in recent protein receipts.</p>
         </article>
         <article className="rounded-[26px] border border-[#E4E7EB] bg-white px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-          <p className="text-[10px] uppercase tracking-[0.22em] text-[#6B7280]">Allocated birds</p>
-          <p className="mt-3 text-3xl font-semibold text-[#111418]">{totalAllocatedBirds}</p>
-          <p className="mt-2 text-sm leading-6 text-[#6B7280]">Whole chickens already planned into half or quarter production.</p>
+          <p className="text-[10px] uppercase tracking-[0.22em] text-[#6B7280]">Processing batches</p>
+          <p className="mt-3 text-3xl font-semibold text-[#111418]">{data.recentProcessingBatches.length}</p>
+          <p className="mt-2 text-sm leading-6 text-[#6B7280]">Recent finished-stock batches recorded from protein receipts.</p>
         </article>
         <article className="rounded-[26px] border border-[#E4E7EB] bg-white px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
           <p className="text-[10px] uppercase tracking-[0.22em] text-[#6B7280]">Chicken portions processed</p>
@@ -92,14 +88,13 @@ export default async function ProcurementPage() {
         <div className="space-y-4">
           <ProteinIntakeForm defaultDeliveryDate={data.serviceDate} />
           <ProcessingBatchForm portionOptions={data.portionOptions} proteinReceipts={proteinReceipts} />
-          <SupplyIntakeForm defaultDeliveryDate={data.serviceDate} inventoryItems={data.inventoryItems} />
         </div>
 
         <aside className="space-y-4">
           <section className="surface-card rounded-[32px] p-5">
             <div className="border-b border-[#EEF2F6] pb-4">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Receiving Model</p>
-              <h2 className="mt-2 text-xl font-semibold">How procurement behaves</h2>
+              <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">How It Works</p>
+              <h2 className="mt-2 text-xl font-semibold">What happens after you save</h2>
             </div>
             <div className="mt-4 space-y-3 text-sm leading-6 text-[#6B7280]">
               <p className="rounded-[22px] bg-[#F8FAFB] px-4 py-4">
@@ -109,7 +104,7 @@ export default async function ProcurementPage() {
                 Processing is where pre-roasted meat becomes finished frozen stock that can later be thawed and lightly grilled for pickup.
               </p>
               <p className="rounded-[22px] bg-[#F8FAFB] px-4 py-4">
-                Supply receipts are logged here and also posted into tracked inventory as a <span className="font-semibold text-[#111418]">restock</span>.
+                Supply restocks now happen on the <span className="font-semibold text-[#111418]">Inventory</span> page so the stock change and movement history stay together.
               </p>
             </div>
           </section>
@@ -117,7 +112,7 @@ export default async function ProcurementPage() {
           <section className="surface-card rounded-[32px] p-5">
             <div className="flex items-end justify-between gap-3 border-b border-[#EEF2F6] pb-4">
               <div>
-                <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Recent Procurement Activity</p>
+                <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Recent Protein Activity</p>
                 <h2 className="mt-2 text-xl font-semibold">Latest receipts</h2>
               </div>
               <span className="rounded-full bg-[#F3F4F6] px-3 py-1 text-xs font-semibold text-[#4B5563]">
@@ -159,12 +154,8 @@ export default async function ProcurementPage() {
 
                     {entry.proteinCode === "whole_chicken" ? (
                       <div className="mt-3 rounded-[18px] border border-[#E4E7EB] bg-white px-3 py-3 text-sm text-[#6B7280]">
-                        <p className="font-semibold text-[#111418]">
-                          Planned yield: {entry.sellableHalves} halves and {entry.sellableQuarters} quarters
-                        </p>
-                        <p className="mt-1">
-                          Theoretical max: {entry.theoreticalHalfYield} halves or {entry.theoreticalQuarterYield} quarters
-                        </p>
+                        <p className="font-semibold text-[#111418]">Yield is recorded later during processing.</p>
+                        <p className="mt-1">Processed so far: {entry.processedHalves} halves and {entry.processedQuarters} quarters</p>
                       </div>
                     ) : null}
 
@@ -173,8 +164,7 @@ export default async function ProcurementPage() {
                 ))
               ) : (
                 <div className="rounded-[22px] bg-[#F8FAFB] px-4 py-4 text-sm leading-6 text-[#6B7280]">
-                  No procurement activity has been logged yet. Your first delivery will appear here with supplier, quantity,
-                  and chicken yield planning details where applicable.
+                  No protein receipts have been logged yet. Your first delivery will appear here with supplier and quantity.
                 </div>
               )}
             </div>

@@ -10,12 +10,16 @@ function formatQuantity(value: number, unitName: string) {
 
 export function SupplyIntakeForm({
   defaultDeliveryDate,
-  inventoryItems
+  inventoryItems,
+  defaultInventoryItemId
 }: {
   defaultDeliveryDate: string;
   inventoryItems: ProcurementInventoryOption[];
+  defaultInventoryItemId?: number | null;
 }) {
-  const [selectedItemId, setSelectedItemId] = useState<string>(inventoryItems[0] ? String(inventoryItems[0].id) : "");
+  const [selectedItemId, setSelectedItemId] = useState<string>(
+    defaultInventoryItemId ? String(defaultInventoryItemId) : inventoryItems[0] ? String(inventoryItems[0].id) : ""
+  );
 
   const selectedItem = useMemo(
     () => inventoryItems.find((item) => String(item.id) === selectedItemId) ?? null,
@@ -25,11 +29,10 @@ export function SupplyIntakeForm({
   return (
     <section className="surface-card rounded-[32px] p-5">
       <div className="border-b border-[#EEF2F6] pb-4">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Supplies Intake</p>
+        <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Supply Resupply</p>
         <h2 className="mt-2 text-xl font-semibold">Receive packaging and tracked supplies</h2>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6B7280]">
-          Use this flow when stock physically arrives. Supply intake creates a procurement receipt and posts the restock
-          into tracked inventory.
+          Use this when stock physically arrives. Saving here also adds the quantity into tracked inventory.
         </p>
       </div>
 
@@ -128,13 +131,12 @@ export function SupplyIntakeForm({
           </label>
 
           <button type="submit" className="rounded-2xl bg-[#111418] px-4 py-2.5 text-sm font-semibold text-white">
-            Receive stock
+            Save resupply
           </button>
         </form>
       ) : (
         <div className="mt-4 rounded-[24px] bg-[#F8FAFB] px-4 py-5 text-sm leading-6 text-[#6B7280]">
-          No tracked supply items are available yet. Add or activate supply items in inventory setup before using this
-          intake flow.
+          No tracked supply items are available yet. Add or activate supply items in inventory before using this form.
         </div>
       )}
     </section>

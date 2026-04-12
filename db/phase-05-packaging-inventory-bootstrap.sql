@@ -55,7 +55,8 @@ join public.inventory_items ii
       'beef_ribs_350g',
       'chicken_half',
       'chicken_quarter',
-      'goat_chops'
+      'goat_ribs_350g',
+      'goat_chunks_350g'
     ) then 'clamcraft_box_unit'
   end
 where mi.code in (
@@ -63,7 +64,8 @@ where mi.code in (
   'beef_chunks_350g',
   'chicken_half',
   'chicken_quarter',
-  'goat_chops'
+  'goat_ribs_350g',
+  'goat_chunks_350g'
 )
 on conflict (menu_item_id, inventory_item_id) do update
 set

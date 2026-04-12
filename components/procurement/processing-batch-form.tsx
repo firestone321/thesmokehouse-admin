@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { processProcurementReceiptToFinishedStockAction } from "@/lib/ops/actions";
 import { ProcurementActivityRecord, ProcurementPortionOption } from "@/lib/ops/types";
+import { getAllowedPortionCodesForReceipt, getExpectedYieldEstimate } from "@/lib/ops/yield";
 
 function formatPortionLabel(option: ProcurementPortionOption) {
   return option.portionLabel ? `${option.name} (${option.portionLabel})` : option.name;
@@ -17,6 +18,7 @@ export function ProcessingBatchForm({
 }) {
   const [selectedReceiptId, setSelectedReceiptId] = useState<string>(proteinReceipts[0] ? String(proteinReceipts[0].id) : "");
   const [selectedPortionId, setSelectedPortionId] = useState<string>("");
+  const [quantityProduced, setQuantityProduced] = useState<string>("");
 
   const selectedReceipt = useMemo(
     () => proteinReceipts.find((receipt) => String(receipt.id) === selectedReceiptId) ?? null,
@@ -28,8 +30,8 @@ export function ProcessingBatchForm({
       return [];
     }
 
-    const proteinCode = selectedReceipt.proteinCode === "whole_chicken" ? "chicken" : selectedReceipt.proteinCode;
-    return portionOptions.filter((option) => option.proteinCode === proteinCode);
+    const allowedPortionCodes = new Set(getAllowedPortionCodesForReceipt(selectedReceipt.proteinCode));
+    return portionOptions.filter((option) => allowedPortionCodes.has(option.code));
   }, [portionOptions, selectedReceipt]);
 
   useEffect(() => {
@@ -39,14 +41,22 @@ export function ProcessingBatchForm({
   }, [filteredPortionOptions, selectedPortionId]);
 
   const selectedPortion = filteredPortionOptions.find((option) => String(option.id) === selectedPortionId) ?? null;
-  const remainingChickenPlan =
-    selectedReceipt?.proteinCode === "whole_chicken" && selectedPortion
-      ? selectedPortion.code === "chicken_half"
-        ? Math.max(0, selectedReceipt.sellableHalves - selectedReceipt.processedHalves)
-        : selectedPortion.code === "chicken_quarter"
-          ? Math.max(0, selectedReceipt.sellableQuarters - selectedReceipt.processedQuarters)
-          : 0
-      : null;
+  const expectedYield = useMemo(
+    () =>
+      selectedReceipt?.proteinCode && selectedPortion
+        ? getExpectedYieldEstimate({
+          proteinCode: selectedReceipt.proteinCode,
+          quantityReceived: selectedReceipt.quantityReceived,
+          unitName: selectedReceipt.unitName,
+          portion: selectedPortion
+          })
+        : null,
+    [selectedPortion, selectedReceipt]
+  );
+
+  useEffect(() => {
+    setQuantityProduced(expectedYield ? String(expectedYield.quantity) : "");
+  }, [expectedYield, selectedReceiptId, selectedPortionId]);
 
   return (
     <section className="surface-card rounded-[32px] p-5">
@@ -100,9 +110,10 @@ export function ProcessingBatchForm({
                 type="number"
                 min="1"
                 step="1"
-                max={remainingChickenPlan !== null ? String(remainingChickenPlan) : undefined}
                 name="quantity_produced"
                 required
+                value={quantityProduced}
+                onChange={(event) => setQuantityProduced(event.target.value)}
                 placeholder="Finished portions added to frozen stock"
                 className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
               />
@@ -119,29 +130,29 @@ export function ProcessingBatchForm({
                 <p className="mt-2 text-sm leading-6 text-[#6B7280]">{selectedReceipt.supplierName}</p>
               </article>
               <article className="rounded-[22px] bg-[#F8FAFB] px-4 py-4">
-                <p className="text-[10px] uppercase tracking-[0.18em] text-[#9CA3AF]">
-                  {selectedReceipt.proteinCode === "whole_chicken" ? "Chicken plan left to process" : "Production guidance"}
-                </p>
-                {selectedReceipt.proteinCode === "whole_chicken" ? (
+                <p className="text-[10px] uppercase tracking-[0.18em] text-[#9CA3AF]">Processing guidance</p>
+                {expectedYield ? (
                   <>
-                    <p className="mt-2 text-xl font-semibold text-[#111418]">
-                      {selectedPortion?.code === "chicken_half"
-                        ? `${Math.max(0, selectedReceipt.sellableHalves - selectedReceipt.processedHalves)} halves remaining`
-                        : `${Math.max(0, selectedReceipt.sellableQuarters - selectedReceipt.processedQuarters)} quarters remaining`}
-                    </p>
+                    <p className="mt-2 text-xl font-semibold text-[#111418]">{expectedYield.quantity} expected portions</p>
+                    <p className="mt-2 text-sm leading-6 text-[#6B7280]">Calculated from {expectedYield.detail}.</p>
                     <p className="mt-2 text-sm leading-6 text-[#6B7280]">
-                      Already processed: {selectedReceipt.processedHalves} halves, {selectedReceipt.processedQuarters} quarters
+                      The quantity field is prefilled with this estimate, and staff can still edit it to match the real output.
                     </p>
                   </>
                 ) : (
                   <>
                     <p className="mt-2 text-xl font-semibold text-[#111418]">Manual yield recording</p>
                     <p className="mt-2 text-sm leading-6 text-[#6B7280]">
-                      Enter the real finished portions that came out of processing. Beef and goat stay manual until exact
-                      kitchen yield rules are finalized.
+                      Enter the real finished portions that came out of processing. Automatic estimates only appear when
+                      the selected receipt and portion size make the math clear.
                     </p>
                   </>
                 )}
+                {selectedReceipt.proteinCode === "whole_chicken" ? (
+                  <p className="mt-2 text-sm leading-6 text-[#6B7280]">
+                    Already processed from this receipt: {selectedReceipt.processedHalves} halves and {selectedReceipt.processedQuarters} quarters.
+                  </p>
+                ) : null}
               </article>
             </div>
           ) : null}

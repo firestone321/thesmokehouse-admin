@@ -2,7 +2,15 @@ export const orderStatuses = ["new", "confirmed", "in_prep", "on_smoker", "ready
 export const prepTypes = ["smoked", "packed", "drink"] as const;
 export const movementTypes = ["adjustment", "restock", "usage", "waste"] as const;
 export const procurementIntakeTypes = ["protein", "supply"] as const;
-export const proteinProcurementCodes = ["beef", "whole_chicken", "goat"] as const;
+export const proteinProcurementCodes = [
+  "beef_ribs",
+  "beef_chunks",
+  "whole_chicken",
+  "goat_ribs",
+  "goat_chunks",
+  "beef",
+  "goat"
+] as const;
 
 export type OrderStatus = (typeof orderStatuses)[number];
 export type PrepType = (typeof prepTypes)[number];
@@ -100,6 +108,21 @@ export interface ProcurementPageData {
   recentActivity: ProcurementActivityRecord[];
   finishedStock: FinishedStockRecord[];
   recentProcessingBatches: ProcessingBatchRecord[];
+}
+
+export interface ProteinReceiptSummary {
+  proteinCode: ProteinProcurementCode;
+  itemName: string;
+  totalReceived: number;
+  unitName: string;
+  receiptCount: number;
+  expectedPortions: Array<{
+    portionCode: string;
+    portionName: string;
+    portionLabel: string | null;
+    expectedQuantity: number;
+    detail: string;
+  }>;
 }
 
 export interface DailyStockRow {

@@ -43,10 +43,10 @@ export default function manifest(): MetadataRoute.Manifest {
         description: "Review and update customer orders."
       },
       {
-        name: "Procurement",
-        short_name: "Procurement",
+        name: "Resupplies",
+        short_name: "Resupplies",
         url: "/procurement",
-        description: "Record deliveries and receiving activity."
+        description: "Record meat deliveries and receiving activity."
       },
       {
         name: "Inventory",
