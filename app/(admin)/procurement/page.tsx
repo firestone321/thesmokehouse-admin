@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { SchemaSetupNotice } from "@/components/admin/schema-setup-notice";
 import { ProcessingBatchForm } from "@/components/procurement/processing-batch-form";
 import { ProteinIntakeForm } from "@/components/procurement/protein-intake-form";
@@ -57,6 +58,12 @@ export default async function ProcurementPage() {
               <p className="text-[10px] uppercase tracking-[0.18em] text-[#9CA3AF]">Recent deliveries</p>
               <p className="mt-1 font-semibold text-[#111418]">{data.recentActivity.length}</p>
             </div>
+            <Link
+              href="/suppliers"
+              className="rounded-[22px] border border-[#D7DDE4] bg-white px-4 py-3 font-semibold text-[#111418] sm:col-span-2"
+            >
+              Manage suppliers
+            </Link>
           </div>
         </div>
       </section>
@@ -86,7 +93,7 @@ export default async function ProcurementPage() {
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="space-y-4">
-          <ProteinIntakeForm defaultDeliveryDate={data.serviceDate} />
+          <ProteinIntakeForm defaultDeliveryDate={data.serviceDate} suppliers={data.suppliers} />
           <ProcessingBatchForm portionOptions={data.portionOptions} proteinReceipts={proteinReceipts} />
         </div>
 
@@ -104,6 +111,9 @@ export default async function ProcurementPage() {
                 Processing is where pre-roasted meat becomes finished frozen stock that can later be thawed and lightly grilled for pickup.
               </p>
               <p className="rounded-[22px] bg-[#F8FAFB] px-4 py-4">
+                Supplier, batch, butchered date, abattoir, and inspection details now travel with each meat receipt so traceability starts at intake.
+              </p>
+              <p className="rounded-[22px] bg-[#F8FAFB] px-4 py-4">
                 Supply restocks now happen on the <span className="font-semibold text-[#111418]">Inventory</span> page so the stock change and movement history stay together.
               </p>
             </div>
@@ -116,13 +126,13 @@ export default async function ProcurementPage() {
                 <h2 className="mt-2 text-xl font-semibold">Latest receipts</h2>
               </div>
               <span className="rounded-full bg-[#F3F4F6] px-3 py-1 text-xs font-semibold text-[#4B5563]">
-                {data.recentActivity.length}
+                {proteinReceipts.length}
               </span>
             </div>
 
             <div className="mt-4 space-y-3">
-              {data.recentActivity.length > 0 ? (
-                data.recentActivity.map((entry) => (
+              {proteinReceipts.length > 0 ? (
+                proteinReceipts.map((entry) => (
                   <article key={entry.id} className="rounded-[22px] bg-[#F8FAFB] px-4 py-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
@@ -133,6 +143,9 @@ export default async function ProcurementPage() {
                           </span>
                         </div>
                         <p className="mt-1 text-sm text-[#6B7280]">{entry.supplierName}</p>
+                        {entry.batchNumber ? (
+                          <p className="mt-1 text-sm text-[#6B7280]">Batch {entry.batchNumber}</p>
+                        ) : null}
                       </div>
                       <p className="text-sm text-[#6B7280]">{formatDateTime(entry.createdAt)}</p>
                     </div>
@@ -146,10 +159,29 @@ export default async function ProcurementPage() {
                         <p className="text-[10px] uppercase tracking-[0.18em] text-[#9CA3AF]">Delivery date</p>
                         <p className="mt-1 font-semibold text-[#111418]">{formatServiceDate(entry.deliveryDate)}</p>
                       </div>
+                      {entry.butcheredOn ? (
+                        <div className="rounded-[18px] bg-white px-3 py-3">
+                          <p className="text-[10px] uppercase tracking-[0.18em] text-[#9CA3AF]">Butchered</p>
+                          <p className="mt-1 font-semibold text-[#111418]">{formatServiceDate(entry.butcheredOn)}</p>
+                        </div>
+                      ) : null}
+                      {entry.abattoirName ? (
+                        <div className="rounded-[18px] bg-white px-3 py-3">
+                          <p className="text-[10px] uppercase tracking-[0.18em] text-[#9CA3AF]">Abattoir</p>
+                          <p className="mt-1 font-semibold text-[#111418]">{entry.abattoirName}</p>
+                        </div>
+                      ) : null}
                     </div>
 
                     {entry.unitCost !== null ? (
                       <p className="mt-3 text-sm text-[#6B7280]">Unit cost {formatCurrency(entry.unitCost)}</p>
+                    ) : null}
+
+                    {entry.vetStampNumber || entry.inspectionOfficerName ? (
+                      <div className="mt-3 rounded-[18px] border border-[#E4E7EB] bg-white px-3 py-3 text-sm text-[#6B7280]">
+                        {entry.vetStampNumber ? <p>Vet stamp: {entry.vetStampNumber}</p> : null}
+                        {entry.inspectionOfficerName ? <p>Inspection officer: {entry.inspectionOfficerName}</p> : null}
+                      </div>
                     ) : null}
 
                     {entry.proteinCode === "whole_chicken" ? (
@@ -222,6 +254,10 @@ export default async function ProcurementPage() {
                       <div>
                         <h3 className="text-base font-semibold text-[#111418]">{batch.portionName}</h3>
                         <p className="mt-1 text-sm text-[#6B7280]">{batch.receiptItemName}</p>
+                        <p className="mt-1 text-sm text-[#6B7280]">
+                          {batch.receiptSupplierName}
+                          {batch.receiptBatchNumber ? ` | Batch ${batch.receiptBatchNumber}` : ""}
+                        </p>
                       </div>
                       <p className="text-sm text-[#6B7280]">{formatDateTime(batch.createdAt)}</p>
                     </div>

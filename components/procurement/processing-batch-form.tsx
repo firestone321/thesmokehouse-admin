@@ -82,7 +82,9 @@ export function ProcessingBatchForm({
               >
                 {proteinReceipts.map((receipt) => (
                   <option key={receipt.id} value={receipt.id}>
-                    {receipt.itemName} | {receipt.supplierName} | {receipt.deliveryDate}
+                    {receipt.itemName}
+                    {receipt.batchNumber ? ` | ${receipt.batchNumber}` : ""}
+                    {` | ${receipt.supplierName} | ${receipt.deliveryDate}`}
                   </option>
                 ))}
               </select>
@@ -128,6 +130,12 @@ export function ProcessingBatchForm({
                   {selectedReceipt.quantityReceived.toFixed(2)} {selectedReceipt.unitName}
                 </p>
                 <p className="mt-2 text-sm leading-6 text-[#6B7280]">{selectedReceipt.supplierName}</p>
+                {selectedReceipt.batchNumber ? (
+                  <p className="mt-1 text-sm leading-6 text-[#6B7280]">Batch {selectedReceipt.batchNumber}</p>
+                ) : null}
+                {selectedReceipt.abattoirName ? (
+                  <p className="mt-1 text-sm leading-6 text-[#6B7280]">{selectedReceipt.abattoirName}</p>
+                ) : null}
               </article>
               <article className="rounded-[22px] bg-[#F8FAFB] px-4 py-4">
                 <p className="text-[10px] uppercase tracking-[0.18em] text-[#9CA3AF]">Processing guidance</p>

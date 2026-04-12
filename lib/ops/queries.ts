@@ -17,7 +17,10 @@ import {
   ProcurementInventoryOption,
   ProcurementPageData,
   ProcurementPortionOption,
+  ProcurementSupplierOption,
   ProteinReceiptSummary,
+  SupplierPageData,
+  SupplierRecord,
   OrderDetailRecord,
   OrderItemRecord,
   OrderListItem,
@@ -35,7 +38,8 @@ const procurementMigrationFiles = [
   "db/phase-09-menu-item-images.sql",
   "db/phase-10-procurement.sql",
   "db/phase-11-finished-stock.sql",
-  "db/phase-12-split-red-meat-cuts.sql"
+  "db/phase-12-split-red-meat-cuts.sql",
+  "db/phase-13-supplier-traceability-and-sides.sql"
 ];
 
 function ensureNoError(error: { message: string } | null, context: string, migrationFiles?: string[]) {
@@ -119,9 +123,15 @@ function mapProcurementActivity(
     intakeType: row.intake_type,
     proteinCode: row.protein_code,
     inventoryItemId: row.inventory_item_id ? normalizeNumber(row.inventory_item_id) : null,
+    supplierId: row.supplier_id ? normalizeNumber(row.supplier_id) : null,
     itemName: row.item_name,
     supplierName: row.supplier_name,
+    batchNumber: row.batch_number,
     deliveryDate: row.delivery_date,
+    butcheredOn: row.butchered_on,
+    abattoirName: row.abattoir_name,
+    vetStampNumber: row.vet_stamp_number,
+    inspectionOfficerName: row.inspection_officer_name,
     quantityReceived,
     unitName: row.unit_name,
     unitCost: row.unit_cost === null ? null : normalizeNumber(row.unit_cost),
@@ -157,6 +167,8 @@ function mapProcessingBatch(row: any): ProcessingBatchRecord {
     id: normalizeNumber(row.id),
     procurementReceiptId: normalizeNumber(row.procurement_receipt_id),
     receiptItemName: row.procurement_receipts?.item_name ?? "Receipt",
+    receiptBatchNumber: row.procurement_receipts?.batch_number ?? null,
+    receiptSupplierName: row.procurement_receipts?.supplier_name ?? "Unknown supplier",
     portionTypeId: normalizeNumber(row.portion_type_id),
     portionCode: row.portion_types?.code ?? "",
     portionName: row.portion_types?.portion_label
@@ -165,6 +177,20 @@ function mapProcessingBatch(row: any): ProcessingBatchRecord {
     quantityProduced: normalizeNumber(row.quantity_produced),
     note: row.note,
     createdAt: row.created_at
+  };
+}
+
+function mapSupplier(row: any): SupplierRecord {
+  return {
+    id: normalizeNumber(row.id),
+    name: row.name,
+    phoneNumber: row.phone_number,
+    licenseNumber: row.license_number,
+    supplierType: row.supplier_type,
+    defaultAbattoirName: row.default_abattoir_name,
+    isActive: Boolean(row.is_active),
+    notes: row.notes,
+    updatedAt: row.updated_at
   };
 }
 
@@ -526,6 +552,7 @@ export async function getProcurementPageData(): Promise<ProcurementPageData> {
 
   const [
     inventoryItemsResponse,
+    suppliersResponse,
     portionOptionsResponse,
     finishedStockResponse,
     recentActivityResponse,
@@ -535,6 +562,12 @@ export async function getProcurementPageData(): Promise<ProcurementPageData> {
       .from("inventory_items")
       .select("id, code, name, unit_name, current_quantity, reorder_threshold")
       .eq("is_active", true)
+      .order("name", { ascending: true }),
+    supabase
+      .from("suppliers")
+      .select("id, name, phone_number, license_number, supplier_type, default_abattoir_name")
+      .eq("is_active", true)
+      .in("supplier_type", ["protein", "mixed"])
       .order("name", { ascending: true }),
     supabase
       .from("portion_types")
@@ -573,7 +606,7 @@ export async function getProcurementPageData(): Promise<ProcurementPageData> {
     supabase
       .from("procurement_receipts")
       .select(
-        "id, intake_type, protein_code, inventory_item_id, item_name, supplier_name, delivery_date, quantity_received, unit_name, unit_cost, note, allocated_to_halves, allocated_to_quarters, created_at"
+        "id, intake_type, protein_code, inventory_item_id, supplier_id, item_name, supplier_name, batch_number, delivery_date, butchered_on, abattoir_name, vet_stamp_number, inspection_officer_name, quantity_received, unit_name, unit_cost, note, allocated_to_halves, allocated_to_quarters, created_at"
       )
       .order("created_at", { ascending: false })
       .limit(12),
@@ -593,7 +626,9 @@ export async function getProcurementPageData(): Promise<ProcurementPageData> {
           portion_label
         ),
         procurement_receipts (
-          item_name
+          item_name,
+          batch_number,
+          supplier_name
         )
       `
       )
@@ -602,6 +637,7 @@ export async function getProcurementPageData(): Promise<ProcurementPageData> {
   ]);
 
   ensureNoError(inventoryItemsResponse.error, "Unable to load tracked supply items");
+  ensureNoError(suppliersResponse.error, "Unable to load suppliers", procurementMigrationFiles);
   ensureNoError(portionOptionsResponse.error, "Unable to load sellable portion options");
   ensureNoError(finishedStockResponse.error, "Unable to load finished frozen stock", procurementMigrationFiles);
   ensureNoError(recentActivityResponse.error, "Unable to load procurement activity", procurementMigrationFiles);
@@ -614,6 +650,15 @@ export async function getProcurementPageData(): Promise<ProcurementPageData> {
     unitName: item.unit_name,
     currentQuantity: normalizeNumber(item.current_quantity),
     reorderThreshold: normalizeNumber(item.reorder_threshold)
+  }));
+
+  const suppliers: ProcurementSupplierOption[] = (suppliersResponse.data ?? []).map((supplier: any) => ({
+    id: normalizeNumber(supplier.id),
+    name: supplier.name,
+    phoneNumber: supplier.phone_number,
+    licenseNumber: supplier.license_number,
+    supplierType: supplier.supplier_type,
+    defaultAbattoirName: supplier.default_abattoir_name
   }));
 
   const portionOptions: ProcurementPortionOption[] = (portionOptionsResponse.data ?? []).map((portion: any) => ({
@@ -645,6 +690,7 @@ export async function getProcurementPageData(): Promise<ProcurementPageData> {
   return {
     serviceDate,
     inventoryItems,
+    suppliers,
     portionOptions,
     finishedStock,
     recentActivity: (recentActivityResponse.data ?? []).map((row: any) => {
@@ -656,6 +702,28 @@ export async function getProcurementPageData(): Promise<ProcurementPageData> {
       });
     }),
     recentProcessingBatches
+  };
+}
+
+export async function getSuppliersPageData(selectedSupplierId?: string | null): Promise<SupplierPageData> {
+  noStore();
+
+  const supabase = createAdminSupabaseClient();
+  const { data, error } = await supabase
+    .from("suppliers")
+    .select("id, name, phone_number, license_number, supplier_type, default_abattoir_name, is_active, notes, updated_at")
+    .order("is_active", { ascending: false })
+    .order("name", { ascending: true });
+
+  ensureNoError(error, "Unable to load suppliers", procurementMigrationFiles);
+
+  const suppliers = (data ?? []).map(mapSupplier);
+  const normalizedSelectedId = selectedSupplierId ? normalizeNumber(selectedSupplierId) : null;
+  const selectedSupplier = suppliers.find((supplier) => supplier.id === normalizedSelectedId) ?? null;
+
+  return {
+    suppliers,
+    selectedSupplier
   };
 }
 

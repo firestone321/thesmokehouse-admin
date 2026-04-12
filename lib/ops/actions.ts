@@ -22,6 +22,7 @@ function requiredText(formData: FormData, key: string) {
 function revalidateOperationalPaths() {
   revalidatePath("/dashboard");
   revalidatePath("/procurement");
+  revalidatePath("/suppliers");
   revalidatePath("/inventory");
   revalidatePath("/menu");
   revalidatePath("/orders");
@@ -279,9 +280,14 @@ export async function adjustInventoryItemAction(formData: FormData) {
 
 export async function recordProteinProcurementAction(formData: FormData) {
   const supabase = createAdminSupabaseClient();
+  const supplierId = toInteger(formData.get("supplier_id"));
   const proteinCode = requiredText(formData, "protein_code");
-  const supplierName = requiredText(formData, "supplier_name");
+  const batchNumber = requiredText(formData, "batch_number");
   const deliveryDate = requiredText(formData, "delivery_date");
+  const butcheredOn = requiredText(formData, "butchered_on");
+  const abattoirName = requiredText(formData, "abattoir_name");
+  const vetStampNumber = requiredText(formData, "vet_stamp_number");
+  const inspectionOfficerName = requiredText(formData, "inspection_officer_name");
   const quantityReceived = toNumber(formData.get("quantity_received"));
   const unitName = requiredText(formData, "unit_name");
   const unitCost = toOptionalText(formData.get("unit_cost"));
@@ -293,8 +299,14 @@ export async function recordProteinProcurementAction(formData: FormData) {
     p_intake_type: "protein",
     p_protein_code: proteinCode,
     p_inventory_item_id: null,
-    p_supplier_name: supplierName,
+    p_supplier_id: supplierId,
+    p_supplier_name: null,
+    p_batch_number: batchNumber,
     p_delivery_date: deliveryDate,
+    p_butchered_on: butcheredOn,
+    p_abattoir_name: abattoirName,
+    p_vet_stamp_number: vetStampNumber,
+    p_inspection_officer_name: inspectionOfficerName,
     p_quantity_received: quantityReceived,
     p_unit_name: unitName,
     p_unit_cost: unitCost ? toNumber(unitCost) : null,
@@ -324,8 +336,14 @@ export async function recordSupplyProcurementAction(formData: FormData) {
     p_intake_type: "supply",
     p_protein_code: null,
     p_inventory_item_id: inventoryItemId,
+    p_supplier_id: null,
     p_supplier_name: supplierName,
+    p_batch_number: null,
     p_delivery_date: deliveryDate,
+    p_butchered_on: null,
+    p_abattoir_name: null,
+    p_vet_stamp_number: null,
+    p_inspection_officer_name: null,
     p_quantity_received: quantityReceived,
     p_unit_name: null,
     p_unit_cost: unitCost ? toNumber(unitCost) : null,
@@ -340,6 +358,40 @@ export async function recordSupplyProcurementAction(formData: FormData) {
 
   revalidateOperationalPaths();
   redirect(`/inventory?item=${inventoryItemId}`);
+}
+
+export async function saveSupplierAction(formData: FormData) {
+  const supabase = createAdminSupabaseClient();
+  const supplierId = String(formData.get("supplier_id") ?? "").trim();
+  const payload = {
+    name: requiredText(formData, "name"),
+    phone_number: toOptionalText(formData.get("phone_number")),
+    license_number: toOptionalText(formData.get("license_number")),
+    supplier_type: requiredText(formData, "supplier_type"),
+    default_abattoir_name: toOptionalText(formData.get("default_abattoir_name")),
+    is_active: formData.get("is_active") === "on",
+    notes: toOptionalText(formData.get("notes"))
+  };
+
+  if (supplierId) {
+    const { error } = await supabase.from("suppliers").update(payload).eq("id", Number(supplierId));
+
+    if (error) {
+      throw new Error(`Unable to update supplier: ${error.message}`);
+    }
+
+    revalidateOperationalPaths();
+    redirect(`/suppliers?supplier=${supplierId}`);
+  }
+
+  const { data, error } = await supabase.from("suppliers").insert(payload).select("id").single();
+
+  if (error || !data) {
+    throw new Error(`Unable to create supplier: ${error?.message ?? "Unknown error"}`);
+  }
+
+  revalidateOperationalPaths();
+  redirect(`/suppliers?supplier=${data.id}`);
 }
 
 export async function processProcurementReceiptToFinishedStockAction(formData: FormData) {

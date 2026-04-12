@@ -9,6 +9,7 @@ export const adminNavItems: AdminNavItem[] = [
   { label: "Orders", href: "/orders", description: "Tickets, status flow, and timeline" },
   { label: "Menu", href: "/menu", description: "Sellable items and availability" },
   { label: "Resupplies", href: "/procurement", description: "Protein receiving and processing" },
+  { label: "Suppliers", href: "/suppliers", description: "Supplier master records and traceability" },
   { label: "Inventory", href: "/inventory", description: "Resupplies, stock, and movement history" },
   { label: "Kitchen Queue", href: "/kitchen-queue", description: "Prep and smoker load plan" },
   { label: "Staff", href: "/staff", description: "Staff planning stays deferred" },

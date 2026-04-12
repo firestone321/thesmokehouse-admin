@@ -24,7 +24,7 @@ export function getAllowedPortionCodesForReceipt(proteinCode: ProteinProcurement
     case "beef_ribs":
       return ["beef_ribs_350g"];
     case "beef_chunks":
-      return ["beef_chunks_350g"];
+      return ["beef_chunks_300g"];
     case "whole_chicken":
       return ["chicken_half", "chicken_quarter"];
     case "goat_ribs":
@@ -32,7 +32,7 @@ export function getAllowedPortionCodesForReceipt(proteinCode: ProteinProcurement
     case "goat_chunks":
       return ["goat_chunks_350g"];
     case "beef":
-      return ["beef_ribs_350g", "beef_chunks_350g"];
+      return ["beef_ribs_350g", "beef_chunks_300g"];
     case "goat":
       return ["goat_ribs_350g", "goat_chunks_350g"];
     default:

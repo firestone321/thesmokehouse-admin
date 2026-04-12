@@ -2,6 +2,7 @@ export const orderStatuses = ["new", "confirmed", "in_prep", "on_smoker", "ready
 export const prepTypes = ["smoked", "packed", "drink"] as const;
 export const movementTypes = ["adjustment", "restock", "usage", "waste"] as const;
 export const procurementIntakeTypes = ["protein", "supply"] as const;
+export const supplierTypes = ["protein", "supply", "mixed"] as const;
 export const proteinProcurementCodes = [
   "beef_ribs",
   "beef_chunks",
@@ -16,6 +17,7 @@ export type OrderStatus = (typeof orderStatuses)[number];
 export type PrepType = (typeof prepTypes)[number];
 export type InventoryMovementType = (typeof movementTypes)[number];
 export type ProcurementIntakeType = (typeof procurementIntakeTypes)[number];
+export type SupplierType = (typeof supplierTypes)[number];
 export type ProteinProcurementCode = (typeof proteinProcurementCodes)[number];
 
 export interface InventoryItemRecord {
@@ -54,9 +56,15 @@ export interface ProcurementActivityRecord {
   intakeType: ProcurementIntakeType;
   proteinCode: ProteinProcurementCode | null;
   inventoryItemId: number | null;
+  supplierId: number | null;
   itemName: string;
   supplierName: string;
+  batchNumber: string | null;
   deliveryDate: string;
+  butcheredOn: string | null;
+  abattoirName: string | null;
+  vetStampNumber: string | null;
+  inspectionOfficerName: string | null;
   quantityReceived: number;
   unitName: string;
   unitCost: number | null;
@@ -93,6 +101,8 @@ export interface ProcessingBatchRecord {
   id: number;
   procurementReceiptId: number;
   receiptItemName: string;
+  receiptBatchNumber: string | null;
+  receiptSupplierName: string;
   portionTypeId: number;
   portionCode: string;
   portionName: string;
@@ -101,13 +111,40 @@ export interface ProcessingBatchRecord {
   createdAt: string;
 }
 
+export interface SupplierRecord {
+  id: number;
+  name: string;
+  phoneNumber: string | null;
+  licenseNumber: string | null;
+  supplierType: SupplierType;
+  defaultAbattoirName: string | null;
+  isActive: boolean;
+  notes: string | null;
+  updatedAt: string;
+}
+
+export interface ProcurementSupplierOption {
+  id: number;
+  name: string;
+  phoneNumber: string | null;
+  licenseNumber: string | null;
+  supplierType: SupplierType;
+  defaultAbattoirName: string | null;
+}
+
 export interface ProcurementPageData {
   serviceDate: string;
   inventoryItems: ProcurementInventoryOption[];
+  suppliers: ProcurementSupplierOption[];
   portionOptions: ProcurementPortionOption[];
   recentActivity: ProcurementActivityRecord[];
   finishedStock: FinishedStockRecord[];
   recentProcessingBatches: ProcessingBatchRecord[];
+}
+
+export interface SupplierPageData {
+  suppliers: SupplierRecord[];
+  selectedSupplier: SupplierRecord | null;
 }
 
 export interface ProteinReceiptSummary {
