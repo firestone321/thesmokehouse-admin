@@ -38,7 +38,7 @@ export function SupplyIntakeForm({
 
       {inventoryItems.length > 0 ? (
         <form action={recordSupplyProcurementAction} className="mt-4 space-y-4">
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid gap-3">
             <label className="space-y-2 text-sm text-[#6B7280]">
               <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Tracked supply item</span>
               <select

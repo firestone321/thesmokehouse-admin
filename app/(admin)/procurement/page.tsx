@@ -2,6 +2,7 @@ import Link from "next/link";
 import { SchemaSetupNotice } from "@/components/admin/schema-setup-notice";
 import { ProcessingBatchForm } from "@/components/procurement/processing-batch-form";
 import { ProteinIntakeForm } from "@/components/procurement/protein-intake-form";
+import { SupplyIntakeForm } from "@/components/procurement/supply-intake-form";
 import { OperationsSchemaMissingError } from "@/lib/ops/errors";
 import { getProcurementPageData } from "@/lib/ops/queries";
 import { formatCurrency, formatDateTime, formatServiceDate } from "@/lib/ops/utils";
@@ -45,8 +46,8 @@ export default async function ProcurementPage() {
             <p className="text-[11px] uppercase tracking-[0.22em] text-[#6B7280]">Resupplies</p>
             <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">Protein receiving and processing</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6B7280]">
-              Use this page for raw meat receiving and processing. Supply restocks now live on the Inventory page so
-              stock changes are visible in one place.
+              Use this page for raw meat receiving, finished-stock processing, and non-consumable resupplies such as
+              Clamcraft boxes and butcher paper.
             </p>
           </div>
 
@@ -99,26 +100,7 @@ export default async function ProcurementPage() {
         </div>
 
         <aside className="space-y-4">
-          <section className="surface-card rounded-[32px] p-5">
-            <div className="border-b border-[#EEF2F6] pb-4">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">How It Works</p>
-              <h2 className="mt-2 text-xl font-semibold">What happens after you save</h2>
-            </div>
-            <div className="mt-4 space-y-3 text-sm leading-6 text-[#6B7280]">
-              <p className="rounded-[22px] bg-[#F8FAFB] px-4 py-4">
-                Protein receipts are logged here first so raw meat intake is captured before the batch is processed.
-              </p>
-              <p className="rounded-[22px] bg-[#F8FAFB] px-4 py-4">
-                Processing is where pre-roasted meat becomes finished frozen stock that can later be thawed and lightly grilled for pickup.
-              </p>
-              <p className="rounded-[22px] bg-[#F8FAFB] px-4 py-4">
-                Supplier, batch, butchered date, abattoir, and inspection details now travel with each meat receipt so traceability starts at intake.
-              </p>
-              <p className="rounded-[22px] bg-[#F8FAFB] px-4 py-4">
-                Supply restocks now happen on the <span className="font-semibold text-[#111418]">Inventory</span> page so the stock change and movement history stay together.
-              </p>
-            </div>
-          </section>
+          <SupplyIntakeForm defaultDeliveryDate={data.serviceDate} inventoryItems={data.inventoryItems} />
 
           <section className="surface-card rounded-[32px] p-5">
             <div className="flex items-end justify-between gap-3 border-b border-[#EEF2F6] pb-4">

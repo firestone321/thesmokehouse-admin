@@ -462,10 +462,43 @@ export async function createSupplierInlineAction(formData: FormData) {
 export async function processProcurementReceiptToFinishedStockAction(formData: FormData) {
   const supabase = createAdminSupabaseClient();
   const procurementReceiptId = toInteger(formData.get("procurement_receipt_id"));
+  const birdsAllocatedToHalves = toInteger(formData.get("birds_allocated_to_halves"), 0);
+  const birdsAllocatedToQuarters = toInteger(formData.get("birds_allocated_to_quarters"), 0);
+  const note = toOptionalText(formData.get("note"));
+
+  const { data: receipt, error: receiptError } = await supabase
+    .from("procurement_receipts")
+    .select("protein_code")
+    .eq("id", procurementReceiptId)
+    .maybeSingle();
+
+  if (receiptError) {
+    throw new Error(`Unable to load procurement receipt for processing: ${receiptError.message}`);
+  }
+
+  if (!receipt) {
+    throw new Error(`Unable to find procurement receipt ${procurementReceiptId}`);
+  }
+
+  if (receipt.protein_code === "whole_chicken") {
+    const { error } = await supabase.rpc("process_whole_chicken_receipt_allocation", {
+      p_procurement_receipt_id: procurementReceiptId,
+      p_birds_allocated_to_halves: birdsAllocatedToHalves,
+      p_birds_allocated_to_quarters: birdsAllocatedToQuarters,
+      p_note: note
+    });
+
+    if (error) {
+      throw new Error(`Unable to process whole chicken receipt allocation: ${error.message}`);
+    }
+
+    revalidateOperationalPaths();
+    redirect("/procurement");
+  }
+
   const portionTypeId = toInteger(formData.get("portion_type_id"));
   const quantityProduced = toInteger(formData.get("quantity_produced"));
   const postRoastPackedWeight = toOptionalText(formData.get("post_roast_packed_weight_kg"));
-  const note = toOptionalText(formData.get("note"));
 
   const { error } = await supabase.rpc("process_procurement_receipt_to_finished_stock", {
     p_procurement_receipt_id: procurementReceiptId,
