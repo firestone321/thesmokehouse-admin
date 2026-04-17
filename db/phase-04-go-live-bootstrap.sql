@@ -23,56 +23,56 @@ select
   mc.id,
   pt.id,
   case pt.code
-    when 'beef_ribs_350g' then 'Beef ribs'
-    when 'beef_chunks_350g' then 'Beef chunks'
+    when 'beef_ribs_300g' then 'Beef ribs'
+    when 'beef_chunks_300g' then 'Beef chunks'
     when 'chicken_half' then 'Chicken half'
     when 'chicken_quarter' then 'Chicken quarter'
-    when 'goat_ribs_350g' then 'Goat ribs'
-    when 'goat_chunks_350g' then 'Goat chunks'
+    when 'goat_ribs_300g' then 'Goat ribs'
+    when 'goat_chunks_300g' then 'Goat chunks'
     when 'juice' then 'Juice'
   end as name,
   case pt.code
-    when 'beef_ribs_350g' then 'Smoked beef ribs portion.'
-    when 'beef_chunks_350g' then 'Packed beef chunks portion.'
+    when 'beef_ribs_300g' then 'Smoked beef ribs portion.'
+    when 'beef_chunks_300g' then 'Packed beef chunks portion.'
     when 'chicken_half' then 'Half chicken smoked and boxed.'
     when 'chicken_quarter' then 'Quarter chicken smoked and boxed.'
-    when 'goat_ribs_350g' then 'Smoked goat ribs portion.'
-    when 'goat_chunks_350g' then 'Packed goat chunks portion.'
+    when 'goat_ribs_300g' then 'Smoked goat ribs portion.'
+    when 'goat_chunks_300g' then 'Packed goat chunks portion.'
     when 'juice' then 'Fresh juice serving.'
   end as description,
   0 as base_price,
   case pt.code
-    when 'beef_chunks_350g' then 'packed'
-    when 'goat_chunks_350g' then 'packed'
+    when 'beef_chunks_300g' then 'packed'
+    when 'goat_chunks_300g' then 'packed'
     when 'juice' then 'drink'
     else 'smoked'
   end as prep_type,
   false as is_active,
   false as is_available_today,
   case pt.code
-    when 'beef_ribs_350g' then 1
-    when 'beef_chunks_350g' then 2
+    when 'beef_ribs_300g' then 1
+    when 'beef_chunks_300g' then 2
     when 'chicken_half' then 3
     when 'chicken_quarter' then 4
-    when 'goat_ribs_350g' then 5
-    when 'goat_chunks_350g' then 6
+    when 'goat_ribs_300g' then 5
+    when 'goat_chunks_300g' then 6
     when 'juice' then 7
   end as sort_order
 from public.portion_types pt
 join public.menu_categories mc
   on mc.code = case
-    when pt.code in ('beef_ribs_350g', 'beef_chunks_350g') then 'beef'
+    when pt.code in ('beef_ribs_300g', 'beef_chunks_300g') then 'beef'
     when pt.code in ('chicken_half', 'chicken_quarter') then 'chicken'
-    when pt.code in ('goat_ribs_350g', 'goat_chunks_350g') then 'goat'
+    when pt.code in ('goat_ribs_300g', 'goat_chunks_300g') then 'goat'
     when pt.code = 'juice' then 'drinks'
   end
 where pt.code in (
-  'beef_ribs_350g',
-  'beef_chunks_350g',
+  'beef_ribs_300g',
+  'beef_chunks_300g',
   'chicken_half',
   'chicken_quarter',
-  'goat_ribs_350g',
-  'goat_chunks_350g',
+  'goat_ribs_300g',
+  'goat_chunks_300g',
   'juice'
 )
 on conflict (portion_type_id) do update

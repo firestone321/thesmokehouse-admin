@@ -1,71 +1,96 @@
 begin;
 
--- Phase 11: finished stock and processing.
+-- Phase 15: goat 300g normalization.
 -- Purpose:
--- 1. Track finished frozen sellable stock separately from raw procurement receipts.
--- 2. Record processing batches that convert received meat into pre-roasted frozen portions.
--- 3. Allow whole chicken receipts to be processed manually, while still honoring any saved plan when one exists.
+-- 1. Move goat ribs and goat chunks from 350g to 300g.
+-- 2. Keep live portion/menu records aligned with the updated packing direction.
+-- 3. Update processing rules so goat receipts only process into the new 300g sellable codes.
 
-create table if not exists public.finished_stock (
-  portion_type_id bigint primary key references public.portion_types(id) on update cascade on delete restrict,
-  current_quantity integer not null default 0,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  constraint finished_stock_current_quantity_chk check (current_quantity >= 0)
-);
+do $$
+begin
+  if exists (
+    select 1
+    from public.portion_types
+    where code = 'goat_ribs_350g'
+  ) and not exists (
+    select 1
+    from public.portion_types
+    where code = 'goat_ribs_300g'
+  ) then
+    update public.portion_types
+    set
+      code = 'goat_ribs_300g',
+      portion_label = '300g'
+    where code = 'goat_ribs_350g';
+  elsif exists (
+    select 1
+    from public.portion_types
+    where code = 'goat_ribs_300g'
+  ) then
+    update public.portion_types
+    set portion_label = '300g'
+    where code = 'goat_ribs_300g';
+  end if;
 
-drop trigger if exists finished_stock_set_updated_at on public.finished_stock;
-create trigger finished_stock_set_updated_at
-before update on public.finished_stock
-for each row
-execute function public.set_updated_at();
+  if exists (
+    select 1
+    from public.portion_types
+    where code = 'goat_chunks_350g'
+  ) and not exists (
+    select 1
+    from public.portion_types
+    where code = 'goat_chunks_300g'
+  ) then
+    update public.portion_types
+    set
+      code = 'goat_chunks_300g',
+      portion_label = '300g'
+    where code = 'goat_chunks_350g';
+  elsif exists (
+    select 1
+    from public.portion_types
+    where code = 'goat_chunks_300g'
+  ) then
+    update public.portion_types
+    set portion_label = '300g'
+    where code = 'goat_chunks_300g';
+  end if;
 
-create table if not exists public.finished_stock_movements (
-  id bigint generated always as identity primary key,
-  portion_type_id bigint not null references public.portion_types(id) on update cascade on delete restrict,
-  movement_type text not null,
-  quantity_delta integer not null,
-  resulting_quantity integer not null,
-  processing_batch_id bigint,
-  note text,
-  created_at timestamptz not null default now(),
-  constraint finished_stock_movements_type_chk check (movement_type in ('production', 'sale', 'adjustment', 'waste')),
-  constraint finished_stock_movements_delta_nonzero_chk check (quantity_delta <> 0),
-  constraint finished_stock_movements_resulting_quantity_chk check (resulting_quantity >= 0)
-);
+  if exists (
+    select 1
+    from public.menu_items
+    where code = 'goat_ribs_350g'
+  ) and not exists (
+    select 1
+    from public.menu_items
+    where code = 'goat_ribs_300g'
+  ) then
+    update public.menu_items
+    set code = 'goat_ribs_300g'
+    where code = 'goat_ribs_350g';
+  end if;
 
-create index if not exists finished_stock_movements_portion_created_idx
-  on public.finished_stock_movements (portion_type_id, created_at desc);
-
-create table if not exists public.processing_batches (
-  id bigint generated always as identity primary key,
-  procurement_receipt_id bigint not null references public.procurement_receipts(id) on update cascade on delete restrict,
-  portion_type_id bigint not null references public.portion_types(id) on update cascade on delete restrict,
-  quantity_produced integer not null,
-  note text,
-  created_at timestamptz not null default now(),
-  constraint processing_batches_quantity_produced_chk check (quantity_produced > 0)
-);
-
-create index if not exists processing_batches_receipt_created_idx
-  on public.processing_batches (procurement_receipt_id, created_at desc);
-
-create index if not exists processing_batches_portion_created_idx
-  on public.processing_batches (portion_type_id, created_at desc);
-
-comment on table public.finished_stock is
-  'Current finished frozen sellable stock available for future orders.';
-
-comment on table public.finished_stock_movements is
-  'Audit trail for finished stock changes such as production, sales, waste, and adjustments.';
-
-comment on table public.processing_batches is
-  'Conversion records from raw procurement receipts into finished sellable frozen portions.';
+  if exists (
+    select 1
+    from public.menu_items
+    where code = 'goat_chunks_350g'
+  ) and not exists (
+    select 1
+    from public.menu_items
+    where code = 'goat_chunks_300g'
+  ) then
+    update public.menu_items
+    set code = 'goat_chunks_300g'
+    where code = 'goat_chunks_350g';
+  end if;
+end
+$$;
 
 create or replace function public.process_procurement_receipt_to_finished_stock(
   p_procurement_receipt_id bigint,
   p_portion_type_id bigint,
   p_quantity_produced integer,
+  p_post_roast_packed_weight_kg numeric(10,3) default null,
   p_note text default null
 )
 returns public.finished_stock
@@ -81,9 +106,15 @@ declare
   v_allowed integer;
   v_already_processed integer := 0;
   v_note text := nullif(btrim(coalesce(p_note, '')), '');
+  v_post_roast_packed_weight_kg numeric(10,3) := p_post_roast_packed_weight_kg;
+  v_yield_percent numeric(6,2) := null;
 begin
   if p_quantity_produced is null or p_quantity_produced <= 0 then
     raise exception 'Quantity produced must be greater than zero';
+  end if;
+
+  if v_post_roast_packed_weight_kg is not null and v_post_roast_packed_weight_kg <= 0 then
+    raise exception 'Post-roast packed weight must be greater than zero when provided';
   end if;
 
   select *
@@ -98,6 +129,14 @@ begin
 
   if v_receipt.intake_type <> 'protein' then
     raise exception 'Only protein receipts can be processed into finished stock';
+  end if;
+
+  if v_post_roast_packed_weight_kg is not null and v_receipt.quantity_received is not null and v_post_roast_packed_weight_kg > v_receipt.quantity_received then
+    raise exception 'Post-roast packed weight cannot exceed raw receipt weight';
+  end if;
+
+  if v_post_roast_packed_weight_kg is not null and v_receipt.quantity_received is not null and v_receipt.quantity_received > 0 then
+    v_yield_percent := round((v_post_roast_packed_weight_kg / v_receipt.quantity_received) * 100, 2);
   end if;
 
   select pt.*
@@ -173,12 +212,16 @@ begin
     procurement_receipt_id,
     portion_type_id,
     quantity_produced,
+    post_roast_packed_weight_kg,
+    yield_percent,
     note
   )
   values (
     p_procurement_receipt_id,
     p_portion_type_id,
     p_quantity_produced,
+    v_post_roast_packed_weight_kg,
+    v_yield_percent,
     v_note
   )
   returning *
@@ -213,7 +256,12 @@ begin
     v_batch.id,
     coalesce(
       v_note,
-      format('Processed from procurement receipt %s', p_procurement_receipt_id)
+      case
+        when v_receipt.batch_number is not null then
+          format('Processed from batch %s (receipt %s)', v_receipt.batch_number, p_procurement_receipt_id)
+        else
+          format('Processed from procurement receipt %s', p_procurement_receipt_id)
+      end
     )
   );
 
@@ -225,8 +273,9 @@ comment on function public.process_procurement_receipt_to_finished_stock(
   bigint,
   bigint,
   integer,
+  numeric,
   text
 ) is
-  'Processes a protein receipt into finished frozen stock and records both the batch and stock movement.';
+  'Processes a protein receipt into finished frozen stock, storing post-roast packed weight and derived yield percent when available.';
 
 commit;

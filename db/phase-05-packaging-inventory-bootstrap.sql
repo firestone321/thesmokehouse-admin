@@ -50,22 +50,22 @@ select
 from public.menu_items mi
 join public.inventory_items ii
   on ii.code = case
-    when mi.code = 'beef_chunks_350g' then 'butcher_paper_sheet'
+    when mi.code = 'beef_chunks_300g' then 'butcher_paper_sheet'
     when mi.code in (
-      'beef_ribs_350g',
+      'beef_ribs_300g',
       'chicken_half',
       'chicken_quarter',
-      'goat_ribs_350g',
-      'goat_chunks_350g'
+      'goat_ribs_300g',
+      'goat_chunks_300g'
     ) then 'clamcraft_box_unit'
   end
 where mi.code in (
-  'beef_ribs_350g',
-  'beef_chunks_350g',
+  'beef_ribs_300g',
+  'beef_chunks_300g',
   'chicken_half',
   'chicken_quarter',
-  'goat_ribs_350g',
-  'goat_chunks_350g'
+  'goat_ribs_300g',
+  'goat_chunks_300g'
 )
 on conflict (menu_item_id, inventory_item_id) do update
 set

@@ -9,6 +9,41 @@ function formatPortionLabel(option: ProcurementPortionOption) {
   return option.portionLabel ? `${option.name} (${option.portionLabel})` : option.name;
 }
 
+function formatRemainingQuantity(quantity: number | null, unitName: string) {
+  if (quantity === null) {
+    return "Unknown";
+  }
+
+  const normalizedUnit = unitName.trim().toLowerCase();
+  const decimals = normalizedUnit === "bird" || normalizedUnit === "birds" ? 0 : 2;
+  const formatted = quantity.toFixed(decimals).replace(/\.?0+$/, "");
+  return `${formatted} ${unitName}`;
+}
+
+function formatReceiptOptionLabel(receipt: ProcurementActivityRecord) {
+  const primaryLabel = receipt.batchNumber ?? receipt.itemName;
+  if (receipt.hasProcessingBatch) {
+    return `${primaryLabel} | Processed batch closed`;
+  }
+  const remaining = formatRemainingQuantity(receipt.remainingQuantity, receipt.unitName);
+  return `${primaryLabel} | Remaining: ${remaining}`;
+}
+
+function parsePortionWeightKg(portionLabel: string | null | undefined) {
+  if (!portionLabel) {
+    return null;
+  }
+
+  const normalized = portionLabel.trim().toLowerCase();
+
+  if (!normalized.endsWith("g")) {
+    return null;
+  }
+
+  const numericValue = Number(normalized.slice(0, -1));
+  return Number.isFinite(numericValue) && numericValue > 0 ? numericValue / 1000 : null;
+}
+
 export function ProcessingBatchForm({
   portionOptions,
   proteinReceipts
@@ -16,14 +51,20 @@ export function ProcessingBatchForm({
   portionOptions: ProcurementPortionOption[];
   proteinReceipts: ProcurementActivityRecord[];
 }) {
-  const [selectedReceiptId, setSelectedReceiptId] = useState<string>(proteinReceipts[0] ? String(proteinReceipts[0].id) : "");
+  const [selectedReceiptId, setSelectedReceiptId] = useState<string>(
+    proteinReceipts.find((receipt) => !receipt.hasProcessingBatch)
+      ? String(proteinReceipts.find((receipt) => !receipt.hasProcessingBatch)?.id)
+      : ""
+  );
   const [selectedPortionId, setSelectedPortionId] = useState<string>("");
+  const [postRoastPackedWeightKg, setPostRoastPackedWeightKg] = useState<string>("");
   const [quantityProduced, setQuantityProduced] = useState<string>("");
 
   const selectedReceipt = useMemo(
     () => proteinReceipts.find((receipt) => String(receipt.id) === selectedReceiptId) ?? null,
     [proteinReceipts, selectedReceiptId]
   );
+  const hasActionableReceipt = proteinReceipts.some((receipt) => !receipt.hasProcessingBatch);
 
   const filteredPortionOptions = useMemo(() => {
     if (!selectedReceipt?.proteinCode) {
@@ -41,6 +82,7 @@ export function ProcessingBatchForm({
   }, [filteredPortionOptions, selectedPortionId]);
 
   const selectedPortion = filteredPortionOptions.find((option) => String(option.id) === selectedPortionId) ?? null;
+  const portionSizeKg = useMemo(() => parsePortionWeightKg(selectedPortion?.portionLabel), [selectedPortion?.portionLabel]);
   const expectedYield = useMemo(
     () =>
       selectedReceipt?.proteinCode && selectedPortion
@@ -53,10 +95,28 @@ export function ProcessingBatchForm({
         : null,
     [selectedPortion, selectedReceipt]
   );
+  const expectedPortionsFromPackedWeight = useMemo(() => {
+    const packedWeight = Number(postRoastPackedWeightKg);
+
+    if (!Number.isFinite(packedWeight) || packedWeight <= 0 || !portionSizeKg) {
+      return null;
+    }
+
+    return Math.floor(packedWeight / portionSizeKg);
+  }, [portionSizeKg, postRoastPackedWeightKg]);
 
   useEffect(() => {
+    setPostRoastPackedWeightKg("");
+  }, [selectedReceiptId]);
+
+  useEffect(() => {
+    if (expectedPortionsFromPackedWeight !== null) {
+      setQuantityProduced(String(expectedPortionsFromPackedWeight));
+      return;
+    }
+
     setQuantityProduced(expectedYield ? String(expectedYield.quantity) : "");
-  }, [expectedYield, selectedReceiptId, selectedPortionId]);
+  }, [expectedPortionsFromPackedWeight, expectedYield, selectedReceiptId, selectedPortionId]);
 
   return (
     <section className="surface-card rounded-[32px] p-5">
@@ -81,10 +141,8 @@ export function ProcessingBatchForm({
                 className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
               >
                 {proteinReceipts.map((receipt) => (
-                  <option key={receipt.id} value={receipt.id}>
-                    {receipt.itemName}
-                    {receipt.batchNumber ? ` | ${receipt.batchNumber}` : ""}
-                    {` | ${receipt.supplierName} | ${receipt.deliveryDate}`}
+                  <option key={receipt.id} value={receipt.id} disabled={receipt.hasProcessingBatch}>
+                    {formatReceiptOptionLabel(receipt)}
                   </option>
                 ))}
               </select>
@@ -107,6 +165,30 @@ export function ProcessingBatchForm({
             </label>
 
             <label className="space-y-2 text-sm text-[#6B7280]">
+              <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Raw receipt weight</span>
+              <input
+                value={selectedReceipt ? `${selectedReceipt.quantityReceived.toFixed(2)} ${selectedReceipt.unitName}` : ""}
+                readOnly
+                className="w-full rounded-2xl border border-[#D7DDE4] bg-[#F8FAFB] px-3 py-2.5 text-[#111418]"
+              />
+            </label>
+
+            <label className="space-y-2 text-sm text-[#6B7280]">
+              <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Post-roast packed weight (kg)</span>
+              <input
+                type="number"
+                min="0.001"
+                step="0.001"
+                name="post_roast_packed_weight_kg"
+                disabled={!selectedReceipt || selectedReceipt.hasProcessingBatch}
+                value={postRoastPackedWeightKg}
+                onChange={(event) => setPostRoastPackedWeightKg(event.target.value)}
+                placeholder="Packed weight after roasting and vacuum sealing"
+                className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
+              />
+            </label>
+
+            <label className="space-y-2 text-sm text-[#6B7280]">
               <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Quantity produced</span>
               <input
                 type="number"
@@ -114,6 +196,7 @@ export function ProcessingBatchForm({
                 step="1"
                 name="quantity_produced"
                 required
+                disabled={!selectedReceipt || selectedReceipt.hasProcessingBatch}
                 value={quantityProduced}
                 onChange={(event) => setQuantityProduced(event.target.value)}
                 placeholder="Finished portions added to frozen stock"
@@ -139,7 +222,17 @@ export function ProcessingBatchForm({
               </article>
               <article className="rounded-[22px] bg-[#F8FAFB] px-4 py-4">
                 <p className="text-[10px] uppercase tracking-[0.18em] text-[#9CA3AF]">Processing guidance</p>
-                {expectedYield ? (
+                {expectedPortionsFromPackedWeight !== null && portionSizeKg ? (
+                  <>
+                    <p className="mt-2 text-xl font-semibold text-[#111418]">{expectedPortionsFromPackedWeight} expected portions</p>
+                    <p className="mt-2 text-sm leading-6 text-[#6B7280]">
+                      Calculated as floor({postRoastPackedWeightKg || "0"} kg / {portionSizeKg.toFixed(3)} kg per portion).
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-[#6B7280]">
+                      The quantity field is prefilled from the packed weight and can still be edited to match the real packed output.
+                    </p>
+                  </>
+                ) : expectedYield ? (
                   <>
                     <p className="mt-2 text-xl font-semibold text-[#111418]">{expectedYield.quantity} expected portions</p>
                     <p className="mt-2 text-sm leading-6 text-[#6B7280]">Calculated from {expectedYield.detail}.</p>
@@ -151,14 +244,19 @@ export function ProcessingBatchForm({
                   <>
                     <p className="mt-2 text-xl font-semibold text-[#111418]">Manual yield recording</p>
                     <p className="mt-2 text-sm leading-6 text-[#6B7280]">
-                      Enter the real finished portions that came out of processing. Automatic estimates only appear when
-                      the selected receipt and portion size make the math clear.
+                      Enter the post-roast packed weight and the real finished portions that came out of processing.
+                      Automatic estimates only appear when the selected receipt and portion size make the math clear.
                     </p>
                   </>
                 )}
                 {selectedReceipt.proteinCode === "whole_chicken" ? (
                   <p className="mt-2 text-sm leading-6 text-[#6B7280]">
                     Already processed from this receipt: {selectedReceipt.processedHalves} halves and {selectedReceipt.processedQuarters} quarters.
+                  </p>
+                ) : null}
+                {selectedReceipt.hasProcessingBatch ? (
+                  <p className="mt-2 text-sm leading-6 text-[#6B7280]">
+                    This receipt already has a completed processing batch. Keep it for yield reference, but do not process it again.
                   </p>
                 ) : null}
               </article>
@@ -170,21 +268,32 @@ export function ProcessingBatchForm({
             <textarea
               name="note"
               rows={3}
+              disabled={!selectedReceipt || selectedReceipt.hasProcessingBatch}
               placeholder="Batch note, freezer note, or processing remark"
               className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-3 text-[#111418]"
             />
           </label>
 
-          <button type="submit" className="rounded-2xl bg-[#111418] px-4 py-2.5 text-sm font-semibold text-white">
+          <button
+            type="submit"
+            disabled={!selectedReceipt || selectedReceipt.hasProcessingBatch}
+            className="rounded-2xl bg-[#111418] px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
             Add to finished stock
           </button>
         </form>
       ) : (
         <div className="mt-4 rounded-[24px] bg-[#F8FAFB] px-4 py-5 text-sm leading-6 text-[#6B7280]">
-          No protein receipts are available yet. Record raw meat intake first, then convert it into finished stock after
+          No protein receipts have been logged yet. Record raw meat intake first, then convert it into finished stock after
           processing.
         </div>
       )}
+      {proteinReceipts.length > 0 && !hasActionableReceipt ? (
+        <div className="mt-4 rounded-[24px] bg-[#F8FAFB] px-4 py-5 text-sm leading-6 text-[#6B7280]">
+          Every visible receipt already has a completed processing batch. Closed batches stay here briefly for confirmation,
+          then drop out of the list automatically.
+        </div>
+      ) : null}
     </section>
   );
 }

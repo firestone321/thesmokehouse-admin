@@ -29,6 +29,7 @@ export default async function ProcurementPage() {
 
   const wholeChickenReceipts = data.recentActivity.filter((entry) => entry.proteinCode === "whole_chicken");
   const proteinReceipts = data.recentActivity.filter((entry) => entry.intakeType === "protein");
+  const processingProteinReceipts = data.processingProteinReceipts;
   const totalProteinReceipts = proteinReceipts.length;
   const totalWholeChickensPlanned = wholeChickenReceipts.reduce((sum, entry) => sum + entry.quantityReceived, 0);
   const totalProcessedChickenPortions = wholeChickenReceipts.reduce(
@@ -94,7 +95,7 @@ export default async function ProcurementPage() {
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="space-y-4">
           <ProteinIntakeForm defaultDeliveryDate={data.serviceDate} suppliers={data.suppliers} />
-          <ProcessingBatchForm portionOptions={data.portionOptions} proteinReceipts={proteinReceipts} />
+          <ProcessingBatchForm portionOptions={data.portionOptions} proteinReceipts={processingProteinReceipts} />
         </div>
 
         <aside className="space-y-4">
@@ -264,6 +265,13 @@ export default async function ProcurementPage() {
                     <p className="mt-3 text-sm leading-6 text-[#6B7280]">
                       Added {batch.quantityProduced} finished portions into frozen stock
                     </p>
+                    {batch.postRoastPackedWeightKg !== null ? (
+                      <p className="mt-2 text-sm leading-6 text-[#6B7280]">
+                        Post-roast packed weight: {batch.postRoastPackedWeightKg.toFixed(3)} kg
+                        {batch.rawWeightKg !== null ? ` from ${batch.rawWeightKg.toFixed(2)} kg raw` : ""}
+                        {batch.yieldPercent !== null ? ` | Yield ${batch.yieldPercent.toFixed(2)}%` : ""}
+                      </p>
+                    ) : null}
                     {batch.note ? <p className="mt-2 text-sm leading-6 text-[#6B7280]">{batch.note}</p> : null}
                   </article>
                 ))

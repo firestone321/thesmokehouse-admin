@@ -1,5 +1,6 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createAdminSupabaseClient } from "@/lib/supabase/server";
@@ -17,6 +18,21 @@ function requiredText(formData: FormData, key: string) {
   }
 
   return value;
+}
+
+function buildProcurementBatchNumber(proteinCode: string, deliveryDate: string) {
+  const normalizedProteinCode = proteinCode.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "-");
+  const normalizedDate = deliveryDate.replaceAll("-", "");
+  const timestamp = new Date();
+  const timeFormatter = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Africa/Kampala",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  });
+  const formattedTime = timeFormatter.format(timestamp).replaceAll(":", "");
+
+  return `${normalizedProteinCode}-${normalizedDate}-${formattedTime}`;
 }
 
 function revalidateOperationalPaths() {
@@ -282,8 +298,8 @@ export async function recordProteinProcurementAction(formData: FormData) {
   const supabase = createAdminSupabaseClient();
   const supplierId = toInteger(formData.get("supplier_id"));
   const proteinCode = requiredText(formData, "protein_code");
-  const batchNumber = requiredText(formData, "batch_number");
   const deliveryDate = requiredText(formData, "delivery_date");
+  const batchNumber = buildProcurementBatchNumber(proteinCode, deliveryDate);
   const butcheredOn = requiredText(formData, "butchered_on");
   const abattoirName = requiredText(formData, "abattoir_name");
   const vetStampNumber = requiredText(formData, "vet_stamp_number");
@@ -361,6 +377,14 @@ export async function recordSupplyProcurementAction(formData: FormData) {
 }
 
 export async function saveSupplierAction(formData: FormData) {
+  const result = await saveSupplierRecord(formData);
+
+  revalidateOperationalPaths();
+
+  redirect(`/suppliers?supplier=${result.supplier.id}`);
+}
+
+async function saveSupplierRecord(formData: FormData) {
   const supabase = createAdminSupabaseClient();
   const supplierId = String(formData.get("supplier_id") ?? "").trim();
   const payload = {
@@ -374,24 +398,65 @@ export async function saveSupplierAction(formData: FormData) {
   };
 
   if (supplierId) {
-    const { error } = await supabase.from("suppliers").update(payload).eq("id", Number(supplierId));
+    const { data, error } = await supabase
+      .from("suppliers")
+      .update(payload)
+      .eq("id", Number(supplierId))
+      .select("id, name, phone_number, license_number, supplier_type, default_abattoir_name, is_active")
+      .single();
 
-    if (error) {
-      throw new Error(`Unable to update supplier: ${error.message}`);
+    if (error || !data) {
+      throw new Error(`Unable to update supplier: ${error?.message ?? "Unknown error"}`);
     }
 
-    revalidateOperationalPaths();
-    redirect(`/suppliers?supplier=${supplierId}`);
+    return {
+      mode: "updated" as const,
+      supplier: {
+        id: data.id,
+        name: data.name,
+        phoneNumber: data.phone_number,
+        licenseNumber: data.license_number,
+        supplierType: data.supplier_type,
+        defaultAbattoirName: data.default_abattoir_name,
+        isActive: data.is_active
+      }
+    };
   }
 
-  const { data, error } = await supabase.from("suppliers").insert(payload).select("id").single();
+  const { data, error } = await supabase
+    .from("suppliers")
+    .insert(payload)
+    .select("id, name, phone_number, license_number, supplier_type, default_abattoir_name, is_active")
+    .single();
 
   if (error || !data) {
     throw new Error(`Unable to create supplier: ${error?.message ?? "Unknown error"}`);
   }
 
+  return {
+    mode: "created" as const,
+    supplier: {
+      id: data.id,
+      name: data.name,
+      phoneNumber: data.phone_number,
+      licenseNumber: data.license_number,
+      supplierType: data.supplier_type,
+      defaultAbattoirName: data.default_abattoir_name,
+      isActive: data.is_active
+    }
+  };
+}
+
+export async function createSupplierInlineAction(formData: FormData) {
+  const result = await saveSupplierRecord(formData);
+
   revalidateOperationalPaths();
-  redirect(`/suppliers?supplier=${data.id}`);
+
+  return {
+    ok: true as const,
+    mode: result.mode,
+    supplier: result.supplier
+  };
 }
 
 export async function processProcurementReceiptToFinishedStockAction(formData: FormData) {
@@ -399,12 +464,14 @@ export async function processProcurementReceiptToFinishedStockAction(formData: F
   const procurementReceiptId = toInteger(formData.get("procurement_receipt_id"));
   const portionTypeId = toInteger(formData.get("portion_type_id"));
   const quantityProduced = toInteger(formData.get("quantity_produced"));
+  const postRoastPackedWeight = toOptionalText(formData.get("post_roast_packed_weight_kg"));
   const note = toOptionalText(formData.get("note"));
 
   const { error } = await supabase.rpc("process_procurement_receipt_to_finished_stock", {
     p_procurement_receipt_id: procurementReceiptId,
     p_portion_type_id: portionTypeId,
     p_quantity_produced: quantityProduced,
+    p_post_roast_packed_weight_kg: postRoastPackedWeight ? toNumber(postRoastPackedWeight) : null,
     p_note: note
   });
 

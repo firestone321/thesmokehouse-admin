@@ -20,10 +20,10 @@ with menu_updates as (
   where false
 
   -- Example shape only. Replace with real values:
-  -- union all select 'beef_ribs_350g', 35000, true, true
+  -- union all select 'beef_ribs_300g', 35000, true, true
   -- union all select 'beef_chunks_300g', 30000, true, true
-  -- union all select 'goat_ribs_350g', 35000, true, true
-  -- union all select 'goat_chunks_350g', 30000, true, true
+  -- union all select 'goat_ribs_300g', 35000, true, true
+  -- union all select 'goat_chunks_300g', 30000, true, true
   -- union all select 'fries_250g', 12000, true, true
   -- union all select 'gonja_250g', 12000, true, true
   -- union all select 'juice', 5000, true, true

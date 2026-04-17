@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { SchemaSetupNotice } from "@/components/admin/schema-setup-notice";
+import { SavedSuppliersList } from "@/components/suppliers/saved-suppliers-list";
+import { SupplierSupplyHistory } from "@/components/suppliers/supplier-supply-history";
 import { saveSupplierAction } from "@/lib/ops/actions";
 import { OperationsSchemaMissingError } from "@/lib/ops/errors";
 import { getSuppliersPageData } from "@/lib/ops/queries";
 import { supplierTypes, SupplierType } from "@/lib/ops/types";
-import { formatDateTime } from "@/lib/ops/utils";
 
 function getFirstValue(value?: string | string[]) {
   return Array.isArray(value) ? value[0] : value;
@@ -111,7 +112,7 @@ export default async function SuppliersPage({
     throw error;
   }
 
-  const { suppliers, selectedSupplier } = data;
+  const { suppliers, selectedSupplier, supplyHistory } = data;
 
   return (
     <div className="space-y-4 text-[#111418]">
@@ -140,72 +141,30 @@ export default async function SuppliersPage({
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_360px]">
         <section className="surface-card rounded-[32px] p-5">
           <div className="border-b border-[#EEF2F6] pb-4">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Supplier list</p>
-            <h2 className="mt-2 text-xl font-semibold">Available supplier records</h2>
+            <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Supply history</p>
+            <h2 className="mt-2 text-xl font-semibold">All supplier intake history</h2>
           </div>
 
-          <div className="mt-4 space-y-3">
-            {suppliers.length > 0 ? (
-              suppliers.map((supplier) => (
-                <Link
-                  key={supplier.id}
-                  href={`/suppliers?supplier=${supplier.id}`}
-                  className={`block rounded-[24px] border px-4 py-4 transition ${
-                    selectedSupplier?.id === supplier.id
-                      ? "border-[#111418] bg-[#F8FAFB]"
-                      : "border-[#E4E7EB] bg-white hover:border-[#D0D7DE]"
-                  }`}
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <h3 className="text-lg font-semibold text-[#111418]">{supplier.name}</h3>
-                      <p className="text-sm text-[#6B7280]">
-                        {formatSupplierType(supplier.supplierType)}
-                        {supplier.licenseNumber ? ` | ${supplier.licenseNumber}` : ""}
-                      </p>
-                    </div>
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${
-                        supplier.isActive ? "bg-[#ECFDF3] text-[#15803D]" : "bg-[#F3F4F6] text-[#4B5563]"
-                      }`}
-                    >
-                      {supplier.isActive ? "active" : "inactive"}
-                    </span>
-                  </div>
-
-                  <div className="mt-4 grid gap-3 text-sm text-[#6B7280] sm:grid-cols-3">
-                    <div className="rounded-[18px] bg-[#FFFFFF] px-3 py-3">
-                      <p className="text-[10px] uppercase tracking-[0.18em] text-[#9CA3AF]">Phone</p>
-                      <p className="mt-1 font-semibold text-[#111418]">{supplier.phoneNumber ?? "Not set"}</p>
-                    </div>
-                    <div className="rounded-[18px] bg-[#FFFFFF] px-3 py-3">
-                      <p className="text-[10px] uppercase tracking-[0.18em] text-[#9CA3AF]">Default abattoir</p>
-                      <p className="mt-1 font-semibold text-[#111418]">{supplier.defaultAbattoirName ?? "Not set"}</p>
-                    </div>
-                    <div className="rounded-[18px] bg-[#FFFFFF] px-3 py-3">
-                      <p className="text-[10px] uppercase tracking-[0.18em] text-[#9CA3AF]">Updated</p>
-                      <p className="mt-1 font-semibold text-[#111418]">{formatDateTime(supplier.updatedAt)}</p>
-                    </div>
-                  </div>
-
-                  {supplier.notes ? <p className="mt-3 text-sm leading-6 text-[#6B7280]">{supplier.notes}</p> : null}
-                </Link>
-              ))
-            ) : (
-              <div className="rounded-[24px] bg-[#F8FAFB] px-4 py-5 text-sm leading-6 text-[#6B7280]">
-                No suppliers exist yet. Create the first record in the panel on the right before logging new meat receipts.
-              </div>
-            )}
+          <div className="mt-4">
+            <p className="text-sm leading-6 text-[#6B7280]">
+              Everything is unified here: protein, chicken, and non-protein intake records in one searchable history stream.
+            </p>
+            <div className="mt-4">
+              <SupplierSupplyHistory history={supplyHistory} />
+            </div>
           </div>
         </section>
 
         <aside className="space-y-4">
           <section className="surface-card rounded-[32px] p-5">
             <div className="border-b border-[#EEF2F6] pb-4">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">New supplier</p>
-              <h2 className="mt-2 text-xl font-semibold">Create supplier record</h2>
+              <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Saved suppliers</p>
+              <h2 className="mt-2 text-xl font-semibold">Available supplier records</h2>
             </div>
-            <SupplierForm />
+
+            <div className="mt-4">
+              <SavedSuppliersList suppliers={suppliers} selectedSupplierId={selectedSupplier?.id ?? null} />
+            </div>
           </section>
 
           {selectedSupplier ? (

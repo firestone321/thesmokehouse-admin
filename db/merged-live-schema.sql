@@ -80,7 +80,7 @@ comment on column public.portion_types.protein_id is
   'Nullable so non-protein menu items like juice can be represented without adding extra tables.';
 
 comment on column public.portion_types.portion_label is
-  'Human-readable size label such as 350g, half, or quarter.';
+  'Human-readable size label such as 300g, 350g, half, or quarter.';
 
 insert into public.proteins (code, name, sort_order)
 values
@@ -112,19 +112,19 @@ insert into public.portion_types (
 )
 values
   (
-    'beef_ribs_350g',
+    'beef_ribs_300g',
     (select id from public.proteins where code = 'beef'),
     (select id from public.packaging_types where code = 'clamcraft_box'),
     'Beef ribs',
-    '350g',
+    '300g',
     1
   ),
   (
-    'beef_chunks_350g',
+    'beef_chunks_300g',
     (select id from public.proteins where code = 'beef'),
     (select id from public.packaging_types where code = 'butcher_paper'),
     'Beef chunks',
-    '350g',
+    '300g',
     2
   ),
   (
@@ -144,19 +144,19 @@ values
     4
   ),
   (
-    'goat_ribs_350g',
+    'goat_ribs_300g',
     (select id from public.proteins where code = 'goat'),
     (select id from public.packaging_types where code = 'clamcraft_box'),
     'Goat ribs',
-    '350g',
+    '300g',
     5
   ),
   (
-    'goat_chunks_350g',
+    'goat_chunks_300g',
     (select id from public.proteins where code = 'goat'),
     (select id from public.packaging_types where code = 'clamcraft_box'),
     'Goat chunks',
-    '350g',
+    '300g',
     6
   ),
   (

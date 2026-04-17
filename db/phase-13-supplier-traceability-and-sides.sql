@@ -5,7 +5,7 @@ begin;
 -- 1. Add supplier master records for procurement workflows.
 -- 2. Extend meat receipts with supplier and batch traceability fields.
 -- 3. Add sellable side portions for fries and gonja.
--- 4. Change beef chunks from 350g to 300g without breaking existing stock rows.
+-- 4. Change beef ribs and beef chunks from 350g to 300g without breaking existing stock rows.
 
 create table if not exists public.suppliers (
   id bigint generated always as identity primary key,
@@ -142,6 +142,7 @@ declare
   v_beef_protein_id bigint;
   v_clamcraft_box_id bigint;
   v_butcher_paper_id bigint;
+  v_beef_ribs_portion_id bigint;
   v_beef_chunks_portion_id bigint;
 begin
   select id
@@ -158,6 +159,58 @@ begin
   into v_butcher_paper_id
   from public.packaging_types
   where code = 'butcher_paper';
+
+  select id
+  into v_beef_ribs_portion_id
+  from public.portion_types
+  where code = 'beef_ribs_300g';
+
+  if v_beef_ribs_portion_id is null then
+    select id
+    into v_beef_ribs_portion_id
+    from public.portion_types
+    where code = 'beef_ribs_350g';
+
+    if v_beef_ribs_portion_id is not null then
+      update public.portion_types
+      set
+        code = 'beef_ribs_300g',
+        protein_id = v_beef_protein_id,
+        packaging_type_id = v_clamcraft_box_id,
+        name = 'Beef ribs',
+        portion_label = '300g',
+        sort_order = 1
+      where id = v_beef_ribs_portion_id;
+    else
+      insert into public.portion_types (
+        code,
+        protein_id,
+        packaging_type_id,
+        name,
+        portion_label,
+        sort_order
+      )
+      values (
+        'beef_ribs_300g',
+        v_beef_protein_id,
+        v_clamcraft_box_id,
+        'Beef ribs',
+        '300g',
+        1
+      )
+      returning id
+      into v_beef_ribs_portion_id;
+    end if;
+  else
+    update public.portion_types
+    set
+      protein_id = v_beef_protein_id,
+      packaging_type_id = v_clamcraft_box_id,
+      name = 'Beef ribs',
+      portion_label = '300g',
+      sort_order = 1
+    where id = v_beef_ribs_portion_id;
+  end if;
 
   select id
   into v_beef_chunks_portion_id
@@ -279,9 +332,11 @@ do $$
 declare
   v_beef_category_id bigint;
   v_sides_category_id bigint;
+  v_beef_ribs_portion_id bigint;
   v_beef_chunks_portion_id bigint;
   v_fries_portion_id bigint;
   v_gonja_portion_id bigint;
+  v_existing_beef_ribs_menu_id bigint;
   v_existing_beef_chunks_menu_id bigint;
 begin
   select id
@@ -293,6 +348,11 @@ begin
   into v_sides_category_id
   from public.menu_categories
   where code = 'sides';
+
+  select id
+  into v_beef_ribs_portion_id
+  from public.portion_types
+  where code = 'beef_ribs_300g';
 
   select id
   into v_beef_chunks_portion_id
@@ -310,9 +370,37 @@ begin
   where code = 'gonja_250g';
 
   select id
+  into v_existing_beef_ribs_menu_id
+  from public.menu_items
+  where code = 'beef_ribs_300g';
+
+  select id
   into v_existing_beef_chunks_menu_id
   from public.menu_items
   where code = 'beef_chunks_300g';
+
+  if v_existing_beef_ribs_menu_id is null then
+    update public.menu_items
+    set
+      code = 'beef_ribs_300g',
+      portion_type_id = v_beef_ribs_portion_id,
+      name = 'Beef ribs',
+      description = 'Smoked beef ribs portion.',
+      prep_type = 'smoked',
+      sort_order = 1,
+      updated_at = now()
+    where code = 'beef_ribs_350g';
+  else
+    update public.menu_items
+    set
+      portion_type_id = coalesce(v_beef_ribs_portion_id, portion_type_id),
+      name = 'Beef ribs',
+      description = 'Smoked beef ribs portion.',
+      prep_type = 'smoked',
+      sort_order = 1,
+      updated_at = now()
+    where id = v_existing_beef_ribs_menu_id;
+  end if;
 
   if v_existing_beef_chunks_menu_id is null then
     update public.menu_items
@@ -440,10 +528,11 @@ select
 from public.menu_items mi
 join public.inventory_items ii
   on ii.code = case
+    when mi.code = 'beef_ribs_300g' then 'clamcraft_box_unit'
     when mi.code = 'beef_chunks_300g' then 'butcher_paper_sheet'
     when mi.code in ('fries_250g', 'gonja_250g') then 'clamcraft_box_unit'
   end
-where mi.code in ('beef_chunks_300g', 'fries_250g', 'gonja_250g')
+where mi.code in ('beef_ribs_300g', 'beef_chunks_300g', 'fries_250g', 'gonja_250g')
 on conflict (menu_item_id, inventory_item_id) do update
 set
   quantity_required = excluded.quantity_required;
@@ -788,7 +877,7 @@ begin
     raise exception 'Receipt protein % cannot be processed into portion %', v_receipt.protein_code, v_portion_type.code;
   end if;
 
-  if v_receipt.protein_code = 'beef_ribs' and v_portion_type.code <> 'beef_ribs_350g' then
+  if v_receipt.protein_code = 'beef_ribs' and v_portion_type.code <> 'beef_ribs_300g' then
     raise exception 'Beef ribs receipts can only be processed into beef ribs portions';
   end if;
 
@@ -796,11 +885,11 @@ begin
     raise exception 'Beef chunks receipts can only be processed into beef chunks portions';
   end if;
 
-  if v_receipt.protein_code = 'goat_ribs' and v_portion_type.code <> 'goat_ribs_350g' then
+  if v_receipt.protein_code = 'goat_ribs' and v_portion_type.code <> 'goat_ribs_300g' then
     raise exception 'Goat ribs receipts can only be processed into goat ribs portions';
   end if;
 
-  if v_receipt.protein_code = 'goat_chunks' and v_portion_type.code <> 'goat_chunks_350g' then
+  if v_receipt.protein_code = 'goat_chunks' and v_portion_type.code <> 'goat_chunks_300g' then
     raise exception 'Goat chunks receipts can only be processed into goat chunks portions';
   end if;
 

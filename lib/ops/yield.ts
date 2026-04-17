@@ -22,19 +22,19 @@ function parsePortionWeightInGrams(portionLabel: string | null | undefined) {
 export function getAllowedPortionCodesForReceipt(proteinCode: ProteinProcurementCode | null) {
   switch (proteinCode) {
     case "beef_ribs":
-      return ["beef_ribs_350g"];
+      return ["beef_ribs_300g"];
     case "beef_chunks":
       return ["beef_chunks_300g"];
     case "whole_chicken":
       return ["chicken_half", "chicken_quarter"];
     case "goat_ribs":
-      return ["goat_ribs_350g"];
+      return ["goat_ribs_300g"];
     case "goat_chunks":
-      return ["goat_chunks_350g"];
+      return ["goat_chunks_300g"];
     case "beef":
-      return ["beef_ribs_350g", "beef_chunks_300g"];
+      return ["beef_ribs_300g", "beef_chunks_300g"];
     case "goat":
-      return ["goat_ribs_350g", "goat_chunks_350g"];
+      return ["goat_ribs_300g", "goat_chunks_300g"];
     default:
       return [];
   }

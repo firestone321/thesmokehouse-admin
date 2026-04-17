@@ -77,6 +77,10 @@ export interface ProcurementActivityRecord {
   sellableQuarters: number;
   processedHalves: number;
   processedQuarters: number;
+  processedWeightKg: number | null;
+  remainingQuantity: number | null;
+  hasProcessingBatch: boolean;
+  latestProcessingAt: string | null;
   createdAt: string;
 }
 
@@ -103,10 +107,13 @@ export interface ProcessingBatchRecord {
   receiptItemName: string;
   receiptBatchNumber: string | null;
   receiptSupplierName: string;
+  rawWeightKg: number | null;
   portionTypeId: number;
   portionCode: string;
   portionName: string;
   quantityProduced: number;
+  postRoastPackedWeightKg: number | null;
+  yieldPercent: number | null;
   note: string | null;
   createdAt: string;
 }
@@ -121,6 +128,25 @@ export interface SupplierRecord {
   isActive: boolean;
   notes: string | null;
   updatedAt: string;
+}
+
+export interface SupplierSupplyHistoryRecord {
+  id: number;
+  supplierId: number | null;
+  supplierName: string;
+  batchNumber: string | null;
+  intakeType: ProcurementIntakeType;
+  proteinCode: ProteinProcurementCode | null;
+  itemName: string;
+  quantityReceived: number;
+  unitName: string;
+  deliveryDate: string;
+  butcheredOn: string | null;
+  abattoirName: string | null;
+  vetStampNumber: string | null;
+  inspectionOfficerName: string | null;
+  note: string | null;
+  createdAt: string;
 }
 
 export interface ProcurementSupplierOption {
@@ -138,13 +164,25 @@ export interface ProcurementPageData {
   suppliers: ProcurementSupplierOption[];
   portionOptions: ProcurementPortionOption[];
   recentActivity: ProcurementActivityRecord[];
+  processingProteinReceipts: ProcurementActivityRecord[];
   finishedStock: FinishedStockRecord[];
   recentProcessingBatches: ProcessingBatchRecord[];
+}
+
+export interface InventoryPageData {
+  serviceDate: string;
+  dailyStock: DailyStockRow[];
+  inventoryItems: InventoryItemRecord[];
+  selectedItem: InventoryItemRecord | null;
+  movementHistory: InventoryMovementRecord[];
+  finishedStock: FinishedStockRecord[];
+  todayProcessingBatches: ProcessingBatchRecord[];
 }
 
 export interface SupplierPageData {
   suppliers: SupplierRecord[];
   selectedSupplier: SupplierRecord | null;
+  supplyHistory: SupplierSupplyHistoryRecord[];
 }
 
 export interface ProteinReceiptSummary {

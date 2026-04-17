@@ -4,7 +4,7 @@ import { SupplyIntakeForm } from "@/components/procurement/supply-intake-form";
 import { adjustInventoryItemAction, saveInventoryItemAction } from "@/lib/ops/actions";
 import { OperationsSchemaMissingError } from "@/lib/ops/errors";
 import { getInventoryPageData } from "@/lib/ops/queries";
-import { DailyStockRow } from "@/lib/ops/types";
+import { DailyStockRow, ProcessingBatchRecord } from "@/lib/ops/types";
 import { formatDateTime, formatServiceDate } from "@/lib/ops/utils";
 
 function getFirstValue(value?: string | string[]) {
@@ -13,6 +13,14 @@ function getFirstValue(value?: string | string[]) {
 
 function formatQuantity(value: number, unit: string) {
   return `${value.toFixed(2)} ${unit}`;
+}
+
+function formatPackedWeight(batch: ProcessingBatchRecord) {
+  if (batch.postRoastPackedWeightKg === null) {
+    return null;
+  }
+
+  return `${batch.postRoastPackedWeightKg.toFixed(3)} kg`;
 }
 
 export default async function InventoryPage({
@@ -34,17 +42,8 @@ export default async function InventoryPage({
     throw error;
   }
 
-  const { serviceDate, dailyStock, inventoryItems, selectedItem, movementHistory, todayProteinReceipts } = data;
-  const expectedByPortionCode = new Map<string, number>();
-
-  todayProteinReceipts.forEach((receipt) => {
-    receipt.expectedPortions.forEach((estimate) => {
-      expectedByPortionCode.set(
-        estimate.portionCode,
-        (expectedByPortionCode.get(estimate.portionCode) ?? 0) + estimate.expectedQuantity
-      );
-    });
-  });
+  const { serviceDate, dailyStock, inventoryItems, selectedItem, movementHistory, finishedStock, todayProcessingBatches } = data;
+  const finishedStockByPortionCode = new Map(finishedStock.map((item) => [item.portionCode, item.currentQuantity]));
 
   return (
     <div className="space-y-4 text-[#111418]">
@@ -54,8 +53,8 @@ export default async function InventoryPage({
           <div>
             <h1 className="text-2xl font-semibold sm:text-3xl">Inventory and resupplies</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6B7280]">
-              What came in, what is on hand, and what is ready to sell should be easier to read here. Resupplied protein
-              shows up automatically below, while customer-ready menu stock still comes from `daily_stock`.
+              What is ready to sell now should come from processed finished stock, not raw meat intake. This page now
+              highlights today&apos;s finished processing output and the frozen sellable stock currently on hand.
             </p>
           </div>
           <div className="rounded-[22px] bg-[#F8FAFB] px-4 py-3 text-sm text-[#6B7280]">
@@ -67,50 +66,44 @@ export default async function InventoryPage({
 
       <section className="surface-card rounded-[32px] p-5">
         <div className="border-b border-[#EEF2F6] pb-4">
-          <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Today&apos;s Protein Resupplies</p>
-          <h2 className="mt-2 text-xl font-semibold">What came in today and what it can become</h2>
+          <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Today&apos;s Processing Output</p>
+          <h2 className="mt-2 text-xl font-semibold">What was processed into finished frozen stock today</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6B7280]">
-            These totals come straight from the Resupplies page. Each card also shows the expected sellable portions if
-            that receipt is fully prepared into one of the menu portion options.
+            These batches come from the processing workflow after roasting and packing. The packed post-roast weight is the
+            real batch yield reference, and the produced portion count is what enters finished sellable stock.
           </p>
         </div>
         <div className="mt-4 grid gap-3 lg:grid-cols-3">
-          {todayProteinReceipts.length > 0 ? (
-            todayProteinReceipts.map((receipt) => (
-              <article key={`${receipt.proteinCode}-${receipt.unitName}`} className="rounded-[24px] border border-[#E4E7EB] bg-white px-4 py-4">
-                <p className="text-[10px] uppercase tracking-[0.18em] text-[#9CA3AF]">{receipt.itemName}</p>
-                <p className="mt-2 text-2xl font-semibold text-[#111418]">
-                  {receipt.totalReceived.toFixed(receipt.unitName === "bird" ? 0 : 2)} {receipt.unitName}
-                </p>
+          {todayProcessingBatches.length > 0 ? (
+            todayProcessingBatches.map((batch) => (
+              <article key={batch.id} className="rounded-[24px] border border-[#E4E7EB] bg-white px-4 py-4">
+                <p className="text-[10px] uppercase tracking-[0.18em] text-[#9CA3AF]">{batch.portionName}</p>
+                <p className="mt-2 text-2xl font-semibold text-[#111418]">{batch.quantityProduced} portions</p>
                 <p className="mt-2 text-sm leading-6 text-[#6B7280]">
-                  Logged from {receipt.receiptCount} {receipt.receiptCount === 1 ? "delivery" : "deliveries"} today.
+                  {batch.receiptBatchNumber ?? batch.receiptItemName}
+                  {batch.receiptSupplierName ? ` | ${batch.receiptSupplierName}` : ""}
                 </p>
-                {receipt.expectedPortions.length > 0 ? (
+                {formatPackedWeight(batch) ? (
                   <div className="mt-3 rounded-[18px] bg-[#F8FAFB] px-3 py-3">
-                    <p className="text-[10px] uppercase tracking-[0.18em] text-[#9CA3AF]">Expected sellable portions</p>
-                    <div className="mt-2 space-y-2">
-                      {receipt.expectedPortions.map((estimate) => (
-                        <div key={estimate.portionCode} className="rounded-[14px] bg-white px-3 py-2">
-                          <p className="text-sm font-semibold text-[#111418]">
-                            {estimate.portionName}
-                            {estimate.portionLabel ? ` (${estimate.portionLabel})` : ""}
-                            : {estimate.expectedQuantity}
-                          </p>
-                          <p className="mt-1 text-sm leading-6 text-[#6B7280]">{estimate.detail}</p>
-                        </div>
-                      ))}
-                    </div>
+                    <p className="text-[10px] uppercase tracking-[0.18em] text-[#9CA3AF]">Packed yield</p>
+                    <p className="mt-1 text-sm font-semibold text-[#111418]">
+                      {formatPackedWeight(batch)}
+                      {batch.rawWeightKg !== null ? ` from ${batch.rawWeightKg.toFixed(2)} kg raw` : ""}
+                    </p>
+                    {batch.yieldPercent !== null ? (
+                      <p className="mt-1 text-sm leading-6 text-[#6B7280]">Yield {batch.yieldPercent.toFixed(2)}%</p>
+                    ) : null}
                   </div>
-                ) : (
-                  <p className="mt-3 text-sm leading-6 text-[#6B7280]">
-                    No automatic sellable-portion estimate is available yet for this protein.
-                  </p>
-                )}
+                ) : null}
+                {batch.note ? (
+                  <p className="mt-3 text-sm leading-6 text-[#6B7280]">{batch.note}</p>
+                ) : null}
+                <p className="mt-3 text-sm text-[#6B7280]">{formatDateTime(batch.createdAt)}</p>
               </article>
             ))
           ) : (
             <div className="rounded-[24px] bg-[#F8FAFB] px-4 py-5 text-sm leading-6 text-[#6B7280] lg:col-span-3">
-              No protein resupplies have been logged for this service day yet.
+              No processing batches have been recorded for this service day yet.
             </div>
           )}
         </div>
@@ -121,21 +114,21 @@ export default async function InventoryPage({
           <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Prepared For Sale</p>
           <h2 className="mt-2 text-xl font-semibold">How much sellable stock is left today</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6B7280]">
-            This section shows actual posted stock when it exists. If today&apos;s stock has not been posted yet, the cards
-            fall back to estimated sellable quantities from the resupplies above.
+            This section shows actual posted day stock when it exists. If today&apos;s day stock has not been posted yet, the
+            cards fall back to current finished frozen stock that came from completed processing batches.
           </p>
         </div>
         <div className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
           {dailyStock.map((row: DailyStockRow) => {
-            const estimatedQuantity = row.isInitialized ? 0 : expectedByPortionCode.get(row.portionCode) ?? 0;
-            const displayStarting = row.isInitialized ? row.startingQuantity : estimatedQuantity;
-            const displayRemaining = row.isInitialized ? row.remainingQuantity : estimatedQuantity;
-            const badgeLabel = row.isInitialized ? (row.isLowStock ? "low" : "healthy") : estimatedQuantity > 0 ? "estimated" : "not set";
+            const fallbackFinishedQuantity = row.isInitialized ? 0 : finishedStockByPortionCode.get(row.portionCode) ?? 0;
+            const displayStarting = row.isInitialized ? row.startingQuantity : fallbackFinishedQuantity;
+            const displayRemaining = row.isInitialized ? row.remainingQuantity : fallbackFinishedQuantity;
+            const badgeLabel = row.isInitialized ? (row.isLowStock ? "low" : "healthy") : fallbackFinishedQuantity > 0 ? "frozen stock" : "not set";
             const badgeClasses = row.isInitialized
               ? row.isLowStock
                 ? "bg-[#FDECEC] text-[#D32F2F]"
                 : "bg-[#ECFDF3] text-[#15803D]"
-              : estimatedQuantity > 0
+              : fallbackFinishedQuantity > 0
                 ? "bg-[#FFF7ED] text-[#C2410C]"
                 : "bg-[#F3F4F6] text-[#6B7280]";
 

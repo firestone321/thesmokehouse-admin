@@ -15,8 +15,31 @@ const requiredMigrationFiles = [
   "db/phase-09-menu-item-images.sql"
 ];
 
+type OperationsErrorLike = {
+  message?: string | null;
+  details?: string | null;
+  hint?: string | null;
+  code?: string | null;
+  cause?: unknown;
+};
+
+function formatOperationsErrorMessage(error: OperationsErrorLike) {
+  const parts = [error.message, error.details, error.hint, error.code ? `code=${error.code}` : null]
+    .filter((part): part is string => typeof part === "string" && part.trim().length > 0);
+
+  if (parts.length > 0) {
+    return parts.join(" | ");
+  }
+
+  if (error.cause instanceof Error && error.cause.message.trim().length > 0) {
+    return error.cause.message;
+  }
+
+  return "Unknown operations error";
+}
+
 export function toOperationsError(
-  error: { message: string } | null,
+  error: OperationsErrorLike | null,
   context: string,
   migrationFiles: string[] = requiredMigrationFiles
 ) {
@@ -24,8 +47,8 @@ export function toOperationsError(
     return null;
   }
 
-  const message = `${context}: ${error.message}`;
-  const normalized = error.message.toLowerCase();
+  const message = `${context}: ${formatOperationsErrorMessage(error)}`;
+  const normalized = formatOperationsErrorMessage(error).toLowerCase();
 
   if (
     normalized.includes("schema cache") ||
