@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { SchemaSetupNotice } from "@/components/admin/schema-setup-notice";
+import { CollapsibleCard } from "@/components/procurement/collapsible-card";
 import { ProcessingBatchForm } from "@/components/procurement/processing-batch-form";
 import { ProteinIntakeForm } from "@/components/procurement/protein-intake-form";
 import { SidesIntakeForm } from "@/components/procurement/sides-intake-form";
@@ -130,18 +131,12 @@ export default async function ProcurementPage() {
             returnTo="/procurement"
           />
 
-          <section className="surface-card rounded-[32px] p-5">
-            <div className="flex items-end justify-between gap-3 border-b border-[#EEF2F6] pb-4">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Recent Protein Activity</p>
-                <h2 className="mt-2 text-xl font-semibold">Latest receipts</h2>
-              </div>
-              <span className="rounded-full bg-[#F3F4F6] px-3 py-1 text-xs font-semibold text-[#4B5563]">
-                {proteinReceipts.length}
-              </span>
-            </div>
-
-            <div className="mt-4 space-y-3">
+          <CollapsibleCard
+            eyebrow="Recent Protein Activity"
+            title="Latest receipts"
+            count={proteinReceipts.length}
+            collapsedMessage="Expand this card when you need to review the latest protein intake receipts."
+          >
               {proteinReceipts.length > 0 ? (
                 proteinReceipts.map((entry) => (
                   <article key={entry.id} className="rounded-[22px] bg-[#F8FAFB] px-4 py-4">
@@ -210,21 +205,14 @@ export default async function ProcurementPage() {
                   No protein receipts have been logged yet. Your first delivery will appear here with supplier and quantity.
                 </div>
               )}
-            </div>
-          </section>
+          </CollapsibleCard>
 
-          <section className="surface-card rounded-[32px] p-5">
-            <div className="flex items-end justify-between gap-3 border-b border-[#EEF2F6] pb-4">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Finished Frozen Stock</p>
-                <h2 className="mt-2 text-xl font-semibold">What is ready for future orders</h2>
-              </div>
-              <span className="rounded-full bg-[#F3F4F6] px-3 py-1 text-xs font-semibold text-[#4B5563]">
-                {data.finishedStock.length}
-              </span>
-            </div>
-
-            <div className="mt-4 space-y-3">
+          <CollapsibleCard
+            eyebrow="Finished Frozen Stock"
+            title="What is ready for future orders"
+            count={data.finishedStock.length}
+            collapsedMessage="Expand this card when you need to review the finished frozen stock currently on hand."
+          >
               {data.finishedStock.length > 0 ? (
                 data.finishedStock.map((item) => (
                   <article key={item.portionTypeId} className="rounded-[22px] bg-[#F8FAFB] px-4 py-4">
@@ -243,21 +231,14 @@ export default async function ProcurementPage() {
                   No finished stock has been recorded yet. Process a batch after roasting and packing to build frozen sellable stock.
                 </div>
               )}
-            </div>
-          </section>
+          </CollapsibleCard>
 
-          <section className="surface-card rounded-[32px] p-5">
-            <div className="flex items-end justify-between gap-3 border-b border-[#EEF2F6] pb-4">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Processing History</p>
-                <h2 className="mt-2 text-xl font-semibold">Recent finished-stock batches</h2>
-              </div>
-              <span className="rounded-full bg-[#F3F4F6] px-3 py-1 text-xs font-semibold text-[#4B5563]">
-                {data.recentProcessingBatches.length}
-              </span>
-            </div>
-
-            <div className="mt-4 space-y-3">
+          <CollapsibleCard
+            eyebrow="Processing History"
+            title="Recent finished-stock batches"
+            count={data.recentProcessingBatches.length}
+            collapsedMessage="Expand this card when you need to review recent processing batches and yield details."
+          >
               {data.recentProcessingBatches.length > 0 ? (
                 data.recentProcessingBatches.map((batch) => (
                   <article key={batch.id} className="rounded-[22px] bg-[#F8FAFB] px-4 py-4">
@@ -290,8 +271,7 @@ export default async function ProcurementPage() {
                   No processing batches have been recorded yet.
                 </div>
               )}
-            </div>
-          </section>
+          </CollapsibleCard>
         </aside>
       </div>
     </div>
