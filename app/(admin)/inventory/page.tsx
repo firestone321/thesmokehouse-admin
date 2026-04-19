@@ -42,7 +42,7 @@ export default async function InventoryPage({
     throw error;
   }
 
-  const { serviceDate, dailyStock, inventoryItems, selectedItem, movementHistory, finishedStock, todayProcessingBatches } = data;
+  const { serviceDate, dailyStock, inventoryItems, suppliers, selectedItem, movementHistory, finishedStock, todayProcessingBatches } = data;
   const finishedStockByPortionCode = new Map(finishedStock.map((item) => [item.portionCode, item.currentQuantity]));
 
   return (
@@ -233,6 +233,7 @@ export default async function InventoryPage({
           <SupplyIntakeForm
             defaultDeliveryDate={serviceDate}
             inventoryItems={inventoryItems}
+            suppliers={suppliers}
             defaultInventoryItemId={selectedItem?.id ?? inventoryItems[0]?.id ?? null}
           />
 
@@ -242,6 +243,7 @@ export default async function InventoryPage({
               <h2 className="mt-2 text-xl font-semibold">New inventory item</h2>
             </div>
             <form action={saveInventoryItemAction} className="mt-4 grid gap-3">
+              <input type="hidden" name="item_type" value="supply" />
               <input
                 name="code"
                 placeholder="Code, e.g. charcoal_bag"
@@ -292,6 +294,7 @@ export default async function InventoryPage({
 
                 <form action={saveInventoryItemAction} className="mt-4 grid gap-3">
                   <input type="hidden" name="inventory_item_id" value={selectedItem.id} />
+                  <input type="hidden" name="item_type" value={selectedItem.itemType} />
                   <input
                     name="code"
                     required

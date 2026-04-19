@@ -15,6 +15,8 @@ function formatSupplierType(value: SupplierType) {
   switch (value) {
     case "mixed":
       return "Mixed";
+    case "ingredient":
+      return "Ingredient";
     case "supply":
       return "Supply";
     default:

@@ -42,7 +42,9 @@ const procurementMigrationFiles = [
   "db/phase-13-supplier-traceability-and-sides.sql",
   "db/phase-14-processing-yield-weight.sql",
   "db/phase-15-goat-300g.sql",
-  "db/phase-16-chicken-processing-allocation.sql"
+  "db/phase-16-chicken-processing-allocation.sql",
+  "db/phase-17-ingredient-intake.sql",
+  "db/phase-18-supplier-intake-segmentation.sql"
 ];
 
 function ensureNoError(
@@ -594,11 +596,17 @@ export async function getInventoryPageData(selectedItemId?: string | null) {
   const serviceDate = getUgandaServiceDate();
   const { startIso, endIso } = getUgandaDayRange();
 
-  const [dailyStockResponse, itemsResponse, finishedStockResponse, processingBatchesResponse] = await Promise.all([
+  const [dailyStockResponse, itemsResponse, suppliersResponse, finishedStockResponse, processingBatchesResponse] = await Promise.all([
     loadDailyMenuStock(serviceDate, { allowTransientFallback: true }),
     supabase
       .from("inventory_items")
-      .select("id, code, name, unit_name, current_quantity, reorder_threshold, is_active, updated_at")
+      .select("id, code, name, unit_name, item_type, current_quantity, reorder_threshold, is_active, updated_at")
+      .order("name", { ascending: true }),
+    supabase
+      .from("suppliers")
+      .select("id, name, phone_number, license_number, supplier_type, default_abattoir_name")
+      .eq("is_active", true)
+      .in("supplier_type", ["supply", "mixed"])
       .order("name", { ascending: true }),
     supabase
       .from("finished_stock")
@@ -650,6 +658,7 @@ export async function getInventoryPageData(selectedItemId?: string | null) {
 
   ensureNoError(dailyStockResponse.error, "Unable to load daily stock");
   ensureNoError(itemsResponse.error, "Unable to load inventory items");
+  ensureNoError(suppliersResponse.error, "Unable to load supply suppliers", procurementMigrationFiles);
   ensureNoError(finishedStockResponse.error, "Unable to load finished frozen stock", procurementMigrationFiles);
   ensureNoError(processingBatchesResponse.error, "Unable to load today's processing batches", procurementMigrationFiles);
 
@@ -663,6 +672,7 @@ export async function getInventoryPageData(selectedItemId?: string | null) {
       code: item.code,
       name: item.name,
       unitName: item.unit_name,
+      itemType: item.item_type ?? "supply",
       currentQuantity,
       reorderThreshold,
       isActive: Boolean(item.is_active),
@@ -670,6 +680,14 @@ export async function getInventoryPageData(selectedItemId?: string | null) {
       isLowStock: currentQuantity <= reorderThreshold
     };
   });
+  const suppliers = (suppliersResponse.data ?? []).map((supplier: any) => ({
+    id: normalizeNumber(supplier.id),
+    name: supplier.name,
+    phoneNumber: supplier.phone_number,
+    licenseNumber: supplier.license_number,
+    supplierType: supplier.supplier_type,
+    defaultAbattoirName: supplier.default_abattoir_name
+  }));
   const finishedStock = (finishedStockResponse.data ?? []).map(mapFinishedStock);
   const todayProcessingBatches = (processingBatchesResponse.data ?? []).map(mapProcessingBatch);
 
@@ -703,6 +721,7 @@ export async function getInventoryPageData(selectedItemId?: string | null) {
     serviceDate,
     dailyStock,
     inventoryItems,
+    suppliers,
     selectedItem,
     movementHistory,
     finishedStock,
@@ -729,14 +748,13 @@ export async function getProcurementPageData(): Promise<ProcurementPageData> {
   ] = await Promise.all([
     supabase
       .from("inventory_items")
-      .select("id, code, name, unit_name, current_quantity, reorder_threshold")
+      .select("id, code, name, unit_name, item_type, current_quantity, reorder_threshold")
       .eq("is_active", true)
       .order("name", { ascending: true }),
     supabase
       .from("suppliers")
       .select("id, name, phone_number, license_number, supplier_type, default_abattoir_name")
       .eq("is_active", true)
-      .in("supplier_type", ["protein", "mixed"])
       .order("name", { ascending: true }),
     supabase
       .from("portion_types")
@@ -860,6 +878,7 @@ export async function getProcurementPageData(): Promise<ProcurementPageData> {
     code: item.code,
     name: item.name,
     unitName: item.unit_name,
+    itemType: item.item_type ?? "supply",
     currentQuantity: normalizeNumber(item.current_quantity),
     reorderThreshold: normalizeNumber(item.reorder_threshold)
   }));
@@ -1027,7 +1046,7 @@ export async function getMenuPageData(editMenuItemId?: string | null) {
       .order("sort_order", { ascending: true }),
     supabase
       .from("inventory_items")
-      .select("id, code, name, unit_name, current_quantity, reorder_threshold, is_active, updated_at")
+      .select("id, code, name, unit_name, item_type, current_quantity, reorder_threshold, is_active, updated_at")
       .eq("is_active", true)
       .order("name", { ascending: true }),
     supabase
@@ -1091,6 +1110,7 @@ export async function getMenuPageData(editMenuItemId?: string | null) {
       code: item.code,
       name: item.name,
       unitName: item.unit_name,
+      itemType: item.item_type ?? "supply",
       currentQuantity,
       reorderThreshold,
       isActive: Boolean(item.is_active),

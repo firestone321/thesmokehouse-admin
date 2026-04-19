@@ -2,6 +2,7 @@ import Link from "next/link";
 import { SchemaSetupNotice } from "@/components/admin/schema-setup-notice";
 import { ProcessingBatchForm } from "@/components/procurement/processing-batch-form";
 import { ProteinIntakeForm } from "@/components/procurement/protein-intake-form";
+import { SidesIntakeForm } from "@/components/procurement/sides-intake-form";
 import { SupplyIntakeForm } from "@/components/procurement/supply-intake-form";
 import { OperationsSchemaMissingError } from "@/lib/ops/errors";
 import { getProcurementPageData } from "@/lib/ops/queries";
@@ -11,8 +12,16 @@ function formatQuantity(value: number, unitName: string) {
   return `${value.toFixed(2)} ${unitName}`;
 }
 
-function getIntakeBadgeClasses(intakeType: "protein" | "supply") {
-  return intakeType === "protein" ? "bg-[#FFF4E5] text-[#B45309]" : "bg-[#E8F1FB] text-[#1D4ED8]";
+function getIntakeBadgeClasses(intakeType: "protein" | "ingredient" | "supply") {
+  if (intakeType === "protein") {
+    return "bg-[#FFF4E5] text-[#B45309]";
+  }
+
+  if (intakeType === "ingredient") {
+    return "bg-[#ECFDF3] text-[#15803D]";
+  }
+
+  return "bg-[#E8F1FB] text-[#1D4ED8]";
 }
 
 export default async function ProcurementPage() {
@@ -31,6 +40,15 @@ export default async function ProcurementPage() {
   const wholeChickenReceipts = data.recentActivity.filter((entry) => entry.proteinCode === "whole_chicken");
   const proteinReceipts = data.recentActivity.filter((entry) => entry.intakeType === "protein");
   const processingProteinReceipts = data.processingProteinReceipts;
+  const proteinSuppliers = data.suppliers.filter(
+    (supplier) => supplier.supplierType === "protein" || supplier.supplierType === "mixed"
+  );
+  const ingredientSuppliers = data.suppliers.filter(
+    (supplier) => supplier.supplierType === "ingredient" || supplier.supplierType === "mixed"
+  );
+  const supplySuppliers = data.suppliers.filter(
+    (supplier) => supplier.supplierType === "supply" || supplier.supplierType === "mixed"
+  );
   const totalProteinReceipts = proteinReceipts.length;
   const totalWholeChickensPlanned = wholeChickenReceipts.reduce((sum, entry) => sum + entry.quantityReceived, 0);
   const totalProcessedChickenPortions = wholeChickenReceipts.reduce(
@@ -46,8 +64,8 @@ export default async function ProcurementPage() {
             <p className="text-[11px] uppercase tracking-[0.22em] text-[#6B7280]">Resupplies</p>
             <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">Protein receiving and processing</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6B7280]">
-              Use this page for raw meat receiving, finished-stock processing, and non-consumable resupplies such as
-              Clamcraft boxes and butcher paper.
+              Use this page for raw meat receiving, side-input receiving, finished-stock processing, and non-consumable
+              resupplies such as Clamcraft boxes and butcher paper.
             </p>
           </div>
 
@@ -95,12 +113,22 @@ export default async function ProcurementPage() {
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="space-y-4">
-          <ProteinIntakeForm defaultDeliveryDate={data.serviceDate} suppliers={data.suppliers} />
+          <ProteinIntakeForm defaultDeliveryDate={data.serviceDate} suppliers={proteinSuppliers} />
           <ProcessingBatchForm portionOptions={data.portionOptions} proteinReceipts={processingProteinReceipts} />
         </div>
 
         <aside className="space-y-4">
-          <SupplyIntakeForm defaultDeliveryDate={data.serviceDate} inventoryItems={data.inventoryItems} />
+          <SidesIntakeForm
+            defaultDeliveryDate={data.serviceDate}
+            inventoryItems={data.inventoryItems}
+            suppliers={ingredientSuppliers}
+          />
+          <SupplyIntakeForm
+            defaultDeliveryDate={data.serviceDate}
+            inventoryItems={data.inventoryItems}
+            suppliers={supplySuppliers}
+            returnTo="/procurement"
+          />
 
           <section className="surface-card rounded-[32px] p-5">
             <div className="flex items-end justify-between gap-3 border-b border-[#EEF2F6] pb-4">

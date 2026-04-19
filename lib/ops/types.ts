@@ -1,8 +1,9 @@
 export const orderStatuses = ["new", "confirmed", "in_prep", "on_smoker", "ready", "completed", "cancelled"] as const;
 export const prepTypes = ["smoked", "packed", "drink"] as const;
 export const movementTypes = ["adjustment", "restock", "usage", "waste"] as const;
-export const procurementIntakeTypes = ["protein", "supply"] as const;
-export const supplierTypes = ["protein", "supply", "mixed"] as const;
+export const procurementIntakeTypes = ["protein", "ingredient", "supply"] as const;
+export const supplierTypes = ["protein", "ingredient", "supply", "mixed"] as const;
+export const inventoryItemTypes = ["ingredient", "supply"] as const;
 export const proteinProcurementCodes = [
   "beef_ribs",
   "beef_chunks",
@@ -18,6 +19,7 @@ export type PrepType = (typeof prepTypes)[number];
 export type InventoryMovementType = (typeof movementTypes)[number];
 export type ProcurementIntakeType = (typeof procurementIntakeTypes)[number];
 export type SupplierType = (typeof supplierTypes)[number];
+export type InventoryItemType = (typeof inventoryItemTypes)[number];
 export type ProteinProcurementCode = (typeof proteinProcurementCodes)[number];
 
 export interface InventoryItemRecord {
@@ -25,6 +27,7 @@ export interface InventoryItemRecord {
   code: string;
   name: string;
   unitName: string;
+  itemType: InventoryItemType;
   currentQuantity: number;
   reorderThreshold: number;
   isActive: boolean;
@@ -47,6 +50,7 @@ export interface ProcurementInventoryOption {
   code: string;
   name: string;
   unitName: string;
+  itemType: InventoryItemType;
   currentQuantity: number;
   reorderThreshold: number;
 }
@@ -173,6 +177,7 @@ export interface InventoryPageData {
   serviceDate: string;
   dailyStock: DailyStockRow[];
   inventoryItems: InventoryItemRecord[];
+  suppliers: ProcurementSupplierOption[];
   selectedItem: InventoryItemRecord | null;
   movementHistory: InventoryMovementRecord[];
   finishedStock: FinishedStockRecord[];

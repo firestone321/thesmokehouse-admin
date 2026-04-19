@@ -25,7 +25,7 @@ create table if not exists public.suppliers (
   constraint suppliers_license_number_not_blank_chk check (
     license_number is null or btrim(license_number) <> ''
   ),
-  constraint suppliers_supplier_type_chk check (supplier_type in ('protein', 'supply', 'mixed')),
+  constraint suppliers_supplier_type_chk check (supplier_type in ('protein', 'ingredient', 'supply', 'mixed')),
   constraint suppliers_default_abattoir_name_not_blank_chk check (
     default_abattoir_name is null or btrim(default_abattoir_name) <> ''
   )

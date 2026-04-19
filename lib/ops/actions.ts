@@ -217,6 +217,7 @@ export async function saveInventoryItemAction(formData: FormData) {
   const unitName = requiredText(formData, "unit_name");
   const reorderThreshold = toNumber(formData.get("reorder_threshold"), 0);
   const initialQuantity = toNumber(formData.get("initial_quantity"), 0);
+  const itemType = toOptionalText(formData.get("item_type")) ?? "supply";
   const code = codeInput || toCode(name);
 
   if (inventoryItemId) {
@@ -227,6 +228,7 @@ export async function saveInventoryItemAction(formData: FormData) {
         name,
         unit_name: unitName,
         reorder_threshold: reorderThreshold,
+        item_type: itemType,
         is_active: formData.get("is_active") === "on"
       })
       .eq("id", Number(inventoryItemId));
@@ -246,6 +248,7 @@ export async function saveInventoryItemAction(formData: FormData) {
       name,
       unit_name: unitName,
       reorder_threshold: reorderThreshold,
+      item_type: itemType,
       is_active: true
     })
     .select("id")
@@ -270,6 +273,48 @@ export async function saveInventoryItemAction(formData: FormData) {
 
   revalidateOperationalPaths();
   redirect(`/inventory?item=${data.id}`);
+}
+
+export async function createInventoryItemInlineAction(formData: FormData) {
+  const supabase = createAdminSupabaseClient();
+  const codeInput = String(formData.get("code") ?? "").trim();
+  const name = requiredText(formData, "name");
+  const unitName = requiredText(formData, "unit_name");
+  const reorderThreshold = toNumber(formData.get("reorder_threshold"), 0);
+  const itemType = toOptionalText(formData.get("item_type")) ?? "supply";
+  const code = codeInput || toCode(name);
+
+  const { data, error } = await supabase
+    .from("inventory_items")
+    .insert({
+      code,
+      name,
+      unit_name: unitName,
+      reorder_threshold: reorderThreshold,
+      item_type: itemType,
+      is_active: true
+    })
+    .select("id, code, name, unit_name, item_type, current_quantity, reorder_threshold")
+    .single();
+
+  if (error || !data) {
+    throw new Error(`Unable to create inventory item: ${error?.message ?? "Unknown error"}`);
+  }
+
+  revalidateOperationalPaths();
+
+  return {
+    ok: true as const,
+    item: {
+      id: data.id,
+      code: data.code,
+      name: data.name,
+      unitName: data.unit_name,
+      itemType: data.item_type,
+      currentQuantity: Number(data.current_quantity ?? 0),
+      reorderThreshold: Number(data.reorder_threshold ?? 0)
+    }
+  };
 }
 
 export async function adjustInventoryItemAction(formData: FormData) {
@@ -342,17 +387,24 @@ export async function recordProteinProcurementAction(formData: FormData) {
 export async function recordSupplyProcurementAction(formData: FormData) {
   const supabase = createAdminSupabaseClient();
   const inventoryItemId = toInteger(formData.get("inventory_item_id"));
-  const supplierName = requiredText(formData, "supplier_name");
+  const returnTo = toOptionalText(formData.get("return_to"));
+  const supplierIdValue = String(formData.get("supplier_id") ?? "").trim();
+  const supplierId = supplierIdValue ? Number(supplierIdValue) : null;
+  const supplierName = toOptionalText(formData.get("supplier_name"));
   const deliveryDate = requiredText(formData, "delivery_date");
   const quantityReceived = toNumber(formData.get("quantity_received"));
   const unitCost = toOptionalText(formData.get("unit_cost"));
   const note = toOptionalText(formData.get("note"));
 
+  if (supplierId === null && !supplierName) {
+    throw new Error("Supplier is required");
+  }
+
   const { error } = await supabase.rpc("record_procurement_receipt", {
     p_intake_type: "supply",
     p_protein_code: null,
     p_inventory_item_id: inventoryItemId,
-    p_supplier_id: null,
+    p_supplier_id: supplierId,
     p_supplier_name: supplierName,
     p_batch_number: null,
     p_delivery_date: deliveryDate,
@@ -373,7 +425,50 @@ export async function recordSupplyProcurementAction(formData: FormData) {
   }
 
   revalidateOperationalPaths();
-  redirect(`/inventory?item=${inventoryItemId}`);
+  redirect(returnTo ?? `/inventory?item=${inventoryItemId}`);
+}
+
+export async function recordIngredientProcurementAction(formData: FormData) {
+  const supabase = createAdminSupabaseClient();
+  const inventoryItemId = toInteger(formData.get("inventory_item_id"));
+  const supplierIdValue = String(formData.get("supplier_id") ?? "").trim();
+  const supplierId = supplierIdValue ? Number(supplierIdValue) : null;
+  const supplierName = toOptionalText(formData.get("supplier_name"));
+  const deliveryDate = requiredText(formData, "delivery_date");
+  const quantityReceived = toNumber(formData.get("quantity_received"));
+  const unitCost = toOptionalText(formData.get("unit_cost"));
+  const note = toOptionalText(formData.get("note"));
+
+  if (supplierId === null && !supplierName) {
+    throw new Error("Supplier is required");
+  }
+
+  const { error } = await supabase.rpc("record_procurement_receipt", {
+    p_intake_type: "ingredient",
+    p_protein_code: null,
+    p_inventory_item_id: inventoryItemId,
+    p_supplier_id: supplierId,
+    p_supplier_name: supplierName,
+    p_batch_number: null,
+    p_delivery_date: deliveryDate,
+    p_butchered_on: null,
+    p_abattoir_name: null,
+    p_vet_stamp_number: null,
+    p_inspection_officer_name: null,
+    p_quantity_received: quantityReceived,
+    p_unit_name: null,
+    p_unit_cost: unitCost ? toNumber(unitCost) : null,
+    p_note: note,
+    p_allocated_to_halves: 0,
+    p_allocated_to_quarters: 0
+  });
+
+  if (error) {
+    throw new Error(`Unable to record side ingredient procurement: ${error.message}`);
+  }
+
+  revalidateOperationalPaths();
+  redirect("/procurement");
 }
 
 export async function saveSupplierAction(formData: FormData) {

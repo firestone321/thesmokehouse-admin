@@ -37,6 +37,8 @@ function formatSupplierType(value: ProcurementSupplierOption["supplierType"]) {
   switch (value) {
     case "mixed":
       return "Mixed supplier";
+    case "ingredient":
+      return "Ingredient supplier";
     case "supply":
       return "Supply supplier";
     default:
