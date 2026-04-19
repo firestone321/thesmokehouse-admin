@@ -115,7 +115,7 @@ create table if not exists public.orders (
   cancelled_at timestamptz,
   constraint orders_number_not_blank_chk check (btrim(order_number) <> ''),
   constraint orders_total_amount_chk check (total_amount >= 0),
-  constraint orders_status_chk check (status in ('new', 'confirmed', 'in_prep', 'on_smoker', 'ready', 'completed', 'cancelled'))
+  constraint orders_status_chk check (status in ('new', 'confirmed', 'in_prep', 'ready', 'completed', 'cancelled'))
 );
 
 create index if not exists orders_status_created_idx
@@ -151,10 +151,10 @@ create table if not exists public.order_status_events (
   created_at timestamptz not null default now(),
   constraint order_status_events_type_chk check (event_type in ('created', 'status_changed', 'note_added')),
   constraint order_status_events_from_status_chk check (
-    from_status is null or from_status in ('new', 'confirmed', 'in_prep', 'on_smoker', 'ready', 'completed', 'cancelled')
+    from_status is null or from_status in ('new', 'confirmed', 'in_prep', 'ready', 'completed', 'cancelled')
   ),
   constraint order_status_events_to_status_chk check (
-    to_status is null or to_status in ('new', 'confirmed', 'in_prep', 'on_smoker', 'ready', 'completed', 'cancelled')
+    to_status is null or to_status in ('new', 'confirmed', 'in_prep', 'ready', 'completed', 'cancelled')
   )
 );
 
@@ -305,8 +305,7 @@ begin
   v_valid := case
     when v_from_status = 'new' and p_to_status in ('confirmed', 'cancelled') then true
     when v_from_status = 'confirmed' and p_to_status in ('in_prep', 'cancelled') then true
-    when v_from_status = 'in_prep' and p_to_status in ('on_smoker', 'cancelled') then true
-    when v_from_status = 'on_smoker' and p_to_status in ('ready', 'cancelled') then true
+    when v_from_status = 'in_prep' and p_to_status in ('ready', 'cancelled') then true
     when v_from_status = 'ready' and p_to_status in ('completed', 'cancelled') then true
     else false
   end;

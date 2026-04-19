@@ -12,8 +12,6 @@ function getStatusClasses(status: string) {
       return "bg-[#E8F1FB] text-[#1D4ED8]";
     case "in_prep":
       return "bg-[#FFF7ED] text-[#C2410C]";
-    case "on_smoker":
-      return "bg-[#EEF2FF] text-[#4338CA]";
     case "ready":
       return "bg-[#ECFDF3] text-[#15803D]";
     case "completed":
@@ -74,7 +72,6 @@ export default async function OrdersPage({
                 <option value="new">New</option>
                 <option value="confirmed">Confirmed</option>
                 <option value="in_prep">In prep</option>
-                <option value="on_smoker">On smoker</option>
                 <option value="ready">Ready</option>
                 <option value="completed">Completed</option>
                 <option value="cancelled">Cancelled</option>

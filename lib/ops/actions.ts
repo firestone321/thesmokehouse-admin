@@ -765,6 +765,10 @@ export async function updateOrderStatusAction(formData: FormData) {
   const nextStatus = requiredText(formData, "next_status");
   const note = toOptionalText(formData.get("note"));
 
+  if (nextStatus === "completed") {
+    redirect(`/orders/${orderId}?error=${encodeURIComponent("Use the pickup code form to complete this order.")}`);
+  }
+
   const { error } = await supabase.rpc("transition_order_status", {
     p_order_id: orderId,
     p_to_status: nextStatus,
@@ -773,6 +777,55 @@ export async function updateOrderStatusAction(formData: FormData) {
 
   if (error) {
     throw new Error(`Unable to update order status: ${error.message}`);
+  }
+
+  revalidateOperationalPaths();
+  redirect(`/orders/${orderId}`);
+}
+
+export async function completeOrderWithPickupCodeAction(formData: FormData) {
+  const supabase = createAdminSupabaseClient();
+  const orderId = toInteger(formData.get("order_id"));
+  const pickupCode = requiredText(formData, "pickup_code").replace(/\D/g, "");
+
+  if (!/^\d{4}$/.test(pickupCode)) {
+    redirect(`/orders/${orderId}?error=${encodeURIComponent("Enter the 4-digit pickup code shown in the customer app.")}`);
+  }
+
+  const { data: order, error: orderError } = await supabase
+    .from("orders")
+    .select("id, status, pickup_code")
+    .eq("id", orderId)
+    .maybeSingle();
+
+  if (orderError) {
+    throw new Error(`Unable to verify pickup code: ${orderError.message}`);
+  }
+
+  if (!order) {
+    redirect(`/orders/${orderId}?error=${encodeURIComponent("That order could not be found.")}`);
+  }
+
+  if (order.status !== "ready") {
+    redirect(`/orders/${orderId}?error=${encodeURIComponent("Only orders marked ready can be completed with a pickup code.")}`);
+  }
+
+  if (!order.pickup_code) {
+    redirect(`/orders/${orderId}?error=${encodeURIComponent("This order does not have a pickup code yet.")}`);
+  }
+
+  if (order.pickup_code !== pickupCode) {
+    redirect(`/orders/${orderId}?error=${encodeURIComponent("Pickup code did not match. Ask the customer to show the code in their app again.")}`);
+  }
+
+  const { error } = await supabase.rpc("transition_order_status", {
+    p_order_id: orderId,
+    p_to_status: "completed",
+    p_note: "Completed after pickup code verification."
+  });
+
+  if (error) {
+    throw new Error(`Unable to complete order: ${error.message}`);
   }
 
   revalidateOperationalPaths();

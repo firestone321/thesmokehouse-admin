@@ -1,4 +1,4 @@
-export const orderStatuses = ["new", "confirmed", "in_prep", "on_smoker", "ready", "completed", "cancelled"] as const;
+export const orderStatuses = ["new", "confirmed", "in_prep", "ready", "completed", "cancelled"] as const;
 export const prepTypes = ["smoked", "packed", "drink"] as const;
 export const movementTypes = ["adjustment", "restock", "usage", "waste"] as const;
 export const procurementIntakeTypes = ["protein", "ingredient", "supply"] as const;
@@ -301,6 +301,7 @@ export interface OrderDetailRecord {
   customerName: string | null;
   customerPhone: string | null;
   status: OrderStatus;
+  pickupCode: string | null;
   totalAmount: number;
   promisedAt: string | null;
   createdAt: string;
@@ -323,14 +324,14 @@ export interface DashboardSnapshot {
   generatedAt: string;
   metrics: {
     needsActionNow: number;
-    onSmoker: number;
+    inPrep: number;
     readyForPickup: number;
     lowStockPressure: number;
     revenueToday: number;
     issuesNeedingAttention: number;
   };
   actionOrders: OrderListItem[];
-  smokerOrders: OrderListItem[];
+  inPrepOrders: OrderListItem[];
   readyOrders: OrderListItem[];
   lowStockItems: DailyStockRow[];
   issues: DashboardIssueRecord[];

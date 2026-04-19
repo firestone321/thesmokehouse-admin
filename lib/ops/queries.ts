@@ -450,8 +450,6 @@ export function getAllowedNextStatuses(status: OrderStatus) {
     case "confirmed":
       return ["in_prep", "cancelled"] as const;
     case "in_prep":
-      return ["on_smoker", "cancelled"] as const;
-    case "on_smoker":
       return ["ready", "cancelled"] as const;
     case "ready":
       return ["completed", "cancelled"] as const;
@@ -526,6 +524,7 @@ export async function getOrderDetail(orderId: number | string): Promise<OrderDet
         customer_name,
         customer_phone,
         status,
+        pickup_code,
         total_amount,
         promised_at,
         created_at,
@@ -580,6 +579,7 @@ export async function getOrderDetail(orderId: number | string): Promise<OrderDet
     customerName: orderResponse.data.customer_name,
     customerPhone: orderResponse.data.customer_phone,
     status: orderResponse.data.status as OrderStatus,
+    pickupCode: orderResponse.data.pickup_code ?? null,
     totalAmount: normalizeNumber(orderResponse.data.total_amount),
     promisedAt: orderResponse.data.promised_at,
     createdAt: orderResponse.data.created_at,
@@ -1042,7 +1042,6 @@ export async function getMenuPageData(editMenuItemId?: string | null) {
     supabase
       .from("portion_types")
       .select("id, code, name, portion_label, is_active")
-      .eq("is_active", true)
       .order("sort_order", { ascending: true }),
     supabase
       .from("inventory_items")
@@ -1150,16 +1149,21 @@ export async function getMenuPageData(editMenuItemId?: string | null) {
   const selectedMenuItemId = editMenuItemId ? normalizeNumber(editMenuItemId) : null;
   const selectedMenuItem = menuItems.find((item) => item.id === selectedMenuItemId) ?? null;
   const assignedPortionTypeIds = new Set(menuItems.map((item) => item.portionTypeId));
-  const portionTypes: PortionTypeOption[] = (portionTypesResponse.data ?? []).map((portion: any) => {
-    const portionTypeId = normalizeNumber(portion.id);
+  const portionTypes: PortionTypeOption[] = (portionTypesResponse.data ?? [])
+    .filter((portion: any) => {
+      const portionTypeId = normalizeNumber(portion.id);
+      return Boolean(portion.is_active) || selectedMenuItem?.portionTypeId === portionTypeId;
+    })
+    .map((portion: any) => {
+      const portionTypeId = normalizeNumber(portion.id);
 
-    return {
-      id: portionTypeId,
-      code: portion.code,
-      label: `${portion.name}${portion.portion_label ? ` (${portion.portion_label})` : ""}`,
-      isAssigned: assignedPortionTypeIds.has(portionTypeId) && selectedMenuItem?.portionTypeId !== portionTypeId
-    };
-  });
+      return {
+        id: portionTypeId,
+        code: portion.code,
+        label: `${portion.name}${portion.portion_label ? ` (${portion.portion_label})` : ""}`,
+        isAssigned: assignedPortionTypeIds.has(portionTypeId) && selectedMenuItem?.portionTypeId !== portionTypeId
+      };
+    });
 
   return {
     categories,
@@ -1196,7 +1200,7 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
         )
       `
       )
-      .in("status", ["new", "confirmed", "in_prep", "on_smoker", "ready"])
+      .in("status", ["new", "confirmed", "in_prep", "ready"])
       .order("created_at", { ascending: false }),
     supabase
       .from("orders")
@@ -1243,7 +1247,7 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
     .filter((order) => order.status !== "cancelled")
     .reduce((sum, order) => sum + order.totalAmount, 0);
 
-  const smokerOrders = activeOrders.filter((order) => order.status === "on_smoker");
+  const inPrepOrders = activeOrders.filter((order) => order.status === "in_prep");
   const readyOrders = activeOrders.filter((order) => order.status === "ready");
   const actionOrders = [...activeOrders]
     .sort((left, right) => getNeedsActionPriority(left) - getNeedsActionPriority(right))
@@ -1265,14 +1269,14 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
     generatedAt: new Date().toISOString(),
     metrics: {
       needsActionNow: actionOrders.length,
-      onSmoker: smokerOrders.length,
+      inPrep: inPrepOrders.length,
       readyForPickup: readyOrders.length,
       lowStockPressure: lowStockItems.length,
       revenueToday,
       issuesNeedingAttention: issues.length
     },
     actionOrders,
-    smokerOrders,
+    inPrepOrders,
     readyOrders,
     lowStockItems,
     issues

@@ -120,9 +120,9 @@ export default async function DashboardPage() {
           supportingText="Orders still active and most urgent to move."
         />
         <MetricCard
-          label="On the smoker"
-          value={snapshot.metrics.onSmoker.toString()}
-          supportingText="Orders currently in the smoker stage."
+          label="In prep"
+          value={snapshot.metrics.inPrep.toString()}
+          supportingText="Orders confirmed and actively being prepared."
         />
         <MetricCard
           label="Ready for pickup"
@@ -150,7 +150,7 @@ export default async function DashboardPage() {
         <div className="space-y-4">
           <OrderPanel eyebrow="Action now" title="Orders needing movement" orders={snapshot.actionOrders} />
           <div className="grid gap-4 2xl:grid-cols-2">
-            <OrderPanel eyebrow="On the smoker" title="Active smoker queue" orders={snapshot.smokerOrders} />
+            <OrderPanel eyebrow="In prep" title="Orders being prepared" orders={snapshot.inPrepOrders} />
             <OrderPanel eyebrow="Ready for pickup" title="Ready and waiting" orders={snapshot.readyOrders} />
           </div>
         </div>
