@@ -9,7 +9,7 @@ export function requireEnv(name: string) {
 }
 
 export function getSupabaseUrl() {
-  return requireEnv("SUPABASE_URL");
+  return process.env.NEXT_PUBLIC_SUPABASE_URL ?? requireEnv("SUPABASE_URL");
 }
 
 export function getSupabasePublishableKey() {
