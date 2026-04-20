@@ -44,7 +44,8 @@ const procurementMigrationFiles = [
   "db/phase-15-goat-300g.sql",
   "db/phase-16-chicken-processing-allocation.sql",
   "db/phase-17-ingredient-intake.sql",
-  "db/phase-18-supplier-intake-segmentation.sql"
+  "db/phase-18-supplier-intake-segmentation.sql",
+  "db/phase-20-fries-direct-sellable.sql"
 ];
 
 function ensureNoError(

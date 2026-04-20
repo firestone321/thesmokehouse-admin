@@ -30,6 +30,7 @@ export function SidesIntakeForm({
   const [selectedItemId, setSelectedItemId] = useState<string>(ingredientItems[0] ? String(ingredientItems[0].id) : "");
   const [supplierOptions, setSupplierOptions] = useState(suppliers);
   const [supplierId, setSupplierId] = useState<string>(suppliers[0] ? String(suppliers[0].id) : "");
+  const [deliveryDate, setDeliveryDate] = useState(defaultDeliveryDate);
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(suppliers.length === 0);
   const [quickAddError, setQuickAddError] = useState<string | null>(null);
@@ -39,6 +40,17 @@ export function SidesIntakeForm({
   const [quickAddItemError, setQuickAddItemError] = useState<string | null>(null);
   const [quickAddItemSuccess, setQuickAddItemSuccess] = useState<string | null>(null);
   const [isCreatingItem, startCreateItemTransition] = useTransition();
+  const [batchPreviewTime, setBatchPreviewTime] = useState(() => {
+    const now = new Date();
+    const timeFormatter = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Africa/Kampala",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    });
+
+    return timeFormatter.format(now).replaceAll(":", "");
+  });
 
   const selectedItem = useMemo(
     () => itemOptions.find((item) => String(item.id) === selectedItemId) ?? null,
@@ -48,6 +60,7 @@ export function SidesIntakeForm({
     () => supplierOptions.find((supplier) => String(supplier.id) === supplierId) ?? null,
     [supplierId, supplierOptions]
   );
+  const batchPreviewValue = selectedItem ? `${selectedItem.code.toUpperCase()}-${deliveryDate.replaceAll("-", "")}-${batchPreviewTime}` : "";
 
   useEffect(() => {
     setItemOptions(ingredientItems);
@@ -58,6 +71,25 @@ export function SidesIntakeForm({
     setSupplierOptions(suppliers);
     setSupplierId((currentSupplierId) => currentSupplierId || (suppliers[0] ? String(suppliers[0].id) : ""));
   }, [suppliers]);
+
+  useEffect(() => {
+    const updatePreviewTime = () => {
+      const now = new Date();
+      const timeFormatter = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Africa/Kampala",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false
+      });
+
+      setBatchPreviewTime(timeFormatter.format(now).replaceAll(":", ""));
+    };
+
+    updatePreviewTime();
+    const timer = window.setInterval(updatePreviewTime, 1000);
+
+    return () => window.clearInterval(timer);
+  }, []);
 
   async function handleQuickAddSupplier(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -159,7 +191,8 @@ export function SidesIntakeForm({
             <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Sides Intake</p>
             <h2 className="mt-2 text-xl font-semibold">Receive fries, gonja, and other side inputs</h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6B7280]">
-              Use this for side ingredients that arrive as tracked food inputs, currently received by weight in kilograms.
+              Use this for side ingredients that arrive as tracked food inputs. Fries receipts now credit sellable fries
+              stock directly, while gonja stays on the ingredient-input path until its ripening workflow is confirmed.
             </p>
           </div>
           <span className="rounded-full bg-[#F3F4F6] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#4B5563]">
@@ -359,12 +392,26 @@ export function SidesIntakeForm({
           </label>
 
           <label className="space-y-2 text-sm text-[#6B7280]">
+            <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Batch number</span>
+            <input
+              value={batchPreviewValue}
+              readOnly
+              disabled
+              className="w-full rounded-2xl border border-[#D7DDE4] bg-[#F8FAFB] px-3 py-2.5 text-[#111418] opacity-100"
+            />
+            <p className="text-xs leading-5 text-[#6B7280]">
+              Generated automatically when the intake is saved using the tracked item code, delivery date, and Kampala time.
+            </p>
+          </label>
+
+          <label className="space-y-2 text-sm text-[#6B7280]">
             <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Delivery date</span>
             <input
               type="date"
               name="delivery_date"
               required
-              defaultValue={defaultDeliveryDate}
+              value={deliveryDate}
+              onChange={(event) => setDeliveryDate(event.target.value)}
               className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
             />
           </label>
@@ -457,7 +504,8 @@ export function SidesIntakeForm({
         </>
       ) : (
         <div className="mt-4 rounded-[22px] bg-[#F8FAFB] px-4 py-4 text-sm leading-6 text-[#6B7280]">
-          Expand this card when you need to receive fries, gonja, or other tracked side inputs.
+          Expand this card when you need to receive fries, gonja, or other tracked side inputs. Fries currently post
+          straight into sellable stock; gonja does not.
         </div>
       )}
     </section>

@@ -20,8 +20,8 @@ function requiredText(formData: FormData, key: string) {
   return value;
 }
 
-function buildProcurementBatchNumber(proteinCode: string, deliveryDate: string) {
-  const normalizedProteinCode = proteinCode.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "-");
+function buildProcurementBatchNumber(sourceCode: string, deliveryDate: string) {
+  const normalizedProteinCode = sourceCode.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "-");
   const normalizedDate = deliveryDate.replaceAll("-", "");
   const timestamp = new Date();
   const timeFormatter = new Intl.DateTimeFormat("en-GB", {
@@ -33,6 +33,21 @@ function buildProcurementBatchNumber(proteinCode: string, deliveryDate: string) 
   const formattedTime = timeFormatter.format(timestamp).replaceAll(":", "");
 
   return `${normalizedProteinCode}-${normalizedDate}-${formattedTime}`;
+}
+
+async function getInventoryItemBatchCode(inventoryItemId: number) {
+  const supabase = createAdminSupabaseClient();
+  const { data, error } = await supabase.from("inventory_items").select("code").eq("id", inventoryItemId).maybeSingle();
+
+  if (error) {
+    throw new Error(`Unable to load inventory item batch code: ${error.message}`);
+  }
+
+  if (!data?.code) {
+    throw new Error(`Unable to find inventory item ${inventoryItemId}`);
+  }
+
+  return data.code;
 }
 
 function revalidateOperationalPaths() {
@@ -392,6 +407,7 @@ export async function recordSupplyProcurementAction(formData: FormData) {
   const supplierId = supplierIdValue ? Number(supplierIdValue) : null;
   const supplierName = toOptionalText(formData.get("supplier_name"));
   const deliveryDate = requiredText(formData, "delivery_date");
+  const batchNumber = buildProcurementBatchNumber(await getInventoryItemBatchCode(inventoryItemId), deliveryDate);
   const quantityReceived = toNumber(formData.get("quantity_received"));
   const unitCost = toOptionalText(formData.get("unit_cost"));
   const note = toOptionalText(formData.get("note"));
@@ -406,7 +422,7 @@ export async function recordSupplyProcurementAction(formData: FormData) {
     p_inventory_item_id: inventoryItemId,
     p_supplier_id: supplierId,
     p_supplier_name: supplierName,
-    p_batch_number: null,
+    p_batch_number: batchNumber,
     p_delivery_date: deliveryDate,
     p_butchered_on: null,
     p_abattoir_name: null,
@@ -435,6 +451,7 @@ export async function recordIngredientProcurementAction(formData: FormData) {
   const supplierId = supplierIdValue ? Number(supplierIdValue) : null;
   const supplierName = toOptionalText(formData.get("supplier_name"));
   const deliveryDate = requiredText(formData, "delivery_date");
+  const batchNumber = buildProcurementBatchNumber(await getInventoryItemBatchCode(inventoryItemId), deliveryDate);
   const quantityReceived = toNumber(formData.get("quantity_received"));
   const unitCost = toOptionalText(formData.get("unit_cost"));
   const note = toOptionalText(formData.get("note"));
@@ -449,7 +466,7 @@ export async function recordIngredientProcurementAction(formData: FormData) {
     p_inventory_item_id: inventoryItemId,
     p_supplier_id: supplierId,
     p_supplier_name: supplierName,
-    p_batch_number: null,
+    p_batch_number: batchNumber,
     p_delivery_date: deliveryDate,
     p_butchered_on: null,
     p_abattoir_name: null,

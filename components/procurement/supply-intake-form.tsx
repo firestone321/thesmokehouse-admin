@@ -32,6 +32,7 @@ export function SupplyIntakeForm({
   );
   const [supplierOptions, setSupplierOptions] = useState(suppliers);
   const [supplierId, setSupplierId] = useState<string>(suppliers[0] ? String(suppliers[0].id) : "");
+  const [deliveryDate, setDeliveryDate] = useState(defaultDeliveryDate);
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(suppliers.length === 0);
   const [quickAddError, setQuickAddError] = useState<string | null>(null);
@@ -41,6 +42,17 @@ export function SupplyIntakeForm({
   const [quickAddItemError, setQuickAddItemError] = useState<string | null>(null);
   const [quickAddItemSuccess, setQuickAddItemSuccess] = useState<string | null>(null);
   const [isCreatingItem, startCreateItemTransition] = useTransition();
+  const [batchPreviewTime, setBatchPreviewTime] = useState(() => {
+    const now = new Date();
+    const timeFormatter = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Africa/Kampala",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    });
+
+    return timeFormatter.format(now).replaceAll(":", "");
+  });
 
   const selectedItem = useMemo(
     () => itemOptions.find((item) => String(item.id) === selectedItemId) ?? null,
@@ -51,6 +63,7 @@ export function SupplyIntakeForm({
     [supplierId, supplierOptions]
   );
   const resolvedReturnTo = returnTo ?? (selectedItemId ? `/inventory?item=${selectedItemId}` : "/inventory");
+  const batchPreviewValue = selectedItem ? `${selectedItem.code.toUpperCase()}-${deliveryDate.replaceAll("-", "")}-${batchPreviewTime}` : "";
 
   useEffect(() => {
     setItemOptions(supplyItems);
@@ -61,6 +74,25 @@ export function SupplyIntakeForm({
     setSupplierOptions(suppliers);
     setSupplierId((currentSupplierId) => currentSupplierId || (suppliers[0] ? String(suppliers[0].id) : ""));
   }, [suppliers]);
+
+  useEffect(() => {
+    const updatePreviewTime = () => {
+      const now = new Date();
+      const timeFormatter = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Africa/Kampala",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false
+      });
+
+      setBatchPreviewTime(timeFormatter.format(now).replaceAll(":", ""));
+    };
+
+    updatePreviewTime();
+    const timer = window.setInterval(updatePreviewTime, 1000);
+
+    return () => window.clearInterval(timer);
+  }, []);
 
   async function handleQuickAddSupplier(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -363,12 +395,26 @@ export function SupplyIntakeForm({
             </label>
 
             <label className="space-y-2 text-sm text-[#6B7280]">
+              <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Batch number</span>
+              <input
+                value={batchPreviewValue}
+                readOnly
+                disabled
+                className="w-full rounded-2xl border border-[#D7DDE4] bg-[#F8FAFB] px-3 py-2.5 text-[#111418] opacity-100"
+              />
+              <p className="text-xs leading-5 text-[#6B7280]">
+                Generated automatically when the intake is saved using the tracked item code, delivery date, and Kampala time.
+              </p>
+            </label>
+
+            <label className="space-y-2 text-sm text-[#6B7280]">
               <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Delivery date</span>
               <input
                 type="date"
                 name="delivery_date"
                 required
-                defaultValue={defaultDeliveryDate}
+                value={deliveryDate}
+                onChange={(event) => setDeliveryDate(event.target.value)}
                 className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
               />
             </label>
