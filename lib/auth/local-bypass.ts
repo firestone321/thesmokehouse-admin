@@ -22,13 +22,17 @@ export function isLocalAuthBypassEnabledForHost(host: string | null | undefined)
     return false;
   }
 
+  const hostname = parseHostname(host);
+
+  if (hostname && localHostnames.has(hostname)) {
+    return true;
+  }
+
   const envValue = process.env.LOCAL_AUTH_BYPASS?.trim().toLowerCase();
 
   if (!envValue || !enabledValues.has(envValue)) {
     return false;
   }
-
-  const hostname = parseHostname(host);
 
   return hostname ? localHostnames.has(hostname) : false;
 }

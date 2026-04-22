@@ -1,6 +1,7 @@
 import "server-only";
 import { unstable_noStore as noStore } from "next/cache";
-import { createAdminSupabaseClient } from "@/lib/supabase/server";
+import { createAdminSupabaseClient, createServerSupabaseClient } from "@/lib/supabase/server";
+import { isLocalAuthBypassEnabled } from "@/lib/auth/local-bypass";
 import {
   DailyStockRow,
   DashboardIssueRecord,
@@ -82,6 +83,14 @@ type SupabaseResponse<T> = {
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function createOperationsReadClient() {
+  if (await isLocalAuthBypassEnabled()) {
+    return createAdminSupabaseClient();
+  }
+
+  return createServerSupabaseClient();
 }
 
 function formatRpcError(error: SupabaseResponse<unknown>["error"]) {
@@ -468,7 +477,7 @@ export async function getOrdersPageData(options?: {
 }) {
   noStore();
 
-  const supabase = createAdminSupabaseClient();
+  const supabase = await createOperationsReadClient();
   const status = options?.status?.trim() || "all";
   const search = options?.search?.trim() || "";
 
@@ -516,7 +525,7 @@ export async function getOrdersPageData(options?: {
 export async function getOrderDetail(orderId: number | string): Promise<OrderDetailRecord | null> {
   noStore();
 
-  const supabase = createAdminSupabaseClient();
+  const supabase = await createOperationsReadClient();
   const normalizedId = normalizeNumber(orderId);
 
   const [orderResponse, eventsResponse] = await Promise.all([
@@ -1184,7 +1193,7 @@ export async function getMenuPageData(editMenuItemId?: string | null) {
 export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   noStore();
 
-  const supabase = createAdminSupabaseClient();
+  const supabase = await createOperationsReadClient();
   const { serviceDate, startIso, endIso } = getUgandaDayRange();
 
   const [activeOrdersResponse, todaysOrdersResponse, dailyStockResponse, incidentsResponse] = await Promise.all([

@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import { redirect } from "next/navigation";
 import { isLocalAuthBypassEnabled } from "@/lib/auth/local-bypass";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
