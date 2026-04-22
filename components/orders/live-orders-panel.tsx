@@ -22,6 +22,19 @@ function getStatusClasses(status: string) {
   }
 }
 
+function getPaymentStatusClasses(paymentStatus: string) {
+  switch (paymentStatus) {
+    case "paid":
+      return "bg-[#ECFDF3] text-[#15803D]";
+    case "failed":
+      return "bg-[#FFF4E5] text-[#B45309]";
+    case "cancelled":
+      return "bg-[#FDECEC] text-[#D32F2F]";
+    default:
+      return "bg-[#F3F4F6] text-[#4B5563]";
+  }
+}
+
 export function LiveOrdersPanel({ orders }: { orders: OrderListItem[] }) {
   useOrdersRealtime({
     source: "OrdersPage"
@@ -56,6 +69,9 @@ export function LiveOrdersPanel({ orders }: { orders: OrderListItem[] }) {
                     <h3 className="text-lg font-semibold">{order.orderNumber}</h3>
                     <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${getStatusClasses(order.status)}`}>
                       {order.status.replace("_", " ")}
+                    </span>
+                    <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${getPaymentStatusClasses(order.paymentStatus)}`}>
+                      payment {order.paymentStatus}
                     </span>
                   </div>
                   <p className="text-sm text-[#6B7280]">

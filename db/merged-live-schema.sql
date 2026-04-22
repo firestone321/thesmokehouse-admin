@@ -1897,4 +1897,958 @@ begin
 end;
 $$;
 
+alter table public.orders
+  add column if not exists service_date date;
+
+update public.orders
+set service_date = coalesce(
+  timezone('Africa/Kampala', promised_at)::date,
+  timezone('Africa/Kampala', created_at)::date
+)
+where service_date is null;
+
+alter table public.orders
+  alter column service_date set not null;
+
+comment on column public.orders.service_date is
+  'Uganda service day the order should reserve stock against.';
+
+alter table public.orders
+  add column if not exists payment_status text;
+
+update public.orders
+set payment_status = case
+  when status in ('confirmed', 'in_prep', 'ready', 'completed') then 'paid'
+  when status = 'cancelled' then 'cancelled'
+  else 'pending'
+end
+where payment_status is null;
+
+alter table public.orders
+  alter column payment_status set default 'pending';
+
+alter table public.orders
+  alter column payment_status set not null;
+
+alter table public.orders
+  drop constraint if exists orders_payment_status_chk;
+
+alter table public.orders
+  add constraint orders_payment_status_chk
+  check (payment_status in ('pending', 'paid', 'failed', 'cancelled'));
+
+alter table public.orders
+  add column if not exists payment_provider text,
+  add column if not exists payment_reference text,
+  add column if not exists payment_redirect_url text,
+  add column if not exists order_tracking_id text,
+  add column if not exists payment_last_verified_at timestamptz,
+  add column if not exists paid_at timestamptz,
+  add column if not exists payment_initiation_failure_code text,
+  add column if not exists payment_initiation_failure_message text,
+  add column if not exists payment_initiation_failed_at timestamptz,
+  add column if not exists stock_reserved_at timestamptz;
+
+comment on column public.orders.payment_status is
+  'Payment lifecycle state for storefront settlement and paid-only stock reservation.';
+
+comment on column public.orders.payment_provider is
+  'Payment provider currently associated with the order, such as pesapal.';
+
+comment on column public.orders.payment_reference is
+  'Provider confirmation/reference code for the settled transaction when available.';
+
+comment on column public.orders.payment_redirect_url is
+  'Latest provider-hosted payment page used to resume or complete checkout.';
+
+comment on column public.orders.order_tracking_id is
+  'Provider tracking identifier used to verify payment status with Pesapal.';
+
+comment on column public.orders.payment_last_verified_at is
+  'Last time the backend verified payment status with the provider.';
+
+comment on column public.orders.paid_at is
+  'Timestamp when the order first became paid.';
+
+comment on column public.orders.payment_initiation_failure_code is
+  'Provider rejection code captured when payment initiation fails explicitly.';
+
+comment on column public.orders.payment_initiation_failure_message is
+  'Human-readable provider rejection or initiation failure message.';
+
+comment on column public.orders.payment_initiation_failed_at is
+  'Timestamp when the latest explicit initiation failure was recorded.';
+
+comment on column public.orders.stock_reserved_at is
+  'Timestamp when service-day stock was first reserved after verified payment.';
+
+create index if not exists orders_payment_status_created_idx
+  on public.orders (payment_status, created_at desc);
+
+create unique index if not exists orders_order_tracking_id_key
+  on public.orders (order_tracking_id)
+  where order_tracking_id is not null;
+
+create table if not exists public.payment_attempts (
+  id bigint generated always as identity primary key,
+  order_id bigint not null references public.orders(id) on update cascade on delete cascade,
+  provider text not null,
+  attempt_number integer not null,
+  lifecycle_status text not null default 'initiated',
+  payment_status text not null default 'pending',
+  provider_reference text,
+  redirect_url text,
+  provider_status text,
+  provider_message text,
+  payment_reference text,
+  raw_response jsonb,
+  verified_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint payment_attempts_attempt_number_chk check (attempt_number > 0),
+  constraint payment_attempts_lifecycle_status_chk check (lifecycle_status in ('initiating', 'initiated', 'rejected', 'failed')),
+  constraint payment_attempts_payment_status_chk check (payment_status in ('pending', 'paid', 'failed', 'cancelled')),
+  constraint payment_attempts_order_attempt_unique unique (order_id, attempt_number)
+);
+
+create unique index if not exists payment_attempts_provider_reference_uidx
+  on public.payment_attempts (provider, provider_reference)
+  where provider_reference is not null;
+
+create index if not exists payment_attempts_order_created_idx
+  on public.payment_attempts (order_id, created_at desc);
+
+drop trigger if exists payment_attempts_set_updated_at on public.payment_attempts;
+create trigger payment_attempts_set_updated_at
+before update on public.payment_attempts
+for each row
+execute function public.set_updated_at();
+
+alter table public.orders
+  add column if not exists active_payment_attempt_id bigint references public.payment_attempts(id) on update cascade on delete set null;
+
+create or replace function public.reserve_paid_order_stock(
+  p_order_id bigint
+)
+returns public.orders
+language plpgsql
+as $$
+declare
+  v_order public.orders%rowtype;
+  v_item record;
+  v_existing_daily_stock public.daily_stock%rowtype;
+  v_finished_stock public.finished_stock%rowtype;
+  v_now timestamptz := now();
+begin
+  select *
+  into v_order
+  from public.orders
+  where id = p_order_id
+  for update;
+
+  if not found then
+    raise exception 'Order % not found', p_order_id;
+  end if;
+
+  if v_order.payment_status <> 'paid' then
+    raise exception 'Only paid orders can reserve stock';
+  end if;
+
+  if v_order.stock_reserved_at is not null then
+    return v_order;
+  end if;
+
+  for v_item in
+    select
+      mi.portion_type_id,
+      sum(oi.quantity)::integer as quantity_required
+    from public.order_items oi
+    join public.menu_items mi on mi.id = oi.menu_item_id
+    where oi.order_id = p_order_id
+    group by mi.portion_type_id
+    order by mi.portion_type_id
+  loop
+    if v_item.portion_type_id is null then
+      raise exception 'Order % contains a menu item without a sellable portion type', p_order_id;
+    end if;
+
+    select *
+    into v_existing_daily_stock
+    from public.daily_stock
+    where stock_date = v_order.service_date
+      and portion_type_id = v_item.portion_type_id
+    for update;
+
+    if found then
+      if v_existing_daily_stock.remaining_quantity < v_item.quantity_required then
+        raise exception 'Insufficient stock for portion % on %', v_item.portion_type_id, v_order.service_date;
+      end if;
+
+      update public.daily_stock
+      set reserved_quantity = reserved_quantity + v_item.quantity_required
+      where stock_date = v_order.service_date
+        and portion_type_id = v_item.portion_type_id;
+    else
+      select *
+      into v_finished_stock
+      from public.finished_stock
+      where portion_type_id = v_item.portion_type_id
+      for update;
+
+      if not found or v_finished_stock.current_quantity < v_item.quantity_required then
+        raise exception 'Insufficient stock for portion % on %', v_item.portion_type_id, v_order.service_date;
+      end if;
+
+      insert into public.daily_stock (
+        stock_date,
+        portion_type_id,
+        starting_quantity,
+        reserved_quantity
+      )
+      values (
+        v_order.service_date,
+        v_item.portion_type_id,
+        v_finished_stock.current_quantity,
+        v_item.quantity_required
+      );
+    end if;
+  end loop;
+
+  update public.orders
+  set stock_reserved_at = coalesce(stock_reserved_at, v_now)
+  where id = p_order_id
+  returning *
+  into v_order;
+
+  return v_order;
+end;
+$$;
+
+create or replace function public.release_reserved_order_stock(
+  p_order_id bigint
+)
+returns public.orders
+language plpgsql
+as $$
+declare
+  v_order public.orders%rowtype;
+  v_item record;
+begin
+  select *
+  into v_order
+  from public.orders
+  where id = p_order_id
+  for update;
+
+  if not found then
+    raise exception 'Order % not found', p_order_id;
+  end if;
+
+  if v_order.stock_reserved_at is null then
+    return v_order;
+  end if;
+
+  for v_item in
+    select
+      mi.portion_type_id,
+      sum(oi.quantity)::integer as quantity_required
+    from public.order_items oi
+    join public.menu_items mi on mi.id = oi.menu_item_id
+    where oi.order_id = p_order_id
+    group by mi.portion_type_id
+    order by mi.portion_type_id
+  loop
+    update public.daily_stock
+    set reserved_quantity = greatest(reserved_quantity - v_item.quantity_required, 0)
+    where stock_date = v_order.service_date
+      and portion_type_id = v_item.portion_type_id;
+  end loop;
+
+  update public.orders
+  set stock_reserved_at = null
+  where id = p_order_id
+  returning *
+  into v_order;
+
+  return v_order;
+end;
+$$;
+
+create or replace function public.finalize_reserved_order_sale(
+  p_order_id bigint
+)
+returns public.orders
+language plpgsql
+as $$
+declare
+  v_order public.orders%rowtype;
+  v_item record;
+begin
+  select *
+  into v_order
+  from public.orders
+  where id = p_order_id
+  for update;
+
+  if not found then
+    raise exception 'Order % not found', p_order_id;
+  end if;
+
+  if v_order.stock_reserved_at is null then
+    raise exception 'Order % does not have reserved stock to finalize', p_order_id;
+  end if;
+
+  for v_item in
+    select
+      mi.portion_type_id,
+      sum(oi.quantity)::integer as quantity_required
+    from public.order_items oi
+    join public.menu_items mi on mi.id = oi.menu_item_id
+    where oi.order_id = p_order_id
+    group by mi.portion_type_id
+    order by mi.portion_type_id
+  loop
+    update public.daily_stock
+    set
+      reserved_quantity = greatest(reserved_quantity - v_item.quantity_required, 0),
+      sold_quantity = sold_quantity + v_item.quantity_required
+    where stock_date = v_order.service_date
+      and portion_type_id = v_item.portion_type_id;
+  end loop;
+
+  update public.orders
+  set stock_reserved_at = null
+  where id = p_order_id
+  returning *
+  into v_order;
+
+  return v_order;
+end;
+$$;
+
+create or replace function public.mark_order_as_paid(
+  p_order_id bigint,
+  p_payment_provider text default 'pesapal',
+  p_order_tracking_id text default null,
+  p_payment_reference text default null,
+  p_payment_redirect_url text default null,
+  p_note text default null
+)
+returns public.orders
+language plpgsql
+as $$
+declare
+  v_order public.orders%rowtype;
+  v_previous_status text;
+  v_note text := nullif(btrim(coalesce(p_note, '')), '');
+begin
+  select *
+  into v_order
+  from public.orders
+  where id = p_order_id
+  for update;
+
+  if not found then
+    raise exception 'Order % not found', p_order_id;
+  end if;
+
+  if v_order.payment_status = 'paid' then
+    if v_order.stock_reserved_at is null then
+      perform public.reserve_paid_order_stock(p_order_id);
+
+      select *
+      into v_order
+      from public.orders
+      where id = p_order_id;
+    end if;
+
+    return v_order;
+  end if;
+
+  v_previous_status := v_order.status;
+
+  update public.orders
+  set
+    payment_status = 'paid',
+    payment_provider = coalesce(nullif(btrim(coalesce(p_payment_provider, '')), ''), payment_provider, 'pesapal'),
+    order_tracking_id = coalesce(nullif(btrim(coalesce(p_order_tracking_id, '')), ''), order_tracking_id),
+    payment_reference = coalesce(nullif(btrim(coalesce(p_payment_reference, '')), ''), payment_reference),
+    payment_redirect_url = coalesce(nullif(btrim(coalesce(p_payment_redirect_url, '')), ''), payment_redirect_url),
+    payment_last_verified_at = now(),
+    paid_at = coalesce(paid_at, now()),
+    payment_initiation_failure_code = null,
+    payment_initiation_failure_message = null,
+    payment_initiation_failed_at = null,
+    status = case when status = 'new' then 'confirmed' else status end
+  where id = p_order_id
+  returning *
+  into v_order;
+
+  perform public.reserve_paid_order_stock(p_order_id);
+
+  select *
+  into v_order
+  from public.orders
+  where id = p_order_id;
+
+  if v_previous_status <> v_order.status then
+    insert into public.order_status_events (
+      order_id,
+      event_type,
+      from_status,
+      to_status,
+      note
+    )
+    values (
+      v_order.id,
+      'status_changed',
+      v_previous_status,
+      v_order.status,
+      coalesce(v_note, 'Payment verified and stock reserved.')
+    );
+  elsif v_note is not null then
+    insert into public.order_status_events (
+      order_id,
+      event_type,
+      from_status,
+      to_status,
+      note
+    )
+    values (
+      v_order.id,
+      'note_added',
+      null,
+      null,
+      v_note
+    );
+  end if;
+
+  return v_order;
+end;
+$$;
+
+create or replace function public.transition_order_status(
+  p_order_id bigint,
+  p_to_status text,
+  p_note text default null
+)
+returns public.orders
+language plpgsql
+as $$
+declare
+  v_order public.orders%rowtype;
+  v_from_status text;
+  v_valid boolean := false;
+begin
+  select *
+  into v_order
+  from public.orders
+  where id = p_order_id
+  for update;
+
+  if not found then
+    raise exception 'Order % not found', p_order_id;
+  end if;
+
+  v_from_status := v_order.status;
+
+  v_valid := case
+    when v_from_status = 'new' and p_to_status = 'cancelled' then true
+    when v_from_status = 'confirmed' and p_to_status in ('in_prep', 'cancelled') then true
+    when v_from_status = 'in_prep' and p_to_status in ('ready', 'cancelled') then true
+    when v_from_status = 'ready' and p_to_status in ('completed', 'cancelled') then true
+    else false
+  end;
+
+  if not v_valid then
+    raise exception 'Invalid order status transition from % to %', v_from_status, p_to_status;
+  end if;
+
+  if p_to_status in ('confirmed', 'in_prep', 'ready', 'completed') and v_order.payment_status <> 'paid' then
+    raise exception 'Only paid orders can move to %', p_to_status;
+  end if;
+
+  if p_to_status = 'cancelled' and v_order.stock_reserved_at is not null then
+    select *
+    into v_order
+    from public.release_reserved_order_stock(p_order_id);
+  end if;
+
+  if p_to_status = 'completed' then
+    select *
+    into v_order
+    from public.finalize_reserved_order_sale(p_order_id);
+  end if;
+
+  update public.orders
+  set
+    status = p_to_status,
+    payment_status = case
+      when p_to_status = 'cancelled' and payment_status <> 'paid' then 'cancelled'
+      else payment_status
+    end,
+    completed_at = case when p_to_status = 'completed' then coalesce(completed_at, now()) else completed_at end,
+    cancelled_at = case when p_to_status = 'cancelled' then coalesce(cancelled_at, now()) else cancelled_at end
+  where id = p_order_id
+  returning *
+  into v_order;
+
+  insert into public.order_status_events (
+    order_id,
+    event_type,
+    from_status,
+    to_status,
+    note
+  )
+  values (
+    v_order.id,
+    'status_changed',
+    v_from_status,
+    p_to_status,
+    nullif(btrim(coalesce(p_note, '')), '')
+  );
+
+  return v_order;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Phase 22: admin role foundation and RLS lockdown
+-- ---------------------------------------------------------------------------
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type t
+    join pg_namespace n on n.oid = t.typnamespace
+    where n.nspname = 'public'
+      and t.typname = 'app_role'
+  ) then
+    create type public.app_role as enum ('admin', 'manager', 'staff');
+  end if;
+end
+$$;
+
+create table if not exists public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  email text not null unique,
+  role public.app_role not null default 'staff',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint profiles_email_not_blank_chk check (btrim(email) <> '')
+);
+
+create index if not exists profiles_role_idx
+  on public.profiles (role);
+
+comment on table public.profiles is
+  'Admin account directory for authenticated dashboard users and their database role.';
+
+comment on column public.profiles.role is
+  'App-level role used by RLS policies for admin dashboard access.';
+
+drop trigger if exists profiles_set_updated_at on public.profiles;
+create trigger profiles_set_updated_at
+before update on public.profiles
+for each row
+execute function public.set_updated_at();
+
+insert into public.profiles (
+  id,
+  email,
+  role
+)
+select
+  u.id,
+  coalesce(nullif(btrim(u.email), ''), u.id::text || '@placeholder.local'),
+  'staff'::public.app_role
+from auth.users u
+on conflict (id) do update
+set email = excluded.email
+where public.profiles.email is distinct from excluded.email;
+
+create or replace function public.current_profile_role()
+returns public.app_role
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select role
+  from public.profiles
+  where id = auth.uid();
+$$;
+
+create or replace function public.has_role(p_roles public.app_role[])
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(public.current_profile_role() = any(p_roles), false);
+$$;
+
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.profiles (
+    id,
+    email,
+    role
+  )
+  values (
+    new.id,
+    coalesce(nullif(btrim(new.email), ''), new.id::text || '@placeholder.local'),
+    'staff'
+  )
+  on conflict (id) do update
+  set email = excluded.email;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+after insert on auth.users
+for each row
+execute function public.handle_new_user();
+
+alter table public.profiles enable row level security;
+alter table public.proteins enable row level security;
+alter table public.packaging_types enable row level security;
+alter table public.portion_types enable row level security;
+alter table public.menu_categories enable row level security;
+alter table public.menu_items enable row level security;
+alter table public.menu_item_components enable row level security;
+alter table public.daily_stock enable row level security;
+alter table public.inventory_items enable row level security;
+alter table public.inventory_movements enable row level security;
+alter table public.procurement_receipts enable row level security;
+alter table public.finished_stock enable row level security;
+alter table public.finished_stock_movements enable row level security;
+alter table public.processing_batches enable row level security;
+alter table public.orders enable row level security;
+alter table public.order_items enable row level security;
+alter table public.order_status_events enable row level security;
+alter table public.payment_attempts enable row level security;
+alter table public.ops_incidents enable row level security;
+alter table public.suppliers enable row level security;
+
+drop policy if exists "profiles_select_self_or_admin_manager" on public.profiles;
+create policy "profiles_select_self_or_admin_manager"
+on public.profiles
+for select
+to authenticated
+using (
+  id = auth.uid()
+  or public.has_role(array['admin'::public.app_role, 'manager'::public.app_role])
+);
+
+drop policy if exists "profiles_admin_update" on public.profiles;
+create policy "profiles_admin_update"
+on public.profiles
+for update
+to authenticated
+using (public.has_role(array['admin'::public.app_role]))
+with check (public.has_role(array['admin'::public.app_role]));
+
+drop policy if exists "profiles_admin_delete" on public.profiles;
+create policy "profiles_admin_delete"
+on public.profiles
+for delete
+to authenticated
+using (public.has_role(array['admin'::public.app_role]));
+
+drop policy if exists "proteins_admin_roles_read" on public.proteins;
+create policy "proteins_admin_roles_read"
+on public.proteins
+for select
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "proteins_admin_roles_write" on public.proteins;
+create policy "proteins_admin_roles_write"
+on public.proteins
+for all
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]))
+with check (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "packaging_types_admin_roles_read" on public.packaging_types;
+create policy "packaging_types_admin_roles_read"
+on public.packaging_types
+for select
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "packaging_types_admin_roles_write" on public.packaging_types;
+create policy "packaging_types_admin_roles_write"
+on public.packaging_types
+for all
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]))
+with check (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "portion_types_admin_roles_read" on public.portion_types;
+create policy "portion_types_admin_roles_read"
+on public.portion_types
+for select
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "portion_types_admin_roles_write" on public.portion_types;
+create policy "portion_types_admin_roles_write"
+on public.portion_types
+for all
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]))
+with check (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "menu_categories_admin_roles_read" on public.menu_categories;
+create policy "menu_categories_admin_roles_read"
+on public.menu_categories
+for select
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "menu_categories_admin_roles_write" on public.menu_categories;
+create policy "menu_categories_admin_roles_write"
+on public.menu_categories
+for all
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]))
+with check (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "menu_items_admin_roles_read" on public.menu_items;
+create policy "menu_items_admin_roles_read"
+on public.menu_items
+for select
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "menu_items_admin_roles_write" on public.menu_items;
+create policy "menu_items_admin_roles_write"
+on public.menu_items
+for all
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]))
+with check (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "menu_item_components_admin_roles_read" on public.menu_item_components;
+create policy "menu_item_components_admin_roles_read"
+on public.menu_item_components
+for select
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "menu_item_components_admin_roles_write" on public.menu_item_components;
+create policy "menu_item_components_admin_roles_write"
+on public.menu_item_components
+for all
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]))
+with check (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "daily_stock_admin_roles_read" on public.daily_stock;
+create policy "daily_stock_admin_roles_read"
+on public.daily_stock
+for select
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "daily_stock_admin_roles_write" on public.daily_stock;
+create policy "daily_stock_admin_roles_write"
+on public.daily_stock
+for all
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]))
+with check (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "inventory_items_admin_roles_read" on public.inventory_items;
+create policy "inventory_items_admin_roles_read"
+on public.inventory_items
+for select
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "inventory_items_admin_roles_write" on public.inventory_items;
+create policy "inventory_items_admin_roles_write"
+on public.inventory_items
+for all
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]))
+with check (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "inventory_movements_admin_roles_read" on public.inventory_movements;
+create policy "inventory_movements_admin_roles_read"
+on public.inventory_movements
+for select
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "inventory_movements_admin_roles_write" on public.inventory_movements;
+create policy "inventory_movements_admin_roles_write"
+on public.inventory_movements
+for all
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]))
+with check (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "procurement_receipts_admin_roles_read" on public.procurement_receipts;
+create policy "procurement_receipts_admin_roles_read"
+on public.procurement_receipts
+for select
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "procurement_receipts_admin_roles_write" on public.procurement_receipts;
+create policy "procurement_receipts_admin_roles_write"
+on public.procurement_receipts
+for all
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]))
+with check (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "finished_stock_admin_roles_read" on public.finished_stock;
+create policy "finished_stock_admin_roles_read"
+on public.finished_stock
+for select
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "finished_stock_admin_roles_write" on public.finished_stock;
+create policy "finished_stock_admin_roles_write"
+on public.finished_stock
+for all
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]))
+with check (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "finished_stock_movements_admin_roles_read" on public.finished_stock_movements;
+create policy "finished_stock_movements_admin_roles_read"
+on public.finished_stock_movements
+for select
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "finished_stock_movements_admin_roles_write" on public.finished_stock_movements;
+create policy "finished_stock_movements_admin_roles_write"
+on public.finished_stock_movements
+for all
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]))
+with check (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "processing_batches_admin_roles_read" on public.processing_batches;
+create policy "processing_batches_admin_roles_read"
+on public.processing_batches
+for select
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "processing_batches_admin_roles_write" on public.processing_batches;
+create policy "processing_batches_admin_roles_write"
+on public.processing_batches
+for all
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]))
+with check (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "orders_admin_roles_read" on public.orders;
+create policy "orders_admin_roles_read"
+on public.orders
+for select
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "orders_admin_roles_write" on public.orders;
+create policy "orders_admin_roles_write"
+on public.orders
+for all
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]))
+with check (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "order_items_admin_roles_read" on public.order_items;
+create policy "order_items_admin_roles_read"
+on public.order_items
+for select
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "order_items_admin_roles_write" on public.order_items;
+create policy "order_items_admin_roles_write"
+on public.order_items
+for all
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]))
+with check (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "order_status_events_admin_roles_read" on public.order_status_events;
+create policy "order_status_events_admin_roles_read"
+on public.order_status_events
+for select
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "order_status_events_admin_roles_write" on public.order_status_events;
+create policy "order_status_events_admin_roles_write"
+on public.order_status_events
+for all
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]))
+with check (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "payment_attempts_admin_roles_read" on public.payment_attempts;
+create policy "payment_attempts_admin_roles_read"
+on public.payment_attempts
+for select
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "payment_attempts_admin_roles_write" on public.payment_attempts;
+create policy "payment_attempts_admin_roles_write"
+on public.payment_attempts
+for all
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]))
+with check (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "ops_incidents_admin_roles_read" on public.ops_incidents;
+create policy "ops_incidents_admin_roles_read"
+on public.ops_incidents
+for select
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "ops_incidents_admin_roles_write" on public.ops_incidents;
+create policy "ops_incidents_admin_roles_write"
+on public.ops_incidents
+for all
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]))
+with check (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "suppliers_admin_roles_read" on public.suppliers;
+create policy "suppliers_admin_roles_read"
+on public.suppliers
+for select
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
+drop policy if exists "suppliers_admin_roles_write" on public.suppliers;
+create policy "suppliers_admin_roles_write"
+on public.suppliers
+for all
+to authenticated
+using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]))
+with check (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role, 'staff'::public.app_role]));
+
 commit;

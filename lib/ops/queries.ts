@@ -45,7 +45,8 @@ const procurementMigrationFiles = [
   "db/phase-16-chicken-processing-allocation.sql",
   "db/phase-17-ingredient-intake.sql",
   "db/phase-18-supplier-intake-segmentation.sql",
-  "db/phase-20-fries-direct-sellable.sql"
+  "db/phase-20-fries-direct-sellable.sql",
+  "db/phase-21-pesapal-paid-reservations.sql"
 ];
 
 function ensureNoError(
@@ -261,6 +262,7 @@ function mapOrderListItem(row: any): OrderListItem {
     customerName: row.customer_name,
     customerPhone: row.customer_phone,
     status: row.status as OrderStatus,
+    paymentStatus: (row.payment_status ?? "pending") as any,
     totalAmount: normalizeNumber(row.total_amount),
     promisedAt: row.promised_at,
     createdAt: row.created_at,
@@ -422,8 +424,8 @@ function mapSupplierSupplyHistory(row: any): SupplierSupplyHistoryRecord {
 function getNeedsActionPriority(order: OrderListItem) {
   if (order.status === "ready") return 0;
   if (order.promisedAt && new Date(order.promisedAt).getTime() < Date.now()) return 1;
-  if (order.status === "new") return 2;
-  if (order.status === "confirmed") return 3;
+  if (order.status === "confirmed") return 2;
+  if (order.status === "in_prep") return 3;
   return 4;
 }
 
@@ -432,6 +434,7 @@ function getOverdueOrderIssues(orders: OrderListItem[]): DashboardIssueRecord[] 
     .filter((order) => {
       if (!order.promisedAt) return false;
       if (order.status === "completed" || order.status === "cancelled") return false;
+      if (order.paymentStatus !== "paid") return false;
       return new Date(order.promisedAt).getTime() < Date.now();
     })
     .slice(0, 3)
@@ -447,13 +450,13 @@ function getOverdueOrderIssues(orders: OrderListItem[]): DashboardIssueRecord[] 
 export function getAllowedNextStatuses(status: OrderStatus) {
   switch (status) {
     case "new":
-      return ["confirmed", "cancelled"] as const;
+      return [] as const;
     case "confirmed":
-      return ["in_prep", "cancelled"] as const;
+      return ["in_prep"] as const;
     case "in_prep":
-      return ["ready", "cancelled"] as const;
+      return ["ready"] as const;
     case "ready":
-      return ["completed", "cancelled"] as const;
+      return ["completed"] as const;
     default:
       return [] as const;
   }
@@ -478,6 +481,7 @@ export async function getOrdersPageData(options?: {
       customer_name,
       customer_phone,
       status,
+      payment_status,
       total_amount,
       promised_at,
       created_at,
@@ -525,6 +529,7 @@ export async function getOrderDetail(orderId: number | string): Promise<OrderDet
         customer_name,
         customer_phone,
         status,
+        payment_status,
         pickup_code,
         total_amount,
         promised_at,
@@ -580,6 +585,7 @@ export async function getOrderDetail(orderId: number | string): Promise<OrderDet
     customerName: orderResponse.data.customer_name,
     customerPhone: orderResponse.data.customer_phone,
     status: orderResponse.data.status as OrderStatus,
+    paymentStatus: (orderResponse.data.payment_status ?? "pending") as any,
     pickupCode: orderResponse.data.pickup_code ?? null,
     totalAmount: normalizeNumber(orderResponse.data.total_amount),
     promisedAt: orderResponse.data.promised_at,
@@ -1191,6 +1197,7 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
         customer_name,
         customer_phone,
         status,
+        payment_status,
         total_amount,
         promised_at,
         created_at,
@@ -1212,6 +1219,7 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
         customer_name,
         customer_phone,
         status,
+        payment_status,
         total_amount,
         promised_at,
         created_at,
@@ -1245,12 +1253,13 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   const lowStockItems = dailyStock.filter((item: DailyStockRow) => item.isInitialized && item.isLowStock).slice(0, 5);
 
   const revenueToday = todaysOrders
-    .filter((order) => order.status !== "cancelled")
+    .filter((order) => order.paymentStatus === "paid" && order.status !== "cancelled")
     .reduce((sum, order) => sum + order.totalAmount, 0);
 
   const inPrepOrders = activeOrders.filter((order) => order.status === "in_prep");
   const readyOrders = activeOrders.filter((order) => order.status === "ready");
-  const actionOrders = [...activeOrders]
+  const actionableOrders = activeOrders.filter((order) => order.status !== "new");
+  const actionOrders = [...actionableOrders]
     .sort((left, right) => getNeedsActionPriority(left) - getNeedsActionPriority(right))
     .slice(0, 5);
 

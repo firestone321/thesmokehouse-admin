@@ -1,4 +1,5 @@
 export const orderStatuses = ["new", "confirmed", "in_prep", "ready", "completed", "cancelled"] as const;
+export const paymentStatuses = ["pending", "paid", "failed", "cancelled"] as const;
 export const prepTypes = ["smoked", "packed", "drink"] as const;
 export const movementTypes = ["adjustment", "restock", "usage", "waste"] as const;
 export const procurementIntakeTypes = ["protein", "ingredient", "supply"] as const;
@@ -15,6 +16,7 @@ export const proteinProcurementCodes = [
 ] as const;
 
 export type OrderStatus = (typeof orderStatuses)[number];
+export type PaymentStatus = (typeof paymentStatuses)[number];
 export type PrepType = (typeof prepTypes)[number];
 export type InventoryMovementType = (typeof movementTypes)[number];
 export type ProcurementIntakeType = (typeof procurementIntakeTypes)[number];
@@ -269,6 +271,7 @@ export interface OrderListItem {
   customerName: string | null;
   customerPhone: string | null;
   status: OrderStatus;
+  paymentStatus: PaymentStatus;
   totalAmount: number;
   promisedAt: string | null;
   createdAt: string;
@@ -301,6 +304,7 @@ export interface OrderDetailRecord {
   customerName: string | null;
   customerPhone: string | null;
   status: OrderStatus;
+  paymentStatus: PaymentStatus;
   pickupCode: string | null;
   totalAmount: number;
   promisedAt: string | null;

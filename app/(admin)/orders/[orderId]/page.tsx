@@ -22,6 +22,19 @@ function getStatusClasses(status: string) {
   }
 }
 
+function getPaymentStatusClasses(paymentStatus: string) {
+  switch (paymentStatus) {
+    case "paid":
+      return "bg-[#ECFDF3] text-[#15803D]";
+    case "failed":
+      return "bg-[#FFF4E5] text-[#B45309]";
+    case "cancelled":
+      return "bg-[#FDECEC] text-[#D32F2F]";
+    default:
+      return "bg-[#F3F4F6] text-[#4B5563]";
+  }
+}
+
 export default async function OrderDetailPage({
   params,
   searchParams
@@ -61,6 +74,9 @@ export default async function OrderDetailPage({
               <h1 className="text-2xl font-semibold sm:text-3xl">{order.orderNumber}</h1>
               <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${getStatusClasses(order.status)}`}>
                 {order.status.replace("_", " ")}
+              </span>
+              <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${getPaymentStatusClasses(order.paymentStatus)}`}>
+                payment {order.paymentStatus}
               </span>
             </div>
             <p className="mt-2 text-sm text-[#6B7280]">
@@ -195,9 +211,7 @@ export default async function OrderDetailPage({
                           ? "Mark in prep"
                           : status === "ready"
                             ? "Mark ready"
-                            : status === "cancelled"
-                              ? "Cancel order"
-                              : `Mark as ${status.replace("_", " ")}`}
+                            : `Mark as ${String(status).replace("_", " ")}`}
                       </button>
                     </form>
                   )
@@ -233,6 +247,13 @@ export default async function OrderDetailPage({
               <div className="mt-4 rounded-[22px] bg-[#F8FAFB] px-4 py-4">
                 <p className="text-[10px] uppercase tracking-[0.18em] text-[#9CA3AF]">Current note log</p>
                 <p className="mt-2 whitespace-pre-line text-sm leading-6 text-[#6B7280]">{order.notes}</p>
+              </div>
+            ) : null}
+
+            {order.paymentStatus !== "paid" ? (
+              <div className="mt-4 rounded-[22px] border border-[#E4E7EB] bg-[#F8FAFB] px-4 py-4 text-sm leading-6 text-[#6B7280]">
+                Kitchen action stays locked until payment is verified. Once Pesapal marks this order paid, it will move
+                into the confirmed queue automatically.
               </div>
             ) : null}
           </section>

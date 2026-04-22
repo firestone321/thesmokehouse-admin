@@ -37,8 +37,8 @@ export default async function OrdersPage({
           <div>
             <h1 className="text-2xl font-semibold sm:text-3xl">Live order flow</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6B7280]">
-              This list is now backed by Supabase orders, items, and status event history. Use filters to focus the
-              active queue and open any order for the full timeline.
+              This list is now backed by Supabase orders, items, payment state, and status event history. Paid orders
+              enter the kitchen flow automatically, so staff only need to pick them up at prep time.
             </p>
           </div>
 
