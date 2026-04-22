@@ -571,6 +571,81 @@ export async function createSupplierInlineAction(formData: FormData) {
   };
 }
 
+async function savePortionTypeRecord(formData: FormData) {
+  const supabase = createAdminSupabaseClient();
+  const name = requiredText(formData, "name");
+  const grams = toInteger(formData.get("grams"));
+  const code = toCode(name);
+
+  if (grams <= 0) {
+    throw new Error("Grams must be greater than zero.");
+  }
+
+  const { data: existingPortionType, error: existingPortionTypeError } = await supabase
+    .from("portion_types")
+    .select("id")
+    .eq("code", code)
+    .maybeSingle();
+
+  if (existingPortionTypeError) {
+    throw new Error(`Unable to validate portion type code: ${existingPortionTypeError.message}`);
+  }
+
+  if (existingPortionType) {
+    throw new Error("A portion type with that name already exists.");
+  }
+
+  const { data: latestPortionType, error: latestPortionTypeError } = await supabase
+    .from("portion_types")
+    .select("sort_order")
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (latestPortionTypeError) {
+    throw new Error(`Unable to determine the next portion sort order: ${latestPortionTypeError.message}`);
+  }
+
+  const nextSortOrder = toInteger(latestPortionType?.sort_order ?? 0, 0) + 1;
+  const portionLabel = `${grams}g`;
+
+  const { data, error } = await supabase
+    .from("portion_types")
+    .insert({
+      code,
+      name,
+      portion_label: portionLabel,
+      protein_id: null,
+      packaging_type_id: null,
+      sort_order: nextSortOrder,
+      is_active: true
+    })
+    .select("id, code, name, portion_label")
+    .single();
+
+  if (error || !data) {
+    throw new Error(`Unable to create portion type: ${error?.message ?? "Unknown error"}`);
+  }
+
+  return {
+    id: data.id,
+    code: data.code,
+    label: `${data.name}${data.portion_label ? ` (${data.portion_label})` : ""}`,
+    isAssigned: false
+  };
+}
+
+export async function createPortionTypeInlineAction(formData: FormData) {
+  const portionType = await savePortionTypeRecord(formData);
+
+  revalidateOperationalPaths();
+
+  return {
+    ok: true as const,
+    portionType
+  };
+}
+
 export async function processProcurementReceiptToFinishedStockAction(formData: FormData) {
   const supabase = createAdminSupabaseClient();
   const procurementReceiptId = toInteger(formData.get("procurement_receipt_id"));
