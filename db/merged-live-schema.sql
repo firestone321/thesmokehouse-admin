@@ -855,6 +855,7 @@ declare
   v_note text := nullif(btrim(coalesce(p_note, '')), '');
   v_post_roast_packed_weight_kg numeric(10,3) := p_post_roast_packed_weight_kg;
   v_yield_percent numeric(6,2) := null;
+  v_service_date date := (now() at time zone 'Africa/Kampala')::date;
 begin
   if p_quantity_produced is null or p_quantity_produced <= 0 then
     raise exception 'Quantity produced must be greater than zero';
@@ -991,6 +992,11 @@ begin
     )
   );
 
+  insert into public.daily_stock (stock_date, portion_type_id, starting_quantity)
+  values (v_service_date, p_portion_type_id, v_finished_stock.current_quantity)
+  on conflict (stock_date, portion_type_id) do update
+  set starting_quantity = public.daily_stock.starting_quantity + p_quantity_produced;
+
   return v_finished_stock;
 end;
 $$;
@@ -1015,6 +1021,7 @@ declare
   v_quarter_batch public.processing_batches%rowtype;
   v_finished_stock public.finished_stock%rowtype;
   v_note text := nullif(btrim(coalesce(p_note, '')), '');
+  v_service_date date := (now() at time zone 'Africa/Kampala')::date;
 begin
   if p_birds_allocated_to_halves is null then
     raise exception 'Birds allocated to halves is required';
@@ -1162,6 +1169,11 @@ begin
         end
       )
     );
+
+    insert into public.daily_stock (stock_date, portion_type_id, starting_quantity)
+    values (v_service_date, v_half_portion_id, v_finished_stock.current_quantity)
+    on conflict (stock_date, portion_type_id) do update
+    set starting_quantity = public.daily_stock.starting_quantity + v_half_output;
   end if;
 
   if v_quarter_output > 0 then
@@ -1217,6 +1229,11 @@ begin
         end
       )
     );
+
+    insert into public.daily_stock (stock_date, portion_type_id, starting_quantity)
+    values (v_service_date, v_quarter_portion_id, v_finished_stock.current_quantity)
+    on conflict (stock_date, portion_type_id) do update
+    set starting_quantity = public.daily_stock.starting_quantity + v_quarter_output;
   end if;
 end;
 $$;
