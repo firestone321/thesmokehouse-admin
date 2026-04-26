@@ -47,6 +47,7 @@ const procurementMigrationFiles = [
   "db/phase-17-ingredient-intake.sql",
   "db/phase-18-supplier-intake-segmentation.sql",
   "db/phase-20-fries-direct-sellable.sql",
+  "db/phase-24-drinks-direct-sellable.sql",
   "db/phase-21-pesapal-paid-reservations.sql"
 ];
 

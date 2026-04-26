@@ -128,7 +128,7 @@ export function SidesIntakeForm({
         });
 
         setSupplierId(String(result.supplier.id));
-        setQuickAddSuccess(`${result.supplier.name} is ready to use for this sides intake.`);
+        setQuickAddSuccess(`${result.supplier.name} is ready to use for this sides and drinks intake.`);
         setIsQuickAddOpen(false);
         form.reset();
       } catch (error) {
@@ -162,7 +162,7 @@ export function SidesIntakeForm({
         });
 
         setSelectedItemId(String(result.item.id));
-        setQuickAddItemSuccess(`${result.item.name} is ready to use for this sides intake.`);
+        setQuickAddItemSuccess(`${result.item.name} is ready to use for this sides and drinks intake.`);
         setIsQuickAddItemOpen(false);
         form.reset();
       } catch (error) {
@@ -188,11 +188,11 @@ export function SidesIntakeForm({
       >
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Sides Intake</p>
-            <h2 className="mt-2 text-xl font-semibold">Receive fries, gonja, and other side inputs</h2>
+            <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Sides & Drinks Intake</p>
+            <h2 className="mt-2 text-xl font-semibold">Receive fries, gonja, juice, yoghurt, and soda</h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6B7280]">
-              Use this for side ingredients that arrive as tracked food inputs. Fries receipts now credit sellable fries
-              stock directly, while gonja stays on the ingredient-input path until its ripening workflow is confirmed.
+              Use this for side and drink inputs. Fries, juice, yoghurt, and soda receipts can credit sellable stock
+              directly, while gonja stays on the ingredient-input path until its ripening workflow is confirmed.
             </p>
           </div>
           <span className="rounded-full bg-[#F3F4F6] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#4B5563]">
@@ -211,7 +211,7 @@ export function SidesIntakeForm({
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Add Supplier</p>
-                  <h3 className="mt-2 text-lg font-semibold text-[#111418]">Quick add a sides supplier</h3>
+                  <h3 className="mt-2 text-lg font-semibold text-[#111418]">Quick add a sides or drinks supplier</h3>
                 </div>
                 <Link href="/suppliers" className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2 text-sm font-semibold text-[#111418]">
                   Open suppliers page
@@ -313,13 +313,13 @@ export function SidesIntakeForm({
                   form="sides-quick-add-item-form"
                   name="name"
                   required
-                  placeholder="Item name, e.g. fries input"
+                  placeholder="Item name, e.g. juice produced"
                   className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
                 />
                 <input
                   form="sides-quick-add-item-form"
                   name="code"
-                  placeholder="Code, e.g. fries_kg"
+                  placeholder="Code, e.g. juice_litre"
                   className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
                 />
                 <input
@@ -476,7 +476,7 @@ export function SidesIntakeForm({
           <textarea
             name="note"
             rows={3}
-            placeholder="Receiving remarks for this sides intake"
+            placeholder="Receiving remarks for this sides and drinks intake"
             className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-3 text-[#111418]"
           />
         </label>
@@ -486,11 +486,11 @@ export function SidesIntakeForm({
           disabled={supplierOptions.length === 0 || itemOptions.length === 0}
           className="rounded-2xl bg-[#111418] px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70"
         >
-          Save sides intake
+          Save sides and drinks intake
         </button>
         {supplierOptions.length === 0 ? (
           <p className="text-sm leading-6 text-[#6B7280]">
-            Add a supplier first so this sides intake is recorded against a saved supplier.
+            Add a supplier first so this sides and drinks intake is recorded against a saved supplier.
           </p>
         ) : null}
         {itemOptions.length === 0 ? (
@@ -504,8 +504,8 @@ export function SidesIntakeForm({
         </>
       ) : (
         <div className="mt-4 rounded-[22px] bg-[#F8FAFB] px-4 py-4 text-sm leading-6 text-[#6B7280]">
-          Expand this card when you need to receive fries, gonja, or other tracked side inputs. Fries currently post
-          straight into sellable stock; gonja does not.
+          Expand this card when you need to receive fries, gonja, juice, yoghurt, soda, or other tracked side and drink
+          inputs. Fries, juice, yoghurt, and soda currently post straight into sellable stock; gonja does not.
         </div>
       )}
     </section>

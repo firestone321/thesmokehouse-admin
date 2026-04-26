@@ -65,7 +65,7 @@ export default async function ProcurementPage() {
             <p className="text-[11px] uppercase tracking-[0.22em] text-[#6B7280]">Resupplies</p>
             <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">Protein receiving and processing</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6B7280]">
-              Use this page for raw meat receiving, side-input receiving, finished-stock processing, and non-consumable
+              Use this page for raw meat receiving, side and drink intake, finished-stock processing, and non-consumable
               resupplies such as Clamcraft boxes and butcher paper.
             </p>
           </div>
