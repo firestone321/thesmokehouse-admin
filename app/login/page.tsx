@@ -1,6 +1,6 @@
 import Image from "next/image";
 import { redirect } from "next/navigation";
-import { sendMagicLinkAction } from "@/lib/auth/actions";
+import { signInWithPasswordAction } from "@/lib/auth/actions";
 import { isLocalAuthBypassEnabled } from "@/lib/auth/local-bypass";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -44,16 +44,16 @@ export default async function LoginPage({
                 <p className="mt-2 text-sm text-[#CDD2D8]">Admin</p>
               </div>
             </div>
-            <h1 className="mt-4 text-4xl font-semibold leading-tight">Sign in with a magic link.</h1>
+            <h1 className="mt-4 text-4xl font-semibold leading-tight">Sign in with your password.</h1>
             <p className="mt-4 max-w-xl text-sm leading-7 text-[#CDD2D8]">
-              Enter a staff email that already exists in Supabase Auth. We&apos;ll send a one-time link and keep
-              passwords out of the workflow.
+              Enter the staff email and password already set in Supabase Auth. Access remains limited to saved team
+              members.
             </p>
           </div>
           <div className="rounded-[28px] border border-white/8 bg-white/5 p-5">
             <p className="text-[11px] uppercase tracking-[0.22em] text-[#AEB6C2]">Access rule</p>
             <p className="mt-3 text-sm leading-6 text-[#CDD2D8]">
-              Magic links are sent only to saved users. Unknown emails do not get a new account created.
+              Password sign-in uses existing Supabase Auth users. Unknown emails do not get a new account created.
             </p>
           </div>
         </section>
@@ -69,9 +69,9 @@ export default async function LoginPage({
             </div>
           </div>
           <p className="text-[11px] uppercase tracking-[0.22em] text-[#6B7280]">Sign in</p>
-          <h2 className="mt-3 text-3xl font-semibold">Get your magic link</h2>
+          <h2 className="mt-3 text-3xl font-semibold">Enter staff credentials</h2>
           <p className="mt-3 text-sm leading-6 text-[#6B7280]">
-            Use the same email that was already set up for staff access.
+            Use the same email and password set up for staff access.
           </p>
 
           {message ? (
@@ -80,7 +80,7 @@ export default async function LoginPage({
             </div>
           ) : null}
 
-          <form action={sendMagicLinkAction} className="mt-6 grid gap-4">
+          <form action={signInWithPasswordAction} className="mt-6 grid gap-4">
             <input type="hidden" name="next" value={nextPath} />
             <div className="grid gap-2">
               <label htmlFor="email" className="text-sm font-semibold text-[#111418]">
@@ -95,8 +95,22 @@ export default async function LoginPage({
                 className="rounded-2xl border border-[#D7DDE4] bg-white px-4 py-3 text-sm text-[#111418]"
               />
             </div>
+            <div className="grid gap-2">
+              <label htmlFor="password" className="text-sm font-semibold text-[#111418]">
+                Password
+              </label>
+              <input
+                id="password"
+                type="password"
+                name="password"
+                required
+                autoComplete="current-password"
+                placeholder="Enter your password"
+                className="rounded-2xl border border-[#D7DDE4] bg-white px-4 py-3 text-sm text-[#111418]"
+              />
+            </div>
             <button type="submit" className="rounded-2xl bg-[#111418] px-4 py-3 text-sm font-semibold text-white">
-              Send magic link
+              Sign in
             </button>
           </form>
         </section>

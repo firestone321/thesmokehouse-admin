@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { buildLoginRedirect, getBaseUrl } from "@/lib/auth/utils";
+import { buildLoginRedirect } from "@/lib/auth/utils";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 function requiredEmail(formData: FormData) {
@@ -14,25 +14,32 @@ function requiredEmail(formData: FormData) {
   return email;
 }
 
-export async function sendMagicLinkAction(formData: FormData) {
+function requiredPassword(formData: FormData) {
+  const password = String(formData.get("password") ?? "");
+
+  if (!password) {
+    throw new Error("Password is required.");
+  }
+
+  return password;
+}
+
+export async function signInWithPasswordAction(formData: FormData) {
   const supabase = await createServerSupabaseClient();
   const email = requiredEmail(formData);
+  const password = requiredPassword(formData);
   const nextPath = String(formData.get("next") ?? "/dashboard").trim() || "/dashboard";
-  const baseUrl = await getBaseUrl();
 
-  const { error } = await supabase.auth.signInWithOtp({
+  const { error } = await supabase.auth.signInWithPassword({
     email,
-    options: {
-      shouldCreateUser: false,
-      emailRedirectTo: `${baseUrl}/auth/callback?next=${encodeURIComponent(nextPath)}`
-    }
+    password
   });
 
   if (error) {
-    redirect(buildLoginRedirect(nextPath, `Unable to send magic link: ${error.message}`));
+    redirect(buildLoginRedirect(nextPath, `Unable to sign in: ${error.message}`));
   }
 
-  redirect(buildLoginRedirect(nextPath, `Magic link sent to ${email}.`));
+  redirect(nextPath);
 }
 
 export async function signOutAction() {
