@@ -3,6 +3,10 @@
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import {
+  didTransitionToReady,
+  triggerStorefrontReadyNotification
+} from "@/lib/ops/storefront-ready-notifications";
 import { createAdminSupabaseClient } from "@/lib/supabase/server";
 import { toCode, toInteger, toNumber, toOptionalText } from "@/lib/ops/utils";
 
@@ -869,6 +873,27 @@ export async function updateOrderStatusAction(formData: FormData) {
 
   if (error) {
     throw new Error(`Unable to update order status: ${error.message}`);
+  }
+
+  if (nextStatus === "ready") {
+    const { data: order, error: orderError } = await supabase
+      .from("orders")
+      .select("id,status,updated_at")
+      .eq("id", orderId)
+      .maybeSingle();
+
+    if (orderError) {
+      console.error("storefront_ready_notification_order_lookup_failed", {
+        orderId,
+        error: orderError.message
+      });
+    } else if (didTransitionToReady({ requestedStatus: nextStatus, order })) {
+      const readyOrder = order as { id: number; updated_at: string };
+      await triggerStorefrontReadyNotification({
+        id: readyOrder.id,
+        updatedAt: readyOrder.updated_at
+      });
+    }
   }
 
   revalidateOperationalPaths();

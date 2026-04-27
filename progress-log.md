@@ -1688,6 +1688,73 @@ Commit reference:
 - Git commit `c3265cd` adds admin PWA support
 - Git commit `c86004a` upgrades storefront PWA support
 
+## Durable Storefront Ready Push Notifications
+
+Status: implemented locally across the admin and storefront repos and ready for schema rollout plus environment wiring
+
+What changed:
+
+- Added a robust order-access-cookie foundation in the storefront so push subscription linking depends on a signed browser access session rather than a raw client-submitted order token
+- Added durable customer push notification tables and queue claiming in `db/phase-26-push-ready-notifications.sql`
+- Updated `db/merged-live-schema.sql` with the Phase 26 push schema
+- Added storefront push subscription storage at `/api/push/subscribe`
+- Added storefront durable Ready push processing at `/api/internal/push/order-ready/process`
+- Added storefront web-push helpers, VAPID browser conversion, and signed internal request verification
+- Extended the storefront service worker with `push` and `notificationclick` handlers
+- Added a paid-order tracking prompt so customers can opt into pickup alerts from the order page
+- Wired the admin Ready transition to enqueue an `order_ready` dispatch and best-effort kick the storefront processor
+- Kept Ready transitions fail-soft: if the storefront kickoff fails or is not configured, the order remains Ready and the durable dispatch remains retryable
+
+Files updated in the storefront repo:
+
+- `app/api/orders/[public_token]/route.ts`
+- `app/api/push/subscribe/route.ts`
+- `app/api/internal/push/order-ready/process/route.ts`
+- `app/order/[public_token]/page.tsx`
+- `components/enable-order-notifications.tsx`
+- `lib/order-access.ts`
+- `lib/internal-auth.ts`
+- `lib/push/order-ready.ts`
+- `lib/push/vapid.ts`
+- `lib/push/web-push.ts`
+- `public/sw.js`
+- `package.json`
+- `package-lock.json`
+
+Files updated in the admin repo:
+
+- `db/phase-26-push-ready-notifications.sql`
+- `db/merged-live-schema.sql`
+- `lib/internal-auth.ts`
+- `lib/ops/storefront-ready-notifications.ts`
+- `lib/ops/actions.ts`
+
+Environment required:
+
+- Storefront:
+  `ORDER_ACCESS_COOKIE_SECRET`,
+  `NEXT_PUBLIC_VAPID_PUBLIC_KEY`,
+  `VAPID_PRIVATE_KEY`,
+  `VAPID_SUBJECT`,
+  and `STOREFRONT_INTERNAL_AUTH_TOKEN`
+- Admin:
+  `STOREFRONT_BASE_URL`
+  and the same `STOREFRONT_INTERNAL_AUTH_TOKEN`
+
+No-cron durability note:
+
+- The implementation does not depend on Vercel cron
+- Ready transitions enqueue durable dispatch rows and immediately kick the signed storefront processor
+- Due queued dispatches are also scanned opportunistically from normal app events, including Ready kickoff, paid order tracking, and push subscription linking
+- Failed dispatches remain in `push_notification_dispatches` with retry metadata until a later event-driven scan claims them
+
+Verification completed:
+
+- `npx.cmd tsc --noEmit` passes in the storefront repo
+- `npx.cmd tsc --noEmit` passes in the admin repo
+- `npm run build` passes in the storefront repo
+- `npm run build` passes in the admin repo
+
 ## Shared Branding And Icons
 
 Status: implemented in both Smokehouse repos locally and ready to ship
@@ -1716,3 +1783,154 @@ Verification completed:
 
 - `npx.cmd tsc --noEmit` passes in the storefront repo
 - `npx.cmd tsc --noEmit` passes in the admin repo
+
+## Storefront Add-On Menu And Cart Refinement
+
+Status: implemented in the storefront repo and pushed to `main`
+
+Why this change was needed:
+
+- The customer-facing menu should treat Smokehouse proteins as the primary offer
+- Admin still needs to manage sides and drinks as normal sellable menu items with their own prices, images, stock, and availability
+- Storefront customers should experience sides and drinks like optional add-ons rather than peer categories beside beef, goat, and chicken
+- The desktop cart needed proper line-item controls instead of a mostly static receipt sidebar
+
+Storefront menu updates:
+
+- Kept `Sides` and `Drinks` unchanged in the admin data model
+- Hid `sides` and `drinks` from the storefront category tabs
+- Rendered side and drink items inside each protein card as checkbox add-ons
+- Add-on selections update the protein card subtotal and visible order total in real time
+- Prevented the same add-on from being selected under multiple protein cards at once
+- Disabled add-ons that are already in the cart so extra quantities are handled by the cart quantity controls instead of repeated checkbox selection
+
+Storefront cart updates:
+
+- Reworked the desktop order sidebar to include item thumbnails, quantity controls, remove actions, and line totals
+- Reworked the dedicated cart page with the same line-item behavior and Smokehouse visual styling
+- Preserved the existing order payload shape, where proteins and add-ons are still submitted as normal `menu_item_id` plus quantity rows
+
+Localhost menu resilience:
+
+- Added a storefront localhost helper for non-production host detection
+- Added a localhost-only stock-read fallback so the menu can still render locally if the stock lookup path fails
+- Allowed the storefront server Supabase client to use either `SUPABASE_SERVICE_ROLE_KEY` or `SUPABASE_SECRET_KEY`
+
+Files updated in storefront repo:
+
+- `app/api/menu/route.ts`
+- `app/page.tsx`
+- `components/cart-view.tsx`
+- `components/menu-client.tsx`
+- `lib/local-bypass.ts`
+- `lib/supabase.ts`
+
+Verification completed:
+
+- `npx.cmd tsc --noEmit` passes in the storefront repo
+- `npm.cmd run build` passes in the storefront repo
+- Local `GET /api/menu` returned active menu offerings
+- Local storefront homepage and cart page returned `200`
+
+Commit reference:
+
+- Storefront Git commit `09e8c85` refines storefront menu add-ons and cart behavior
+
+## Phase 24: Drinks Direct-Sellable Intake
+
+Status: implemented in the admin repo and pushed to `main`
+
+Why this phase was needed:
+
+- Juice existed as a sellable menu item, but staff did not have a proper way to log litres produced and turn that into orderable stock
+- Soda needed a practical first stock model before brand/flavor splitting, with cartons treated as the procurement unit
+- The fries direct-sellable pattern was the right operational shape for drinks too: record the intake/production event, then credit sellable stock directly
+
+What Phase 24 introduces:
+
+- Seeded ingredient intake items:
+  `juice_litre`,
+  `yoghurt_litre`,
+  and
+  `soda_carton`
+- Seeded sellable drink portions:
+  `soda_350ml`
+  and
+  `yoghurt_500ml`
+- Updated the existing `juice` portion and menu item to behave as a `500ml` drink serving
+- Added direct-sellable drink conversion rules inside `public.record_procurement_receipt(...)`
+- Renamed the Procurement card copy from sides-only language to sides-and-drinks language
+
+Current conversion assumptions:
+
+- `juice_litre` credits `juice` at:
+  `1 litre = 2 x 500ml servings`
+- `yoghurt_litre` credits `yoghurt_500ml` at:
+  `1 litre = 2 x 500ml servings`
+- `soda_carton` credits `soda_350ml` at:
+  `1 carton = 12 x 350ml plastic bottles`
+- Soda cartons must be entered as whole cartons
+- Gonja remains on the regular ingredient-input path for now
+
+Schema and migration updates:
+
+- Added `db/phase-24-drinks-direct-sellable.sql`
+- Updated the procurement migration hint list in `lib/ops/queries.ts`
+
+App updates tied to Phase 24:
+
+- Updated `components/procurement/sides-intake-form.tsx`
+- Updated `app/(admin)/procurement/page.tsx`
+
+Important current behavior:
+
+- Logging juice or yoghurt litres now creates sellable drink stock instead of only increasing tracked input inventory
+- Logging soda cartons creates sellable 350ml bottle stock
+- These direct-sellable drink receipts do not also restock the tracked input item, to avoid duplicate stock truths
+- Pricing, activation, availability, images, and brand/flavor splitting still remain admin menu decisions after rollout
+
+Verification completed:
+
+- `npm run build` passes in the admin repo
+
+Commit reference:
+
+- Admin Git commit `11b6dc3` adds Phase 24 drinks direct-sellable intake
+
+## Storefront Page Shell, Cart, And Payment Result Refresh
+
+Status: implemented in the storefront repo and pushed to `main`
+
+Why this change was needed:
+
+- Cart, checkout, and payment result screens needed to feel like part of the same branded storefront experience as the menu
+- Payment result messaging needed clearer states for success, pending verification, failure, and cancelled checkouts
+- The storefront docs still described the earlier standalone prototype rather than the current shared Smokehouse admin schema and Pesapal flow
+
+Storefront shell updates:
+
+- Added shared `SiteHeader` and `SiteFooter` components
+- Applied the shared shell to `/cart`, `/checkout`, and `/payment/result`
+- Added page metadata and `noindex` robots settings for cart, checkout, and payment result pages
+
+Cart and payment updates:
+
+- Restyled the cart empty state, line-item list, quantity controls, and checkout summary
+- Restyled the payment result page with state-specific panels and pickup-code emphasis
+- Added order summary cards and item-count display to the payment result view
+- Kept payment status polling and cart clearing behavior intact
+
+Storefront cleanup:
+
+- Removed the legacy `on_smoker` order status from storefront status types and validation
+- Updated `README.md` to describe the current shared schema, Pesapal checkout, PWA assets, and deployment expectations
+- Replaced `supabase/schema.sql` with an archive notice pointing fresh environments to the admin repo schema phases
+
+Verification completed:
+
+- `npm run build` passes in the storefront repo
+- `npm run lint` passes in the storefront repo
+
+Commit reference:
+
+- Storefront Git commit `ef2210e` refreshes the storefront shell, cart, and payment views
