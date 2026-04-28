@@ -60,7 +60,13 @@ function OrderPanel({
               <div className="mt-3 flex flex-wrap gap-3 text-sm text-[#6B7280]">
                 <span>{order.status.replace("_", " ")}</span>
                 <span>{formatDateTime(order.promisedAt)}</span>
+                {order.fulfillmentReviewRequired ? <span className="font-semibold text-[#A23B22]">stock review</span> : null}
               </div>
+              {order.fulfillmentReviewRequired ? (
+                <p className="mt-3 rounded-[18px] border border-[#F7D2B1] bg-[#FFF9F2] px-3 py-2 text-sm font-semibold leading-6 text-[#8A3F16]">
+                  {order.fulfillmentReviewReason ?? order.stockReservationError ?? "Paid, but stock reservation needs review."}
+                </p>
+              ) : null}
             </Link>
           ))
         ) : (

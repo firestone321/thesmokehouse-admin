@@ -48,6 +48,7 @@ const procurementMigrationFiles = [
   "db/phase-18-supplier-intake-segmentation.sql",
   "db/phase-20-fries-direct-sellable.sql",
   "db/phase-21-pesapal-paid-reservations.sql",
+  "db/phase-27-paid-order-stock-review.sql",
   "db/phase-24-drinks-direct-sellable.sql",
   "db/phase-25-processing-posts-daily-stock.sql"
 ];
@@ -274,6 +275,10 @@ function mapOrderListItem(row: any): OrderListItem {
     customerPhone: row.customer_phone,
     status: row.status as OrderStatus,
     paymentStatus: (row.payment_status ?? "pending") as any,
+    fulfillmentReviewRequired: Boolean(row.fulfillment_review_required),
+    fulfillmentReviewReason: row.fulfillment_review_reason ?? null,
+    stockReservationStatus: row.stock_reservation_status ?? (row.stock_reserved_at ? "reserved" : "not_started"),
+    stockReservationError: row.stock_reservation_error ?? null,
     totalAmount: normalizeNumber(row.total_amount),
     promisedAt: row.promised_at,
     createdAt: row.created_at,
@@ -433,6 +438,7 @@ function mapSupplierSupplyHistory(row: any): SupplierSupplyHistoryRecord {
 }
 
 function getNeedsActionPriority(order: OrderListItem) {
+  if (order.fulfillmentReviewRequired) return -1;
   if (order.status === "ready") return 0;
   if (order.promisedAt && new Date(order.promisedAt).getTime() < Date.now()) return 1;
   if (order.status === "confirmed") return 2;
@@ -455,6 +461,23 @@ function getOverdueOrderIssues(orders: OrderListItem[]): DashboardIssueRecord[] 
       detail: order.itemSummary,
       severity: order.status === "ready" ? "critical" : "warning",
       owner: "Orders"
+    }));
+}
+
+function getFulfillmentReviewIssues(orders: OrderListItem[]): DashboardIssueRecord[] {
+  return orders
+    .filter((order) => order.fulfillmentReviewRequired)
+    .slice(0, 6)
+    .map((order) => ({
+      id: `fulfillment-review-${order.id}`,
+      title: `${order.orderNumber} needs stock review`,
+      detail:
+        order.fulfillmentReviewReason ??
+        order.stockReservationError ??
+        "Payment succeeded, but stock was not reserved automatically.",
+      severity: "critical",
+      owner: "Orders",
+      createdAt: order.createdAt
     }));
 }
 
@@ -493,6 +516,11 @@ export async function getOrdersPageData(options?: {
       customer_phone,
       status,
       payment_status,
+      fulfillment_review_required,
+      fulfillment_review_reason,
+      stock_reserved_at,
+      stock_reservation_status,
+      stock_reservation_error,
       total_amount,
       promised_at,
       created_at,
@@ -541,6 +569,11 @@ export async function getOrderDetail(orderId: number | string): Promise<OrderDet
         customer_phone,
         status,
         payment_status,
+        fulfillment_review_required,
+        fulfillment_review_reason,
+        stock_reserved_at,
+        stock_reservation_status,
+        stock_reservation_error,
         pickup_code,
         total_amount,
         promised_at,
@@ -597,6 +630,11 @@ export async function getOrderDetail(orderId: number | string): Promise<OrderDet
     customerPhone: orderResponse.data.customer_phone,
     status: orderResponse.data.status as OrderStatus,
     paymentStatus: (orderResponse.data.payment_status ?? "pending") as any,
+    fulfillmentReviewRequired: Boolean(orderResponse.data.fulfillment_review_required),
+    fulfillmentReviewReason: orderResponse.data.fulfillment_review_reason ?? null,
+    stockReservationStatus:
+      orderResponse.data.stock_reservation_status ?? (orderResponse.data.stock_reserved_at ? "reserved" : "not_started"),
+    stockReservationError: orderResponse.data.stock_reservation_error ?? null,
     pickupCode: orderResponse.data.pickup_code ?? null,
     totalAmount: normalizeNumber(orderResponse.data.total_amount),
     promisedAt: orderResponse.data.promised_at,
@@ -1209,6 +1247,11 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
         customer_phone,
         status,
         payment_status,
+        fulfillment_review_required,
+        fulfillment_review_reason,
+        stock_reserved_at,
+        stock_reservation_status,
+        stock_reservation_error,
         total_amount,
         promised_at,
         created_at,
@@ -1231,6 +1274,11 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
         customer_phone,
         status,
         payment_status,
+        fulfillment_review_required,
+        fulfillment_review_reason,
+        stock_reserved_at,
+        stock_reservation_status,
+        stock_reservation_error,
         total_amount,
         promised_at,
         created_at,
@@ -1269,7 +1317,8 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
 
   const inPrepOrders = activeOrders.filter((order) => order.status === "in_prep");
   const readyOrders = activeOrders.filter((order) => order.status === "ready");
-  const actionableOrders = activeOrders.filter((order) => order.status !== "new");
+  const reviewOrders = activeOrders.filter((order) => order.fulfillmentReviewRequired);
+  const actionableOrders = activeOrders.filter((order) => order.status !== "new" || order.fulfillmentReviewRequired);
   const actionOrders = [...actionableOrders]
     .sort((left, right) => getNeedsActionPriority(left) - getNeedsActionPriority(right))
     .slice(0, 5);
@@ -1283,13 +1332,13 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
     createdAt: incident.created_at
   }));
 
-  const issues = [...incidents, ...getOverdueOrderIssues(activeOrders)].slice(0, 6);
+  const issues = [...getFulfillmentReviewIssues(activeOrders), ...incidents, ...getOverdueOrderIssues(activeOrders)].slice(0, 6);
 
   return {
     serviceDate,
     generatedAt: new Date().toISOString(),
     metrics: {
-      needsActionNow: actionOrders.length,
+      needsActionNow: actionOrders.length + reviewOrders.filter((order) => !actionOrders.some((actionOrder) => actionOrder.id === order.id)).length,
       inPrep: inPrepOrders.length,
       readyForPickup: readyOrders.length,
       lowStockPressure: lowStockItems.length,

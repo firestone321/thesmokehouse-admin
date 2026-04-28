@@ -1934,3 +1934,42 @@ Verification completed:
 Commit reference:
 
 - Storefront Git commit `ef2210e` refreshes the storefront shell, cart, and payment views
+
+## Phase 27: Paid Order Stock Review Safety
+
+Status: implemented locally in the admin repo and ready for schema rollout
+
+Why this phase was needed:
+
+- The bakery platform already solved the important race-condition rule: payment settlement must be preserved even if inventory or stock reservation fails afterward
+- Smokehouse Phase 21 still coupled `mark_order_as_paid(...)` to automatic stock reservation, so a reservation race could roll back the paid transition and leave a real paid customer order looking unpaid or missing from the admin action flow
+
+What Phase 27 introduces:
+
+- Paid state is now persisted before stock reservation is attempted
+- If stock reservation fails after payment verification, the order remains `payment_status = 'paid'` and moves into the normal paid admin flow
+- The failed reservation is captured with:
+  `stock_reservation_status = 'failed'`
+  `stock_reservation_error`
+  `stock_reservation_attempted_at`
+  `fulfillment_review_required = true`
+  and `fulfillment_review_reason`
+- Admin order list, order detail, dashboard action panel, and dashboard issues now surface these orders as `stock review`
+- Kitchen movement is blocked while `fulfillment_review_required` is true or while a paid order has no reserved stock
+
+Files updated:
+
+- `db/phase-21-pesapal-paid-reservations.sql`
+- `db/phase-27-paid-order-stock-review.sql`
+- `db/merged-live-schema.sql`
+- `lib/ops/types.ts`
+- `lib/ops/queries.ts`
+- `components/orders/live-orders-panel.tsx`
+- `components/dashboard/live-dashboard.tsx`
+- `app/(admin)/orders/[orderId]/page.tsx`
+
+Important current behavior:
+
+- Pesapal payment truth wins over stock-reservation failure
+- Staff can see and review paid orders that need stock attention instead of losing them in a pending/unpaid state
+- A paid order with failed reservation cannot be moved into prep until the stock issue is resolved

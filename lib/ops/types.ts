@@ -272,6 +272,10 @@ export interface OrderListItem {
   customerPhone: string | null;
   status: OrderStatus;
   paymentStatus: PaymentStatus;
+  fulfillmentReviewRequired: boolean;
+  fulfillmentReviewReason: string | null;
+  stockReservationStatus: string;
+  stockReservationError: string | null;
   totalAmount: number;
   promisedAt: string | null;
   createdAt: string;
@@ -305,6 +309,10 @@ export interface OrderDetailRecord {
   customerPhone: string | null;
   status: OrderStatus;
   paymentStatus: PaymentStatus;
+  fulfillmentReviewRequired: boolean;
+  fulfillmentReviewReason: string | null;
+  stockReservationStatus: string;
+  stockReservationError: string | null;
   pickupCode: string | null;
   totalAmount: number;
   promisedAt: string | null;

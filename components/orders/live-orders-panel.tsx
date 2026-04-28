@@ -73,12 +73,22 @@ export function LiveOrdersPanel({ orders }: { orders: OrderListItem[] }) {
                     <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${getPaymentStatusClasses(order.paymentStatus)}`}>
                       payment {order.paymentStatus}
                     </span>
+                    {order.fulfillmentReviewRequired ? (
+                      <span className="rounded-full bg-[#FFF1E8] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#A23B22]">
+                        stock review
+                      </span>
+                    ) : null}
                   </div>
                   <p className="text-sm text-[#6B7280]">
                     {order.customerName ?? "Walk-in"}
                     {order.customerPhone ? ` | ${order.customerPhone}` : ""}
                   </p>
                   <p className="text-sm leading-6 text-[#6B7280]">{order.itemSummary}</p>
+                  {order.fulfillmentReviewRequired ? (
+                    <p className="max-w-2xl rounded-[18px] border border-[#F7D2B1] bg-[#FFF9F2] px-3 py-2 text-sm font-semibold leading-6 text-[#8A3F16]">
+                      {order.fulfillmentReviewReason ?? order.stockReservationError ?? "Payment is paid, but stock reservation needs staff review."}
+                    </p>
+                  ) : null}
                 </div>
 
                 <div className="grid gap-3 text-sm text-[#6B7280] sm:grid-cols-3 lg:min-w-[420px]">

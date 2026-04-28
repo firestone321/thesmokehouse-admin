@@ -62,7 +62,7 @@ export default async function OrderDetailPage({
     notFound();
   }
 
-  const allowedNextStatuses = getAllowedNextStatuses(order.status);
+  const allowedNextStatuses = order.fulfillmentReviewRequired ? [] : getAllowedNextStatuses(order.status);
 
   return (
     <div className="space-y-4 text-[#111418]">
@@ -78,6 +78,11 @@ export default async function OrderDetailPage({
               <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${getPaymentStatusClasses(order.paymentStatus)}`}>
                 payment {order.paymentStatus}
               </span>
+              {order.fulfillmentReviewRequired ? (
+                <span className="rounded-full bg-[#FFF1E8] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#A23B22]">
+                  stock review
+                </span>
+              ) : null}
             </div>
             <p className="mt-2 text-sm text-[#6B7280]">
               {order.customerName ?? "Walk-in"}{order.customerPhone ? ` • ${order.customerPhone}` : ""}
@@ -104,6 +109,16 @@ export default async function OrderDetailPage({
       {errorMessage ? (
         <section className="rounded-[24px] border border-[#F4C7C7] bg-[#FFF8F8] px-5 py-4 text-sm leading-6 text-[#9F2D2D]">
           {errorMessage}
+        </section>
+      ) : null}
+
+      {order.fulfillmentReviewRequired ? (
+        <section className="rounded-[24px] border border-[#F7D2B1] bg-[#FFF9F2] px-5 py-4 text-sm leading-6 text-[#8A3F16]">
+          <p className="font-semibold text-[#7A2A18]">Paid order needs stock review</p>
+          <p className="mt-1">
+            {order.fulfillmentReviewReason ?? "Payment succeeded, but automatic stock reservation did not complete."}
+          </p>
+          {order.stockReservationError ? <p className="mt-1">Reservation error: {order.stockReservationError}</p> : null}
         </section>
       ) : null}
 
@@ -218,7 +233,9 @@ export default async function OrderDetailPage({
                 ))
               ) : (
                 <p className="rounded-[22px] bg-[#F8FAFB] px-4 py-4 text-sm leading-6 text-[#6B7280]">
-                  This order is already in a terminal state and has no further status transitions.
+                  {order.fulfillmentReviewRequired
+                    ? "Kitchen movement is locked until this paid order's stock reservation is reviewed."
+                    : "This order is already in a terminal state and has no further status transitions."}
                 </p>
               )}
             </div>

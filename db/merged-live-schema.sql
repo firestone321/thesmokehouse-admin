@@ -1964,7 +1964,36 @@ alter table public.orders
   add column if not exists payment_initiation_failure_code text,
   add column if not exists payment_initiation_failure_message text,
   add column if not exists payment_initiation_failed_at timestamptz,
-  add column if not exists stock_reserved_at timestamptz;
+  add column if not exists stock_reserved_at timestamptz,
+  add column if not exists stock_reservation_status text,
+  add column if not exists stock_reservation_error text,
+  add column if not exists stock_reservation_attempted_at timestamptz,
+  add column if not exists fulfillment_review_required boolean,
+  add column if not exists fulfillment_review_reason text;
+
+update public.orders
+set
+  stock_reservation_status = coalesce(
+    nullif(btrim(coalesce(stock_reservation_status, '')), ''),
+    case when stock_reserved_at is not null then 'reserved' else 'not_started' end
+  ),
+  fulfillment_review_required = coalesce(fulfillment_review_required, false)
+where stock_reservation_status is null
+   or nullif(btrim(coalesce(stock_reservation_status, '')), '') is null
+   or fulfillment_review_required is null;
+
+alter table public.orders
+  alter column stock_reservation_status set default 'not_started',
+  alter column stock_reservation_status set not null,
+  alter column fulfillment_review_required set default false,
+  alter column fulfillment_review_required set not null;
+
+alter table public.orders
+  drop constraint if exists orders_stock_reservation_status_chk;
+
+alter table public.orders
+  add constraint orders_stock_reservation_status_chk
+  check (stock_reservation_status in ('not_started', 'reserved', 'failed', 'released', 'finalized'));
 
 comment on column public.orders.payment_status is
   'Payment lifecycle state for storefront settlement and paid-only stock reservation.';
@@ -1999,8 +2028,30 @@ comment on column public.orders.payment_initiation_failed_at is
 comment on column public.orders.stock_reserved_at is
   'Timestamp when service-day stock was first reserved after verified payment.';
 
+comment on column public.orders.stock_reservation_status is
+  'Reservation lifecycle for paid-order stock handling.';
+
+comment on column public.orders.stock_reservation_error is
+  'Latest stock reservation failure message when payment succeeded but stock could not be reserved.';
+
+comment on column public.orders.stock_reservation_attempted_at is
+  'Latest time the backend attempted to reserve stock for the paid order.';
+
+comment on column public.orders.fulfillment_review_required is
+  'True when payment succeeded but staff must review fulfillment before moving the order forward.';
+
+comment on column public.orders.fulfillment_review_reason is
+  'Human-readable reason staff must review the paid order before fulfillment.';
+
 create index if not exists orders_payment_status_created_idx
   on public.orders (payment_status, created_at desc);
+
+create index if not exists orders_fulfillment_review_required_idx
+  on public.orders (fulfillment_review_required, created_at desc)
+  where fulfillment_review_required = true;
+
+create index if not exists orders_stock_reservation_status_idx
+  on public.orders (stock_reservation_status, created_at desc);
 
 create unique index if not exists orders_order_tracking_id_key
   on public.orders (order_tracking_id)
@@ -2132,7 +2183,13 @@ begin
   end loop;
 
   update public.orders
-  set stock_reserved_at = coalesce(stock_reserved_at, v_now)
+  set
+    stock_reserved_at = coalesce(stock_reserved_at, v_now),
+    stock_reservation_status = 'reserved',
+    stock_reservation_error = null,
+    stock_reservation_attempted_at = v_now,
+    fulfillment_review_required = false,
+    fulfillment_review_reason = null
   where id = p_order_id
   returning *
   into v_order;
@@ -2182,7 +2239,9 @@ begin
   end loop;
 
   update public.orders
-  set stock_reserved_at = null
+  set
+    stock_reserved_at = null,
+    stock_reservation_status = 'released'
   where id = p_order_id
   returning *
   into v_order;
@@ -2234,7 +2293,9 @@ begin
   end loop;
 
   update public.orders
-  set stock_reserved_at = null
+  set
+    stock_reserved_at = null,
+    stock_reservation_status = 'finalized'
   where id = p_order_id
   returning *
   into v_order;
@@ -2258,6 +2319,7 @@ declare
   v_order public.orders%rowtype;
   v_previous_status text;
   v_note text := nullif(btrim(coalesce(p_note, '')), '');
+  v_reservation_error text;
 begin
   select *
   into v_order
@@ -2271,7 +2333,36 @@ begin
 
   if v_order.payment_status = 'paid' then
     if v_order.stock_reserved_at is null then
-      perform public.reserve_paid_order_stock(p_order_id);
+      begin
+        perform public.reserve_paid_order_stock(p_order_id);
+      exception
+        when others then
+          v_reservation_error := sqlerrm;
+
+          update public.orders
+          set
+            stock_reservation_status = 'failed',
+            stock_reservation_error = v_reservation_error,
+            stock_reservation_attempted_at = now(),
+            fulfillment_review_required = true,
+            fulfillment_review_reason = 'Payment succeeded, but stock could not be reserved automatically. Review this order before fulfillment.'
+          where id = p_order_id;
+
+          insert into public.order_status_events (
+            order_id,
+            event_type,
+            from_status,
+            to_status,
+            note
+          )
+          values (
+            p_order_id,
+            'note_added',
+            null,
+            null,
+            'Stock reservation failed after paid verification: ' || v_reservation_error
+          );
+      end;
 
       select *
       into v_order
@@ -2296,12 +2387,45 @@ begin
     payment_initiation_failure_code = null,
     payment_initiation_failure_message = null,
     payment_initiation_failed_at = null,
+    stock_reservation_status = case when stock_reserved_at is not null then stock_reservation_status else 'not_started' end,
+    stock_reservation_error = null,
+    fulfillment_review_required = false,
+    fulfillment_review_reason = null,
     status = case when status = 'new' then 'confirmed' else status end
   where id = p_order_id
   returning *
   into v_order;
 
-  perform public.reserve_paid_order_stock(p_order_id);
+  begin
+    perform public.reserve_paid_order_stock(p_order_id);
+  exception
+    when others then
+      v_reservation_error := sqlerrm;
+
+      update public.orders
+      set
+        stock_reservation_status = 'failed',
+        stock_reservation_error = v_reservation_error,
+        stock_reservation_attempted_at = now(),
+        fulfillment_review_required = true,
+        fulfillment_review_reason = 'Payment succeeded, but stock could not be reserved automatically. Review this order before fulfillment.'
+      where id = p_order_id;
+
+      insert into public.order_status_events (
+        order_id,
+        event_type,
+        from_status,
+        to_status,
+        note
+      )
+      values (
+        p_order_id,
+        'note_added',
+        null,
+        null,
+        'Stock reservation failed after paid verification: ' || v_reservation_error
+      );
+  end;
 
   select *
   into v_order
@@ -2321,7 +2445,7 @@ begin
       'status_changed',
       v_previous_status,
       v_order.status,
-      coalesce(v_note, 'Payment verified and stock reserved.')
+      coalesce(v_note, 'Payment verified and stock reservation attempted.')
     );
   elsif v_note is not null then
     insert into public.order_status_events (
@@ -2383,6 +2507,14 @@ begin
 
   if p_to_status in ('confirmed', 'in_prep', 'ready', 'completed') and v_order.payment_status <> 'paid' then
     raise exception 'Only paid orders can move to %', p_to_status;
+  end if;
+
+  if p_to_status in ('in_prep', 'ready', 'completed') and v_order.fulfillment_review_required then
+    raise exception 'This paid order requires fulfillment review before moving to %', p_to_status;
+  end if;
+
+  if p_to_status in ('in_prep', 'ready', 'completed') and v_order.stock_reserved_at is null then
+    raise exception 'This paid order does not have reserved stock yet';
   end if;
 
   if p_to_status = 'cancelled' and v_order.stock_reserved_at is not null then

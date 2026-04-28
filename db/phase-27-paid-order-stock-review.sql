@@ -1,62 +1,12 @@
 begin;
 
--- Phase 21: Pesapal payment tracking and paid-only stock reservation.
+-- Phase 27: paid-order stock reservation review state.
 -- Purpose:
--- 1. Keep storefront orders in a pending operational state until payment is verified.
--- 2. Reserve daily stock only when a payment settles as paid.
--- 3. Release or finalize reserved stock consistently when orders are cancelled or completed.
+-- 1. Preserve payment settlement even if stock reservation races or fails.
+-- 2. Flag paid orders for admin review when automatic reservation cannot complete.
+-- 3. Block fulfillment movement until staff resolve paid orders without reserved stock.
 
 alter table public.orders
-  add column if not exists service_date date;
-
-update public.orders
-set service_date = coalesce(
-  timezone('Africa/Kampala', promised_at)::date,
-  timezone('Africa/Kampala', created_at)::date
-)
-where service_date is null;
-
-alter table public.orders
-  alter column service_date set not null;
-
-comment on column public.orders.service_date is
-  'Uganda service day the order should reserve stock against.';
-
-alter table public.orders
-  add column if not exists payment_status text;
-
-update public.orders
-set payment_status = case
-  when status in ('confirmed', 'in_prep', 'ready', 'completed') then 'paid'
-  when status = 'cancelled' then 'cancelled'
-  else 'pending'
-end
-where payment_status is null;
-
-alter table public.orders
-  alter column payment_status set default 'pending';
-
-alter table public.orders
-  alter column payment_status set not null;
-
-alter table public.orders
-  drop constraint if exists orders_payment_status_chk;
-
-alter table public.orders
-  add constraint orders_payment_status_chk
-  check (payment_status in ('pending', 'paid', 'failed', 'cancelled'));
-
-alter table public.orders
-  add column if not exists payment_provider text,
-  add column if not exists payment_reference text,
-  add column if not exists payment_redirect_url text,
-  add column if not exists order_tracking_id text,
-  add column if not exists payment_last_verified_at timestamptz,
-  add column if not exists paid_at timestamptz,
-  add column if not exists payment_initiation_failure_code text,
-  add column if not exists payment_initiation_failure_message text,
-  add column if not exists payment_initiation_failed_at timestamptz,
-  add column if not exists stock_reserved_at timestamptz,
   add column if not exists stock_reservation_status text,
   add column if not exists stock_reservation_error text,
   add column if not exists stock_reservation_attempted_at timestamptz,
@@ -87,39 +37,6 @@ alter table public.orders
   add constraint orders_stock_reservation_status_chk
   check (stock_reservation_status in ('not_started', 'reserved', 'failed', 'released', 'finalized'));
 
-comment on column public.orders.payment_status is
-  'Payment lifecycle state for storefront settlement and paid-only stock reservation.';
-
-comment on column public.orders.payment_provider is
-  'Payment provider currently associated with the order, such as pesapal.';
-
-comment on column public.orders.payment_reference is
-  'Provider confirmation/reference code for the settled transaction when available.';
-
-comment on column public.orders.payment_redirect_url is
-  'Latest provider-hosted payment page used to resume or complete checkout.';
-
-comment on column public.orders.order_tracking_id is
-  'Provider tracking identifier used to verify payment status with Pesapal.';
-
-comment on column public.orders.payment_last_verified_at is
-  'Last time the backend verified payment status with the provider.';
-
-comment on column public.orders.paid_at is
-  'Timestamp when the order first became paid.';
-
-comment on column public.orders.payment_initiation_failure_code is
-  'Provider rejection code captured when payment initiation fails explicitly.';
-
-comment on column public.orders.payment_initiation_failure_message is
-  'Human-readable provider rejection or initiation failure message.';
-
-comment on column public.orders.payment_initiation_failed_at is
-  'Timestamp when the latest explicit initiation failure was recorded.';
-
-comment on column public.orders.stock_reserved_at is
-  'Timestamp when service-day stock was first reserved after verified payment.';
-
 comment on column public.orders.stock_reservation_status is
   'Reservation lifecycle for paid-order stock handling.';
 
@@ -135,57 +52,12 @@ comment on column public.orders.fulfillment_review_required is
 comment on column public.orders.fulfillment_review_reason is
   'Human-readable reason staff must review the paid order before fulfillment.';
 
-create index if not exists orders_payment_status_created_idx
-  on public.orders (payment_status, created_at desc);
-
 create index if not exists orders_fulfillment_review_required_idx
   on public.orders (fulfillment_review_required, created_at desc)
   where fulfillment_review_required = true;
 
 create index if not exists orders_stock_reservation_status_idx
   on public.orders (stock_reservation_status, created_at desc);
-
-create unique index if not exists orders_order_tracking_id_key
-  on public.orders (order_tracking_id)
-  where order_tracking_id is not null;
-
-create table if not exists public.payment_attempts (
-  id bigint generated always as identity primary key,
-  order_id bigint not null references public.orders(id) on update cascade on delete cascade,
-  provider text not null,
-  attempt_number integer not null,
-  lifecycle_status text not null default 'initiated',
-  payment_status text not null default 'pending',
-  provider_reference text,
-  redirect_url text,
-  provider_status text,
-  provider_message text,
-  payment_reference text,
-  raw_response jsonb,
-  verified_at timestamptz,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  constraint payment_attempts_attempt_number_chk check (attempt_number > 0),
-  constraint payment_attempts_lifecycle_status_chk check (lifecycle_status in ('initiating', 'initiated', 'rejected', 'failed')),
-  constraint payment_attempts_payment_status_chk check (payment_status in ('pending', 'paid', 'failed', 'cancelled')),
-  constraint payment_attempts_order_attempt_unique unique (order_id, attempt_number)
-);
-
-create unique index if not exists payment_attempts_provider_reference_uidx
-  on public.payment_attempts (provider, provider_reference)
-  where provider_reference is not null;
-
-create index if not exists payment_attempts_order_created_idx
-  on public.payment_attempts (order_id, created_at desc);
-
-drop trigger if exists payment_attempts_set_updated_at on public.payment_attempts;
-create trigger payment_attempts_set_updated_at
-before update on public.payment_attempts
-for each row
-execute function public.set_updated_at();
-
-alter table public.orders
-  add column if not exists active_payment_attempt_id bigint references public.payment_attempts(id) on update cascade on delete set null;
 
 create or replace function public.reserve_paid_order_stock(
   p_order_id bigint
@@ -537,7 +409,7 @@ begin
       'status_changed',
       v_previous_status,
       v_order.status,
-      coalesce(v_note, 'Payment verified and stock reserved.')
+      coalesce(v_note, 'Payment verified and stock reservation attempted.')
     );
   elsif v_note is not null then
     insert into public.order_status_events (
