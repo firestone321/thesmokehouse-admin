@@ -1973,3 +1973,54 @@ Important current behavior:
 - Pesapal payment truth wins over stock-reservation failure
 - Staff can see and review paid orders that need stock attention instead of losing them in a pending/unpaid state
 - A paid order with failed reservation cannot be moved into prep until the stock issue is resolved
+
+## 2026-04-29: Push Notifications And Storefront Freshness
+
+Status: implemented, verified, and pushed across the admin and storefront repos
+
+Why these changes were needed:
+
+- Staff need browser push alerts for new paid orders without relying on a separate mobile app
+- Storefront customers need guest pickup orders to remain easy to reopen on the same device
+- Storefront customers can otherwise keep older app files after a deploy, especially when the PWA service worker has cached assets
+
+Admin push notification updates:
+
+- Added device-scoped admin push subscription storage and dispatch tables in `db/phase-28-admin-push-notifications.sql`
+- Merged the Phase 28 schema into `db/merged-live-schema.sql`
+- Added admin push subscription registration at `/api/admin/push/subscriptions`
+- Added admin push queue processing at `/api/admin/push/process`
+- Added automatic admin push enrollment for authenticated admin dashboard users
+- Added `web-push` support and local typings
+- Extended the admin service worker with push display and notification-click navigation
+- New paid order notifications target staff devices after an order transitions into the paid/confirmed admin flow
+
+Storefront guest pickup persistence:
+
+- Added device-local guest order persistence so customers can reopen recent pickup orders from the same browser/device
+- Added an `/order` landing page for stored guest pickup orders
+- Updated checkout, payment result, menu, order detail, and site-header flows to record and surface guest pickup orders
+- Updated storefront service worker caching to include the guest order path behavior
+
+Storefront app freshness banner:
+
+- Added `/api/app-version` with no-cache headers in the storefront repo
+- Extended `components/pwa-register.tsx` to compare the current deployed version with the browser's last-seen version
+- Added a fixed top banner for all storefront visitors:
+  `New content detected. Tap to reload.`
+- Kept the refresh flow event-based:
+  check on app open, when the app/tab becomes active again, and when the browser service worker reports an update
+- Removed timed polling so the storefront does not hit the version endpoint every few minutes
+- Tapping the banner reloads the app; the app never forces a reload automatically
+
+Verification completed:
+
+- `npm run lint` passes in the storefront repo, with the existing unrelated `lib/internal-auth.ts` unused-variable warning
+- `npm run build` passes in the storefront repo
+- `npm run build` passed for the admin push notification work before it was committed
+
+Commit references:
+
+- Admin Git commit `99773d6` adds device-scoped admin push notifications
+- Storefront Git commit `622ce9f` persists guest pickup orders on device
+- Storefront Git commit `fb1608e` adds the event-based storefront update banner

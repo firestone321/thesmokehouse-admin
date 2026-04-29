@@ -2332,6 +2332,35 @@ begin
   end if;
 
   if v_order.payment_status = 'paid' then
+    if v_order.status = 'cancelled' then
+      v_previous_status := v_order.status;
+
+      update public.orders
+      set
+        status = 'confirmed',
+        cancelled_at = null,
+        fulfillment_review_required = false,
+        fulfillment_review_reason = null
+      where id = p_order_id
+      returning *
+      into v_order;
+
+      insert into public.order_status_events (
+        order_id,
+        event_type,
+        from_status,
+        to_status,
+        note
+      )
+      values (
+        p_order_id,
+        'status_changed',
+        v_previous_status,
+        'confirmed',
+        coalesce(v_note, 'Payment verified after pending checkout timeout; order restored to paid workflow.')
+      );
+    end if;
+
     if v_order.stock_reserved_at is null then
       begin
         perform public.reserve_paid_order_stock(p_order_id);
@@ -2391,7 +2420,8 @@ begin
     stock_reservation_error = null,
     fulfillment_review_required = false,
     fulfillment_review_reason = null,
-    status = case when status = 'new' then 'confirmed' else status end
+    cancelled_at = case when status = 'cancelled' then null else cancelled_at end,
+    status = case when status in ('new', 'cancelled') then 'confirmed' else status end
   where id = p_order_id
   returning *
   into v_order;
