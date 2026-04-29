@@ -68,3 +68,62 @@ self.addEventListener("fetch", (event) => {
     })
   );
 });
+
+self.addEventListener("push", (event) => {
+  const payload = (() => {
+    if (!event.data) {
+      return {};
+    }
+
+    try {
+      return event.data.json();
+    } catch {
+      return {
+        body: event.data.text()
+      };
+    }
+  })();
+
+  const title = typeof payload.title === "string" ? payload.title : "Smokehouse Admin";
+  const notificationOptions = {
+    body: typeof payload.body === "string" ? payload.body : "A new paid order is ready for review.",
+    icon: "/icons/icon-192.png",
+    badge: "/icons/icon-192.png",
+    tag: typeof payload.tag === "string" ? payload.tag : undefined,
+    data: payload.data && typeof payload.data === "object" ? payload.data : {}
+  };
+
+  event.waitUntil(self.registration.showNotification(title, notificationOptions));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+
+  const requestedUrl =
+    event.notification.data && typeof event.notification.data.url === "string" ? event.notification.data.url : "/";
+  const targetUrl = new URL(requestedUrl, self.location.origin).toString();
+
+  event.waitUntil(
+    (async () => {
+      const clients = await self.clients.matchAll({
+        type: "window",
+        includeUncontrolled: true
+      });
+
+      for (const client of clients) {
+        if (client.url.startsWith(self.location.origin)) {
+          if ("navigate" in client) {
+            await client.navigate(targetUrl);
+          }
+
+          await client.focus();
+          return;
+        }
+      }
+
+      if (self.clients.openWindow) {
+        await self.clients.openWindow(targetUrl);
+      }
+    })()
+  );
+});

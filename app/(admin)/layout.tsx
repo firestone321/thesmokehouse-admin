@@ -1,4 +1,5 @@
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import { AdminPushAutoEnrollment } from "@/components/pwa/admin-push-auto-enrollment";
 import { redirect } from "next/navigation";
 import { isLocalAuthBypassEnabled } from "@/lib/auth/local-bypass";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -21,5 +22,10 @@ export default async function AdminLayout({ children }: Readonly<{ children: Rea
     redirect("/login");
   }
 
-  return <DashboardShell userEmail={user.email}>{children}</DashboardShell>;
+  return (
+    <DashboardShell userEmail={user.email}>
+      <AdminPushAutoEnrollment />
+      {children}
+    </DashboardShell>
+  );
 }
