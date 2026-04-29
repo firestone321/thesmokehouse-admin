@@ -4,5 +4,6 @@ dist
 coverage
 *.log
 progress-log.md
+smokehouse-paranoid-review.md
 .env.local
 tsconfig.tsbuildinfo
