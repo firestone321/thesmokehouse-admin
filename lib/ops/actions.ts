@@ -7,11 +7,14 @@ import {
   didTransitionToReady,
   triggerStorefrontReadyNotification
 } from "@/lib/ops/storefront-ready-notifications";
+import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
+import { getPesapalTransactionStatus } from "@/lib/payments/pesapal";
 import { createAdminSupabaseClient } from "@/lib/supabase/server";
 import { toCode, toInteger, toNumber, toOptionalText } from "@/lib/ops/utils";
 
 const menuImageBucket = "menu-item-images";
 const maxMenuImageBytes = 5 * 1024 * 1024;
+const pendingPaymentSoftCancelMs = 7 * 60_000;
 const allowedMenuImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 function requiredText(formData: FormData, key: string) {
@@ -229,6 +232,7 @@ async function saveMenuItemRecord(formData: FormData) {
 }
 
 export async function saveInventoryItemAction(formData: FormData) {
+  await requireApprovedAdminRole();
   const supabase = createAdminSupabaseClient();
   const inventoryItemId = String(formData.get("inventory_item_id") ?? "").trim();
   const codeInput = String(formData.get("code") ?? "").trim();
@@ -295,6 +299,7 @@ export async function saveInventoryItemAction(formData: FormData) {
 }
 
 export async function createInventoryItemInlineAction(formData: FormData) {
+  await requireApprovedAdminRole();
   const supabase = createAdminSupabaseClient();
   const codeInput = String(formData.get("code") ?? "").trim();
   const name = requiredText(formData, "name");
@@ -337,6 +342,7 @@ export async function createInventoryItemInlineAction(formData: FormData) {
 }
 
 export async function adjustInventoryItemAction(formData: FormData) {
+  await requireApprovedAdminRole();
   const supabase = createAdminSupabaseClient();
   const inventoryItemId = toInteger(formData.get("inventory_item_id"));
   const quantityDelta = toNumber(formData.get("quantity_delta"));
@@ -359,6 +365,7 @@ export async function adjustInventoryItemAction(formData: FormData) {
 }
 
 export async function recordProteinProcurementAction(formData: FormData) {
+  await requireApprovedAdminRole();
   const supabase = createAdminSupabaseClient();
   const supplierId = toInteger(formData.get("supplier_id"));
   const proteinCode = requiredText(formData, "protein_code");
@@ -404,6 +411,7 @@ export async function recordProteinProcurementAction(formData: FormData) {
 }
 
 export async function recordSupplyProcurementAction(formData: FormData) {
+  await requireApprovedAdminRole();
   const supabase = createAdminSupabaseClient();
   const inventoryItemId = toInteger(formData.get("inventory_item_id"));
   const returnTo = toOptionalText(formData.get("return_to"));
@@ -449,6 +457,7 @@ export async function recordSupplyProcurementAction(formData: FormData) {
 }
 
 export async function recordIngredientProcurementAction(formData: FormData) {
+  await requireApprovedAdminRole();
   const supabase = createAdminSupabaseClient();
   const inventoryItemId = toInteger(formData.get("inventory_item_id"));
   const supplierIdValue = String(formData.get("supplier_id") ?? "").trim();
@@ -493,6 +502,7 @@ export async function recordIngredientProcurementAction(formData: FormData) {
 }
 
 export async function saveSupplierAction(formData: FormData) {
+  await requireApprovedAdminRole();
   const result = await saveSupplierRecord(formData);
 
   revalidateOperationalPaths();
@@ -564,6 +574,7 @@ async function saveSupplierRecord(formData: FormData) {
 }
 
 export async function createSupplierInlineAction(formData: FormData) {
+  await requireApprovedAdminRole();
   const result = await saveSupplierRecord(formData);
 
   revalidateOperationalPaths();
@@ -640,6 +651,7 @@ async function savePortionTypeRecord(formData: FormData) {
 }
 
 export async function createPortionTypeInlineAction(formData: FormData) {
+  await requireApprovedAdminRole();
   const portionType = await savePortionTypeRecord(formData);
 
   revalidateOperationalPaths();
@@ -651,6 +663,7 @@ export async function createPortionTypeInlineAction(formData: FormData) {
 }
 
 export async function processProcurementReceiptToFinishedStockAction(formData: FormData) {
+  await requireApprovedAdminRole();
   const supabase = createAdminSupabaseClient();
   const procurementReceiptId = toInteger(formData.get("procurement_receipt_id"));
   const birdsAllocatedToHalves = toInteger(formData.get("birds_allocated_to_halves"), 0);
@@ -708,6 +721,7 @@ export async function processProcurementReceiptToFinishedStockAction(formData: F
 }
 
 export async function saveMenuCategoryAction(formData: FormData) {
+  await requireApprovedAdminRole();
   const supabase = createAdminSupabaseClient();
   const name = requiredText(formData, "name");
   const code = toCode(name);
@@ -734,6 +748,7 @@ export async function saveMenuCategoryAction(formData: FormData) {
 }
 
 export async function saveMenuItemAction(formData: FormData) {
+  await requireApprovedAdminRole();
   const imageFile = getOptionalImageFile(formData, "image");
   const result = await saveMenuItemRecord(formData);
 
@@ -750,10 +765,12 @@ export async function saveMenuItemAction(formData: FormData) {
 }
 
 export async function saveMenuItemDetailsAction(formData: FormData) {
+  await requireApprovedAdminRole();
   return saveMenuItemRecord(formData);
 }
 
 export async function uploadMenuItemImageAction(formData: FormData) {
+  await requireApprovedAdminRole();
   const menuItemId = toInteger(formData.get("menu_item_id"));
   const imageFile = getOptionalImageFile(formData, "image");
 
@@ -772,6 +789,7 @@ export async function uploadMenuItemImageAction(formData: FormData) {
 }
 
 export async function deleteMenuItemAction(formData: FormData) {
+  await requireApprovedAdminRole();
   const supabase = createAdminSupabaseClient();
   const menuItemId = toInteger(formData.get("menu_item_id"));
 
@@ -786,6 +804,7 @@ export async function deleteMenuItemAction(formData: FormData) {
 }
 
 export async function toggleMenuItemActiveAction(formData: FormData) {
+  await requireApprovedAdminRole();
   const supabase = createAdminSupabaseClient();
   const menuItemId = toInteger(formData.get("menu_item_id"));
   const nextValue = String(formData.get("next_value") ?? "false") === "true";
@@ -801,6 +820,7 @@ export async function toggleMenuItemActiveAction(formData: FormData) {
 }
 
 export async function toggleMenuItemAvailabilityAction(formData: FormData) {
+  await requireApprovedAdminRole();
   const supabase = createAdminSupabaseClient();
   const menuItemId = toInteger(formData.get("menu_item_id"));
   const nextValue = String(formData.get("next_value") ?? "false") === "true";
@@ -816,6 +836,7 @@ export async function toggleMenuItemAvailabilityAction(formData: FormData) {
 }
 
 export async function addMenuItemComponentAction(formData: FormData) {
+  await requireApprovedAdminRole();
   const supabase = createAdminSupabaseClient();
   const menuItemId = toInteger(formData.get("menu_item_id"));
   const inventoryItemId = toInteger(formData.get("inventory_item_id"));
@@ -841,6 +862,7 @@ export async function addMenuItemComponentAction(formData: FormData) {
 }
 
 export async function removeMenuItemComponentAction(formData: FormData) {
+  await requireApprovedAdminRole();
   const supabase = createAdminSupabaseClient();
   const componentId = toInteger(formData.get("component_id"));
   const menuItemId = toInteger(formData.get("menu_item_id"));
@@ -856,6 +878,7 @@ export async function removeMenuItemComponentAction(formData: FormData) {
 }
 
 export async function updateOrderStatusAction(formData: FormData) {
+  await requireApprovedAdminRole();
   const supabase = createAdminSupabaseClient();
   const orderId = toInteger(formData.get("order_id"));
   const nextStatus = requiredText(formData, "next_status");
@@ -901,6 +924,7 @@ export async function updateOrderStatusAction(formData: FormData) {
 }
 
 export async function completeOrderWithPickupCodeAction(formData: FormData) {
+  await requireApprovedAdminRole();
   const supabase = createAdminSupabaseClient();
   const orderId = toInteger(formData.get("order_id"));
   const pickupCode = requiredText(formData, "pickup_code").replace(/\D/g, "");
@@ -949,7 +973,88 @@ export async function completeOrderWithPickupCodeAction(formData: FormData) {
   redirect(`/orders/${orderId}`);
 }
 
+export async function reverifyOrderPaymentAction(formData: FormData) {
+  await requireApprovedAdminRole();
+  const supabase = createAdminSupabaseClient();
+  const orderId = toInteger(formData.get("order_id"));
+
+  const { data: order, error: orderError } = await supabase
+    .from("orders")
+    .select("id,status,payment_status,created_at,order_tracking_id,payment_redirect_url")
+    .eq("id", orderId)
+    .maybeSingle();
+
+  if (orderError) {
+    throw new Error(`Unable to load order for payment reverify: ${orderError.message}`);
+  }
+
+  if (!order) {
+    redirect(`/orders/${orderId}?error=${encodeURIComponent("That order could not be found.")}`);
+  }
+
+  if (!order.order_tracking_id) {
+    redirect(`/orders/${orderId}?error=${encodeURIComponent("This order does not have a Pesapal tracking ID to reverify.")}`);
+  }
+
+  const status = await getPesapalTransactionStatus(order.order_tracking_id);
+
+  if (status.paymentStatus === "paid") {
+    const { error } = await supabase.rpc("mark_order_as_paid", {
+      p_order_id: orderId,
+      p_payment_provider: "pesapal",
+      p_order_tracking_id: order.order_tracking_id,
+      p_payment_reference: status.paymentReference,
+      p_payment_redirect_url: order.payment_redirect_url,
+      p_note: "Payment manually reverified by staff through the admin dashboard."
+    });
+
+    if (error) {
+      throw new Error(`Unable to mark order as paid after manual reverify: ${error.message}`);
+    }
+
+    revalidateOperationalPaths();
+    redirect(`/orders/${orderId}?payment_reverified=paid`);
+  }
+
+  const orderAgeMs = Date.now() - Date.parse(order.created_at);
+  const shouldSoftCancel =
+    order.payment_status !== "cancelled" &&
+    order.status === "new" &&
+    Number.isFinite(orderAgeMs) &&
+    orderAgeMs >= pendingPaymentSoftCancelMs;
+  const nextPaymentStatus = order.payment_status === "cancelled" || shouldSoftCancel ? "cancelled" : status.paymentStatus;
+  const nextOrderStatus = shouldSoftCancel ? "cancelled" : order.status;
+  const now = new Date().toISOString();
+  const { error: updateError } = await supabase
+    .from("orders")
+    .update({
+      status: nextOrderStatus,
+      payment_status: nextPaymentStatus,
+      payment_provider: "pesapal",
+      payment_reference: status.paymentReference,
+      payment_last_verified_at: now,
+      payment_initiation_failure_code:
+        status.paymentStatus === "failed" ? "manual_reverify_failed" : shouldSoftCancel ? "manual_reverify_soft_cancelled" : null,
+      payment_initiation_failure_message:
+        status.paymentStatus === "failed"
+          ? "Manual Pesapal reverify returned a failed or reversed payment state."
+          : shouldSoftCancel
+            ? "Manual Pesapal reverify found this tracked payment still non-paid after the pending window."
+          : null,
+      payment_initiation_failed_at: status.paymentStatus === "failed" || shouldSoftCancel ? now : null
+    })
+    .eq("id", orderId);
+
+  if (updateError) {
+    throw new Error(`Unable to persist manual payment reverify: ${updateError.message}`);
+  }
+
+  revalidateOperationalPaths();
+  redirect(`/orders/${orderId}?payment_reverified=${encodeURIComponent(nextPaymentStatus)}`);
+}
+
 export async function addOrderNoteAction(formData: FormData) {
+  await requireApprovedAdminRole();
   const supabase = createAdminSupabaseClient();
   const orderId = toInteger(formData.get("order_id"));
   const note = requiredText(formData, "note");

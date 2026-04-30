@@ -309,6 +309,8 @@ export interface OrderDetailRecord {
   customerPhone: string | null;
   status: OrderStatus;
   paymentStatus: PaymentStatus;
+  orderTrackingId: string | null;
+  paymentLastVerifiedAt: string | null;
   fulfillmentReviewRequired: boolean;
   fulfillmentReviewReason: string | null;
   stockReservationStatus: string;
@@ -345,6 +347,9 @@ export interface DashboardSnapshot {
   actionOrders: OrderListItem[];
   inPrepOrders: OrderListItem[];
   readyOrders: OrderListItem[];
+  activeOrders: OrderListItem[];
+  todaysOrders: OrderListItem[];
   lowStockItems: DailyStockRow[];
   issues: DashboardIssueRecord[];
+  incidents: DashboardIssueRecord[];
 }

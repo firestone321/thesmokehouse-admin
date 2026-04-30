@@ -3364,4 +3364,331 @@ revoke all on function public.claim_admin_push_dispatches(integer, bigint) from 
 revoke all on function public.claim_admin_push_dispatches(integer, bigint) from authenticated;
 grant execute on function public.claim_admin_push_dispatches(integer, bigint) to service_role;
 
+-- Phase 30: paid stock consumption.
+-- Keep the compatibility function name but consume finished_stock exactly once after payment confirmation.
+
+create or replace function public.reserve_paid_order_stock(
+  p_order_id bigint
+)
+returns public.orders
+language plpgsql
+as $$
+declare
+  v_order public.orders%rowtype;
+  v_item record;
+  v_existing_daily_stock public.daily_stock%rowtype;
+  v_finished_stock public.finished_stock%rowtype;
+  v_now timestamptz := now();
+begin
+  select *
+  into v_order
+  from public.orders
+  where id = p_order_id
+  for update;
+
+  if not found then
+    raise exception 'Order % not found', p_order_id;
+  end if;
+
+  if v_order.payment_status <> 'paid' then
+    raise exception 'Only paid orders can consume paid stock';
+  end if;
+
+  if v_order.stock_reserved_at is not null then
+    return v_order;
+  end if;
+
+  for v_item in
+    select
+      mi.portion_type_id,
+      sum(oi.quantity)::integer as quantity_required
+    from public.order_items oi
+    join public.menu_items mi on mi.id = oi.menu_item_id
+    where oi.order_id = p_order_id
+    group by mi.portion_type_id
+    order by mi.portion_type_id
+  loop
+    if v_item.portion_type_id is null then
+      raise exception 'Order % contains a menu item without a sellable portion type', p_order_id;
+    end if;
+
+    select *
+    into v_finished_stock
+    from public.finished_stock
+    where portion_type_id = v_item.portion_type_id
+    for update;
+
+    if not found or v_finished_stock.current_quantity < v_item.quantity_required then
+      raise exception 'Insufficient finished stock for portion % on paid order %', v_item.portion_type_id, p_order_id;
+    end if;
+
+    select *
+    into v_existing_daily_stock
+    from public.daily_stock
+    where stock_date = v_order.service_date
+      and portion_type_id = v_item.portion_type_id
+    for update;
+
+    if found then
+      if v_existing_daily_stock.remaining_quantity < v_item.quantity_required then
+        raise exception 'Insufficient service-day stock for portion % on %', v_item.portion_type_id, v_order.service_date;
+      end if;
+
+      update public.daily_stock
+      set reserved_quantity = reserved_quantity + v_item.quantity_required
+      where stock_date = v_order.service_date
+        and portion_type_id = v_item.portion_type_id;
+    else
+      insert into public.daily_stock (
+        stock_date,
+        portion_type_id,
+        starting_quantity,
+        reserved_quantity
+      )
+      values (
+        v_order.service_date,
+        v_item.portion_type_id,
+        v_finished_stock.current_quantity,
+        v_item.quantity_required
+      );
+    end if;
+
+    update public.finished_stock
+    set current_quantity = current_quantity - v_item.quantity_required
+    where portion_type_id = v_item.portion_type_id
+    returning *
+    into v_finished_stock;
+
+    insert into public.finished_stock_movements (
+      portion_type_id,
+      movement_type,
+      quantity_delta,
+      resulting_quantity,
+      processing_batch_id,
+      note
+    )
+    values (
+      v_item.portion_type_id,
+      'sale',
+      -v_item.quantity_required,
+      v_finished_stock.current_quantity,
+      null,
+      format(
+        'Paid confirmation stock consumption for order %s (%s).',
+        p_order_id,
+        coalesce(v_order.order_number, 'no order number')
+      )
+    );
+  end loop;
+
+  update public.orders
+  set
+    stock_reserved_at = coalesce(stock_reserved_at, v_now),
+    stock_reservation_status = 'reserved',
+    stock_reservation_error = null,
+    stock_reservation_attempted_at = v_now,
+    fulfillment_review_required = false,
+    fulfillment_review_reason = null
+  where id = p_order_id
+  returning *
+  into v_order;
+
+  return v_order;
+end;
+$$;
+
+create or replace function public.release_reserved_order_stock(
+  p_order_id bigint
+)
+returns public.orders
+language plpgsql
+as $$
+declare
+  v_order public.orders%rowtype;
+  v_item record;
+begin
+  select *
+  into v_order
+  from public.orders
+  where id = p_order_id
+  for update;
+
+  if not found then
+    raise exception 'Order % not found', p_order_id;
+  end if;
+
+  if v_order.stock_reserved_at is null then
+    return v_order;
+  end if;
+
+  if v_order.payment_status = 'paid' then
+    return v_order;
+  end if;
+
+  for v_item in
+    select
+      mi.portion_type_id,
+      sum(oi.quantity)::integer as quantity_required
+    from public.order_items oi
+    join public.menu_items mi on mi.id = oi.menu_item_id
+    where oi.order_id = p_order_id
+    group by mi.portion_type_id
+    order by mi.portion_type_id
+  loop
+    update public.daily_stock
+    set reserved_quantity = greatest(reserved_quantity - v_item.quantity_required, 0)
+    where stock_date = v_order.service_date
+      and portion_type_id = v_item.portion_type_id;
+  end loop;
+
+  update public.orders
+  set
+    stock_reserved_at = null,
+    stock_reservation_status = 'released'
+  where id = p_order_id
+  returning *
+  into v_order;
+
+  return v_order;
+end;
+$$;
+
+create or replace function public.finalize_reserved_order_sale(
+  p_order_id bigint
+)
+returns public.orders
+language plpgsql
+as $$
+declare
+  v_order public.orders%rowtype;
+  v_item record;
+begin
+  select *
+  into v_order
+  from public.orders
+  where id = p_order_id
+  for update;
+
+  if not found then
+    raise exception 'Order % not found', p_order_id;
+  end if;
+
+  if v_order.stock_reserved_at is null then
+    raise exception 'Order % does not have paid consumed stock to finalize', p_order_id;
+  end if;
+
+  for v_item in
+    select
+      mi.portion_type_id,
+      sum(oi.quantity)::integer as quantity_required
+    from public.order_items oi
+    join public.menu_items mi on mi.id = oi.menu_item_id
+    where oi.order_id = p_order_id
+    group by mi.portion_type_id
+    order by mi.portion_type_id
+  loop
+    update public.daily_stock
+    set
+      reserved_quantity = greatest(reserved_quantity - v_item.quantity_required, 0),
+      sold_quantity = sold_quantity + v_item.quantity_required
+    where stock_date = v_order.service_date
+      and portion_type_id = v_item.portion_type_id;
+  end loop;
+
+  update public.orders
+  set stock_reservation_status = 'finalized'
+  where id = p_order_id
+  returning *
+  into v_order;
+
+  return v_order;
+end;
+$$;
+
+-- Phase 31: shared public API rate-limit buckets.
+
+create table if not exists public.api_rate_limits (
+  key text primary key,
+  hits integer not null check (hits >= 0),
+  window_started_at timestamptz not null,
+  expires_at timestamptz not null,
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists api_rate_limits_expires_at_idx
+  on public.api_rate_limits (expires_at);
+
+alter table public.api_rate_limits enable row level security;
+
+create or replace function public.consume_rate_limit(
+  rate_key text,
+  max_requests integer,
+  window_seconds integer
+)
+returns table (
+  allowed boolean,
+  remaining integer,
+  retry_after_seconds integer
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_now timestamptz := now();
+  current_row public.api_rate_limits%rowtype;
+begin
+  if max_requests <= 0 or window_seconds <= 0 then
+    raise exception 'Invalid rate limit configuration.';
+  end if;
+
+  insert into public.api_rate_limits as bucket (
+    key,
+    hits,
+    window_started_at,
+    expires_at,
+    updated_at
+  )
+  values (
+    rate_key,
+    1,
+    current_now,
+    current_now + make_interval(secs => window_seconds),
+    current_now
+  )
+  on conflict (key) do update
+  set
+    hits = case
+      when bucket.expires_at <= current_now then 1
+      else bucket.hits + 1
+    end,
+    window_started_at = case
+      when bucket.expires_at <= current_now then current_now
+      else bucket.window_started_at
+    end,
+    expires_at = case
+      when bucket.expires_at <= current_now then current_now + make_interval(secs => window_seconds)
+      else bucket.expires_at
+    end,
+    updated_at = current_now
+  returning * into current_row;
+
+  return query
+  select
+    current_row.hits <= max_requests,
+    greatest(0, max_requests - least(current_row.hits, max_requests)),
+    greatest(1, ceil(extract(epoch from current_row.expires_at - current_now))::integer);
+
+  delete from public.api_rate_limits
+  where expires_at < current_now - interval '1 day';
+end;
+$$;
+
+revoke all on table public.api_rate_limits from public, anon, authenticated;
+revoke all on function public.consume_rate_limit(text, integer, integer) from public;
+revoke all on function public.consume_rate_limit(text, integer, integer) from anon;
+revoke all on function public.consume_rate_limit(text, integer, integer) from authenticated;
+grant all on table public.api_rate_limits to service_role;
+grant execute on function public.consume_rate_limit(text, integer, integer) to service_role;
+
 commit;

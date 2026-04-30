@@ -1,9 +1,33 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useOrdersRealtime } from "@/components/ops/use-orders-realtime";
+import type { OrdersRealtimeEvent } from "@/lib/ops/orders-realtime";
 import type { OrderListItem } from "@/lib/ops/types";
 import { formatCurrency, formatDateTime } from "@/lib/ops/utils";
+
+const RECONCILE_DEBOUNCE_MS = 150;
+
+type OrdersPayload =
+  | {
+      ok?: boolean;
+      data?: {
+        orders?: OrderListItem[];
+      };
+      message?: string;
+    }
+  | null;
+
+type OrderPayload =
+  | {
+      ok?: boolean;
+      data?: {
+        order?: OrderListItem;
+      };
+      message?: string;
+    }
+  | null;
 
 function getStatusClasses(status: string) {
   switch (status) {
@@ -35,9 +59,152 @@ function getPaymentStatusClasses(paymentStatus: string) {
   }
 }
 
-export function LiveOrdersPanel({ orders }: { orders: OrderListItem[] }) {
+function sortOrders(orders: OrderListItem[]) {
+  return [...orders].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+}
+
+function orderMatchesFilters(order: OrderListItem, status: string, search: string) {
+  if (status !== "all" && order.status !== status) {
+    return false;
+  }
+
+  const normalizedSearch = search.trim().toLowerCase();
+
+  if (!normalizedSearch) {
+    return true;
+  }
+
+  return [order.orderNumber, order.customerName, order.customerPhone].some((value) =>
+    String(value ?? "").toLowerCase().includes(normalizedSearch)
+  );
+}
+
+async function fetchOrdersSnapshot(status: string, search: string, limit: number) {
+  const params = new URLSearchParams({
+    status,
+    search,
+    limit: String(limit)
+  });
+  const response = await fetch(`/api/admin/orders?${params.toString()}`, {
+    method: "GET",
+    headers: { Accept: "application/json" },
+    cache: "no-store"
+  });
+  const payload = (await response.json().catch(() => null)) as OrdersPayload;
+
+  if (!response.ok || !payload?.ok) {
+    throw new Error(payload?.message ?? "Unable to load orders.");
+  }
+
+  return payload.data?.orders ?? [];
+}
+
+async function fetchOrderSnapshot(orderId: string) {
+  const response = await fetch(`/api/admin/orders/${encodeURIComponent(orderId)}`, {
+    method: "GET",
+    headers: { Accept: "application/json" },
+    cache: "no-store"
+  });
+  const payload = (await response.json().catch(() => null)) as OrderPayload;
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok || !payload?.ok) {
+    throw new Error(payload?.message ?? "Unable to load order.");
+  }
+
+  return payload.data?.order ?? null;
+}
+
+export function LiveOrdersPanel({
+  orders,
+  status,
+  search,
+  limit
+}: {
+  orders: OrderListItem[];
+  status: string;
+  search: string;
+  limit: number;
+}) {
+  const [localOrders, setLocalOrders] = useState<OrderListItem[]>(orders);
+  const reconcileTimeoutsRef = useRef<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    setLocalOrders(orders);
+  }, [orders]);
+
+  useEffect(() => {
+    return () => {
+      for (const timeoutId of reconcileTimeoutsRef.current.values()) {
+        window.clearTimeout(timeoutId);
+      }
+
+      reconcileTimeoutsRef.current.clear();
+    };
+  }, []);
+
+  const removeOrder = (orderId: string) => {
+    setLocalOrders((current) => current.filter((order) => String(order.id) !== orderId));
+  };
+
+  const upsertOrder = (order: OrderListItem) => {
+    setLocalOrders((current) => {
+      const next = orderMatchesFilters(order, status, search)
+        ? [order, ...current.filter((candidate) => candidate.id !== order.id)]
+        : current.filter((candidate) => candidate.id !== order.id);
+
+      return sortOrders(next).slice(0, limit);
+    });
+  };
+
+  const refreshOrders = async () => {
+    const nextOrders = await fetchOrdersSnapshot(status, search, limit);
+    setLocalOrders(nextOrders);
+  };
+
+  const reconcileOrder = async (orderId: string) => {
+    const order = await fetchOrderSnapshot(orderId);
+
+    if (!order) {
+      removeOrder(orderId);
+      return;
+    }
+
+    upsertOrder(order);
+  };
+
+  const scheduleReconcile = (event: OrdersRealtimeEvent) => {
+    if (event.type === "DELETE" && event.orderId) {
+      removeOrder(event.orderId);
+      return;
+    }
+
+    if (!event.orderId) {
+      void refreshOrders();
+      return;
+    }
+
+    if (reconcileTimeoutsRef.current.has(event.orderId)) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      reconcileTimeoutsRef.current.delete(event.orderId!);
+      void reconcileOrder(event.orderId!);
+    }, RECONCILE_DEBOUNCE_MS);
+
+    reconcileTimeoutsRef.current.set(event.orderId, timeoutId);
+  };
+
   useOrdersRealtime({
-    source: "OrdersPage"
+    source: "OrdersPage",
+    autoRefresh: false,
+    refreshOnFallback: false,
+    onInsert: scheduleReconcile,
+    onRefresh: scheduleReconcile
   });
 
   return (
@@ -52,12 +219,12 @@ export function LiveOrdersPanel({ orders }: { orders: OrderListItem[] }) {
             </span>
           </div>
         </div>
-        <span className="rounded-full bg-[#F3F4F6] px-3 py-1 text-xs font-semibold text-[#4B5563]">{orders.length}</span>
+        <span className="rounded-full bg-[#F3F4F6] px-3 py-1 text-xs font-semibold text-[#4B5563]">{localOrders.length}</span>
       </div>
 
       <div className="mt-4 space-y-3">
-        {orders.length > 0 ? (
-          orders.map((order) => (
+        {localOrders.length > 0 ? (
+          localOrders.map((order) => (
             <Link
               key={order.id}
               href={`/orders/${order.id}`}

@@ -1,6 +1,11 @@
 import { notFound } from "next/navigation";
 import { SchemaSetupNotice } from "@/components/admin/schema-setup-notice";
-import { addOrderNoteAction, completeOrderWithPickupCodeAction, updateOrderStatusAction } from "@/lib/ops/actions";
+import {
+  addOrderNoteAction,
+  completeOrderWithPickupCodeAction,
+  reverifyOrderPaymentAction,
+  updateOrderStatusAction
+} from "@/lib/ops/actions";
 import { OperationsSchemaMissingError } from "@/lib/ops/errors";
 import { getAllowedNextStatuses, getOrderDetail } from "@/lib/ops/queries";
 import { formatCurrency, formatDateTime } from "@/lib/ops/utils";
@@ -45,7 +50,9 @@ export default async function OrderDetailPage({
   const { orderId } = await params;
   const resolvedSearchParams = await searchParams;
   const errorParam = resolvedSearchParams.error;
+  const paymentReverifiedParam = resolvedSearchParams.payment_reverified;
   const errorMessage = Array.isArray(errorParam) ? errorParam[0] : errorParam;
+  const paymentReverified = Array.isArray(paymentReverifiedParam) ? paymentReverifiedParam[0] : paymentReverifiedParam;
   let order;
 
   try {
@@ -109,6 +116,14 @@ export default async function OrderDetailPage({
       {errorMessage ? (
         <section className="rounded-[24px] border border-[#F4C7C7] bg-[#FFF8F8] px-5 py-4 text-sm leading-6 text-[#9F2D2D]">
           {errorMessage}
+        </section>
+      ) : null}
+
+      {paymentReverified ? (
+        <section className="rounded-[24px] border border-[#CDE7D4] bg-[#F4FBF6] px-5 py-4 text-sm leading-6 text-[#176B35]">
+          {paymentReverified === "paid"
+            ? "Pesapal reverify returned paid. The order has been restored to the paid workflow."
+            : `Pesapal reverify completed. Latest non-paid status: ${paymentReverified}.`}
         </section>
       ) : null}
 
@@ -272,6 +287,23 @@ export default async function OrderDetailPage({
                 Kitchen action stays locked until payment is verified. Once Pesapal marks this order paid, it will move
                 into the confirmed queue automatically.
               </div>
+            ) : null}
+
+            {order.orderTrackingId && order.paymentStatus !== "paid" ? (
+              <form action={reverifyOrderPaymentAction} className="mt-4 rounded-[22px] border border-[#E4E7EB] bg-[#F8FAFB] px-4 py-4">
+                <input type="hidden" name="order_id" value={order.id} />
+                <p className="text-sm font-semibold text-[#111418]">Manual payment reverify</p>
+                <p className="mt-1 text-sm leading-6 text-[#6B7280]">
+                  Ask Pesapal for the latest state on this tracked payment. Paid results restore the order to the paid
+                  workflow; non-paid results will not revive a locally cancelled payment.
+                </p>
+                {order.paymentLastVerifiedAt ? (
+                  <p className="mt-2 text-xs text-[#6B7280]">Last checked {formatDateTime(order.paymentLastVerifiedAt)}</p>
+                ) : null}
+                <button type="submit" className="mt-3 w-full rounded-2xl bg-[#111418] px-4 py-2.5 text-sm font-semibold text-white">
+                  Check Pesapal now
+                </button>
+              </form>
             ) : null}
           </section>
         </aside>

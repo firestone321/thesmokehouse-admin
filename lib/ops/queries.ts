@@ -49,9 +49,38 @@ const procurementMigrationFiles = [
   "db/phase-20-fries-direct-sellable.sql",
   "db/phase-21-pesapal-paid-reservations.sql",
   "db/phase-27-paid-order-stock-review.sql",
+  "db/phase-30-paid-stock-consumption.sql",
+  "db/phase-31-public-api-rate-limits.sql",
   "db/phase-24-drinks-direct-sellable.sql",
   "db/phase-25-processing-posts-daily-stock.sql"
 ];
+
+const DEFAULT_ORDER_LIST_LIMIT = 50;
+const MAX_ORDER_LIST_LIMIT = 100;
+const DASHBOARD_ACTIVE_ORDERS_LIMIT = 100;
+const DASHBOARD_TODAY_ORDERS_LIMIT = 100;
+
+const orderListSelection = `
+  id,
+  order_number,
+  customer_name,
+  customer_phone,
+  status,
+  payment_status,
+  fulfillment_review_required,
+  fulfillment_review_reason,
+  stock_reserved_at,
+  stock_reservation_status,
+  stock_reservation_error,
+  total_amount,
+  promised_at,
+  created_at,
+  notes,
+  order_items (
+    quantity,
+    menu_item_name
+  )
+`;
 
 function ensureNoError(
   error:
@@ -191,6 +220,16 @@ async function loadDailyMenuStock(serviceDate: string, options?: { allowTransien
 function normalizeNumber(value: unknown) {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeOrderListLimit(value: unknown) {
+  const parsed = Number(value ?? DEFAULT_ORDER_LIST_LIMIT);
+
+  if (!Number.isFinite(parsed)) {
+    return DEFAULT_ORDER_LIST_LIMIT;
+  }
+
+  return Math.max(1, Math.min(MAX_ORDER_LIST_LIMIT, Math.trunc(parsed)));
 }
 
 function normalizeUnitName(unitName: string | null | undefined) {
@@ -499,39 +538,20 @@ export function getAllowedNextStatuses(status: OrderStatus) {
 export async function getOrdersPageData(options?: {
   status?: string | null;
   search?: string | null;
+  limit?: number | null;
 }) {
   noStore();
 
   const supabase = await createOperationsReadClient();
   const status = options?.status?.trim() || "all";
   const search = options?.search?.trim() || "";
+  const limit = normalizeOrderListLimit(options?.limit);
 
   let query = supabase
     .from("orders")
-    .select(
-      `
-      id,
-      order_number,
-      customer_name,
-      customer_phone,
-      status,
-      payment_status,
-      fulfillment_review_required,
-      fulfillment_review_reason,
-      stock_reserved_at,
-      stock_reservation_status,
-      stock_reservation_error,
-      total_amount,
-      promised_at,
-      created_at,
-      notes,
-      order_items (
-        quantity,
-        menu_item_name
-      )
-    `
-    )
-    .order("created_at", { ascending: false });
+    .select(orderListSelection)
+    .order("created_at", { ascending: false })
+    .limit(limit);
 
   if (status !== "all") {
     query = query.eq("status", status);
@@ -548,8 +568,26 @@ export async function getOrdersPageData(options?: {
   return {
     status,
     search,
+    limit,
     orders: (data ?? []).map(mapOrderListItem)
   };
+}
+
+export async function getOrderListItemById(orderId: number | string): Promise<OrderListItem | null> {
+  noStore();
+
+  const supabase = await createOperationsReadClient();
+  const normalizedId = normalizeNumber(orderId);
+
+  const { data, error } = await supabase
+    .from("orders")
+    .select(orderListSelection)
+    .eq("id", normalizedId)
+    .maybeSingle();
+
+  ensureNoError(error, "Unable to load order");
+
+  return data ? mapOrderListItem(data) : null;
 }
 
 export async function getOrderDetail(orderId: number | string): Promise<OrderDetailRecord | null> {
@@ -569,6 +607,8 @@ export async function getOrderDetail(orderId: number | string): Promise<OrderDet
         customer_phone,
         status,
         payment_status,
+        order_tracking_id,
+        payment_last_verified_at,
         fulfillment_review_required,
         fulfillment_review_reason,
         stock_reserved_at,
@@ -630,6 +670,8 @@ export async function getOrderDetail(orderId: number | string): Promise<OrderDet
     customerPhone: orderResponse.data.customer_phone,
     status: orderResponse.data.status as OrderStatus,
     paymentStatus: (orderResponse.data.payment_status ?? "pending") as any,
+    orderTrackingId: orderResponse.data.order_tracking_id ?? null,
+    paymentLastVerifiedAt: orderResponse.data.payment_last_verified_at ?? null,
     fulfillmentReviewRequired: Boolean(orderResponse.data.fulfillment_review_required),
     fulfillmentReviewReason: orderResponse.data.fulfillment_review_reason ?? null,
     stockReservationStatus:
@@ -1239,59 +1281,17 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   const [activeOrdersResponse, todaysOrdersResponse, dailyStockResponse, incidentsResponse] = await Promise.all([
     supabase
       .from("orders")
-      .select(
-        `
-        id,
-        order_number,
-        customer_name,
-        customer_phone,
-        status,
-        payment_status,
-        fulfillment_review_required,
-        fulfillment_review_reason,
-        stock_reserved_at,
-        stock_reservation_status,
-        stock_reservation_error,
-        total_amount,
-        promised_at,
-        created_at,
-        notes,
-        order_items (
-          quantity,
-          menu_item_name
-        )
-      `
-      )
+      .select(orderListSelection)
       .in("status", ["new", "confirmed", "in_prep", "ready"])
-      .order("created_at", { ascending: false }),
+      .order("created_at", { ascending: false })
+      .limit(DASHBOARD_ACTIVE_ORDERS_LIMIT),
     supabase
       .from("orders")
-      .select(
-        `
-        id,
-        order_number,
-        customer_name,
-        customer_phone,
-        status,
-        payment_status,
-        fulfillment_review_required,
-        fulfillment_review_reason,
-        stock_reserved_at,
-        stock_reservation_status,
-        stock_reservation_error,
-        total_amount,
-        promised_at,
-        created_at,
-        notes,
-        order_items (
-          quantity,
-          menu_item_name
-        )
-      `
-      )
+      .select(orderListSelection)
       .gte("created_at", startIso)
       .lt("created_at", endIso)
-      .order("created_at", { ascending: false }),
+      .order("created_at", { ascending: false })
+      .limit(DASHBOARD_TODAY_ORDERS_LIMIT),
     loadDailyMenuStock(serviceDate),
     supabase
       .from("ops_incidents")
@@ -1348,7 +1348,10 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
     actionOrders,
     inPrepOrders,
     readyOrders,
+    activeOrders,
+    todaysOrders,
     lowStockItems,
-    issues
+    issues,
+    incidents
   };
 }

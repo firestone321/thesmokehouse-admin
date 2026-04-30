@@ -27,7 +27,7 @@ export default async function OrdersPage({
     throw error;
   }
 
-  const { orders } = data;
+  const { orders, limit } = data;
 
   return (
     <div className="space-y-4 text-[#111418]">
@@ -81,7 +81,7 @@ export default async function OrdersPage({
         </div>
       </section>
 
-      <LiveOrdersPanel orders={orders} />
+      <LiveOrdersPanel orders={orders} status={status} search={search} limit={limit} />
     </div>
   );
 }

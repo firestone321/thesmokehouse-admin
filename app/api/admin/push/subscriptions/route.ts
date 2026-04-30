@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { processAdminPushDispatchQueue } from "@/lib/push/admin-paid-order-notifications";
-import { createAdminSupabaseClient, createServerSupabaseClient } from "@/lib/supabase/server";
+import { AdminAuthorizationError, requireApprovedAdminRole } from "@/lib/auth/admin-role";
+import { createAdminSupabaseClient } from "@/lib/supabase/server";
 
 type AdminPushSubscriptionInput = {
   endpoint?: unknown;
@@ -40,20 +41,9 @@ function parseSubscriptionInput(input: AdminPushSubscriptionInput) {
   };
 }
 
-async function requireAdminSession() {
-  const supabase = await createServerSupabaseClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    throw new Error("Unauthorized.");
-  }
-}
-
 export async function POST(request: Request) {
   try {
-    await requireAdminSession();
+    await requireApprovedAdminRole();
 
     const body = (await request.json().catch(() => null)) as AdminPushSubscriptionInput | null;
     if (!body || typeof body !== "object") {
@@ -96,7 +86,7 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to save admin push subscription.";
-    const status = message === "Unauthorized." ? 401 : 500;
+    const status = error instanceof AdminAuthorizationError ? error.status : 500;
     return NextResponse.json({ message }, { status });
   }
 }

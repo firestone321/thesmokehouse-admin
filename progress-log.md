@@ -2024,3 +2024,85 @@ Commit references:
 - Admin Git commit `99773d6` adds device-scoped admin push notifications
 - Storefront Git commit `622ce9f` persists guest pickup orders on device
 - Storefront Git commit `fb1608e` adds the event-based storefront update banner
+
+## 2026-04-30: Severe Review Fixes - Paid Stock, Admin Role Gates, Public Abuse Controls
+
+Status: implemented locally, pending Supabase migration application and final push
+
+Why these changes were needed:
+
+- Paid orders were reserving daily stock without reducing durable `finished_stock`, so sold stock could reappear on a later service day
+- Admin service-role mutations needed explicit app-layer role checks before bypassing RLS
+- Storefront public endpoints relied on per-instance memory counters and accepted duplicate cart lines before stock validation
+
+Implemented changes:
+
+- Added `db/phase-30-paid-stock-consumption.sql` and merged it into `db/merged-live-schema.sql`
+- Kept `reserve_paid_order_stock(...)` for compatibility, but it now consumes `finished_stock` exactly once after payment confirmation
+- Kept `orders.stock_reserved_at` as the idempotency marker through completion so payment retries cannot double-consume stock
+- Stopped paid-order cancellation from automatically releasing consumed finished stock; later restock/refund remains manual and auditable
+- Added `finished_stock_movements` sale rows for paid confirmation stock consumption, plus reconciliation query comments
+- Added `db/phase-31-public-api-rate-limits.sql` and merged the shared `api_rate_limits` / `consume_rate_limit(...)` RPC into the live schema
+- Added an admin role helper that verifies the current Supabase user and approved `profiles.role` before service-role operational mutations
+- Gated operational server actions, admin push API routes, and the admin shell on approved Smokehouse roles
+- Updated storefront order, payment status/callback/IPN, and push subscription endpoints to use Supabase-backed rate limits
+- Added Content-Length checks before storefront order and push subscription JSON parsing
+- Canonicalized duplicate storefront cart lines by `menu_item_id` before stock validation, total calculation, and `order_items` insertion
+- Removed storefront untracked pending-payment timeout cancellation so no-tracking failures are handled only by explicit Pesapal initiation rejection at checkout
+- Kept tracked pending recovery on the 7-minute window: recovery verifies Pesapal first, recovers paid orders to paid/confirmed, and only soft-cancels tracked pending orders that remain non-paid after the window
+- Hardened explicit no-tracking rejection cancellation with database-side guards for pending/new orders that still have no tracking ID, no redirect URL, and no consumed stock
+- Preserved the late-verification rule that local cancelled plus provider pending/failed stays cancelled, while local cancelled plus provider paid recovers through `mark_order_as_paid(...)`
+
+Important current behavior:
+
+- Stock still does not deduct when an order is created
+- Stock deducts only after payment is successfully verified and the order enters the paid workflow
+- If paid stock consumption fails, the existing paid-order review behavior remains responsible for preserving payment truth and blocking fulfillment
+- Paid consumed stock is not automatically returned by a later cancellation
+- Explicit Pesapal no-tracking/no-redirect rejection cancels immediately during checkout
+- Recovery no longer hunts untracked stale pending orders in the background; tracked pending orders remain the recovery target
+
+Live paranoid-review tracking:
+
+- `smokehouse-paranoid-review.md` is now being treated as a live remediation tracker, not only a static audit report
+- The severity table was updated as local fixes and delegated work came in:
+  C-01, XH-01, XH-02, H-01, and H-02 now show local implementation or verification-pending status
+- H-03 was delegated for bakery-style signed order-access hardening so public tokens remain bootstrap links while repeated reads move toward signed device/order access
+- H-04 and M-01 were delegated together for bakery-style admin realtime reconciliation and capped admin order/dashboard reads
+- M-02 is partially covered by the admin role-gate work; the remaining check is admin push endpoint rate limiting
+- M-03 is partially covered by Phase 31 shared public rate limits; security-event logging remains a separate follow-up
+- Continue updating both this progress log and `smokehouse-paranoid-review.md` as subagent results come in, before commit/push
+
+## 2026-04-30: H-03 Customer Order Access Hardening
+
+Status: implemented locally in the storefront repo, not committed
+
+- Ported the bakery signed order-access pattern to Smokehouse's guest/device-first public-token flow
+- Checkout/order creation now grants the signed order-access cookie for the new order before returning the payment result data
+- `/order/[public_token]` and `/payment/result?token=...` still use public tokens as bootstrap/open links, including stored guest orders and notification target URLs
+- Normal order-detail refreshes and Pesapal payment-status polls now require the signed order-access cookie after the bootstrap request
+- Missing signed order access now returns 403 from order detail and payment status reads, with server-side warning logs
+- Verified storefront `npx tsc --noEmit` and `npm run build`
+
+## 2026-04-30: Admin Manual Pesapal Reverify
+
+Status: implemented locally in the admin repo, pending final verification after the current background build clears
+
+- Added an admin-side Pesapal status helper using the same `PESAPAL_BASE_URL`, `PESAPAL_CONSUMER_KEY`, and `PESAPAL_CONSUMER_SECRET` environment contract
+- Added a role-gated `reverifyOrderPaymentAction(...)` for tracked, non-paid orders
+- Paid provider results now recover through `mark_order_as_paid(...)`, preserving the paid-and-confirmed workflow and existing stock/review behavior
+- Non-paid provider results do not revive locally cancelled payments
+- Tracked `new` orders older than the 7-minute pending window are soft-cancelled by manual reverify when Pesapal still does not report paid
+- Exposed the action on the admin order detail page, with last-checked timestamp support from `payment_last_verified_at`
+
+## 2026-04-30: H-04 Admin Realtime Fallback Hardening
+
+Status: implemented locally in the admin repo, not committed
+
+- Ported the bakery-style admin realtime usage pattern to Smokehouse orders and dashboard surfaces
+- `LiveOrdersPanel` and `LiveDashboard` now pass `autoRefresh: false` and `refreshOnFallback: false`
+- Known realtime order events reconcile locally through capped admin JSON reads instead of full `router.refresh()`
+- Unknown fallback events fetch capped order/dashboard snapshots, so fallback no longer repeatedly triggers full RSC refreshes across devices
+- Added default 50 / max 100 order-list caps and 100-row dashboard active/today caps
+- Added admin-role-gated JSON endpoints for order list, order detail summary, and dashboard snapshot reconciliation
+- Verified admin `npx tsc --noEmit` and `npm run build`
