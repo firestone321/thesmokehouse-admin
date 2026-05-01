@@ -353,3 +353,33 @@ export interface DashboardSnapshot {
   issues: DashboardIssueRecord[];
   incidents: DashboardIssueRecord[];
 }
+
+export interface PushQueueDispatchPreview {
+  id: string;
+  orderId: number;
+  status: string;
+  attemptCount: number;
+  createdAt: string;
+  nextAttemptAt: string | null;
+  lastAttemptAt: string | null;
+  processingStartedAt: string | null;
+  completedAt: string | null;
+  lastError: string | null;
+}
+
+export interface PushQueueSnapshot {
+  key: "admin_paid_order" | "storefront_ready";
+  title: string;
+  description: string;
+  configured: boolean;
+  activeSubscriptionCount: number;
+  openCount: number;
+  dueNowCount: number;
+  stalledCount: number;
+  retryingCount: number;
+  failedCount: number;
+  noSubscribersCount: number;
+  oldestOpenCreatedAt: string | null;
+  nextAttemptAt: string | null;
+  recentDispatches: PushQueueDispatchPreview[];
+}

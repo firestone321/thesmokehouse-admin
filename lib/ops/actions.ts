@@ -5,10 +5,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
   didTransitionToReady,
-  triggerStorefrontReadyNotification
+  triggerStorefrontReadyNotification,
+  triggerStorefrontReadyQueueProcessing
 } from "@/lib/ops/storefront-ready-notifications";
 import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import { getPesapalTransactionStatus } from "@/lib/payments/pesapal";
+import { processAdminPushDispatchQueue } from "@/lib/push/admin-paid-order-notifications";
 import { createAdminSupabaseClient } from "@/lib/supabase/server";
 import { toCode, toInteger, toNumber, toOptionalText } from "@/lib/ops/utils";
 
@@ -64,6 +66,18 @@ function revalidateOperationalPaths() {
   revalidatePath("/inventory");
   revalidatePath("/menu");
   revalidatePath("/orders");
+}
+
+function getReturnTo(formData: FormData, fallback = "/orders") {
+  const value = String(formData.get("return_to") ?? "").trim();
+  return value.startsWith("/") ? value : fallback;
+}
+
+function buildOrdersFlashRedirect(returnTo: string, status: "success" | "error", message: string) {
+  const url = new URL(returnTo, "http://smokehouse.local");
+  url.searchParams.set("push_queue_status", status);
+  url.searchParams.set("push_queue_message", message);
+  return `${url.pathname}${url.search}${url.hash}`;
 }
 
 function buildMenuRedirectUrl(options?: { editMenuItemId?: string | null; error?: string | null }) {
@@ -296,6 +310,45 @@ export async function saveInventoryItemAction(formData: FormData) {
 
   revalidateOperationalPaths();
   redirect(`/inventory?item=${data.id}`);
+}
+
+export async function processAdminPushQueueAction(formData: FormData) {
+  await requireApprovedAdminRole();
+  const returnTo = getReturnTo(formData);
+  const stats = await processAdminPushDispatchQueue({ limit: 10 });
+
+  revalidateOperationalPaths();
+  redirect(
+    buildOrdersFlashRedirect(
+      returnTo,
+      "success",
+      `Admin queue processed. Claimed ${stats.claimed}, delivered ${stats.succeeded}, retried ${stats.retried}, failed ${stats.failed}.`
+    )
+  );
+}
+
+export async function processStorefrontReadyQueueAction(formData: FormData) {
+  await requireApprovedAdminRole();
+  const returnTo = getReturnTo(formData);
+  const result = await triggerStorefrontReadyQueueProcessing(10);
+
+  revalidateOperationalPaths();
+
+  if (!result.configured) {
+    redirect(buildOrdersFlashRedirect(returnTo, "error", "Storefront Ready queue kickoff is not configured yet."));
+  }
+
+  if (!result.accepted || !result.stats) {
+    redirect(buildOrdersFlashRedirect(returnTo, "error", "Storefront Ready queue could not be processed right now."));
+  }
+
+  redirect(
+    buildOrdersFlashRedirect(
+      returnTo,
+      "success",
+      `Ready queue processed. Scanned ${result.stats.scanned}, completed ${result.stats.completed}, retried ${result.stats.retried}, failed ${result.stats.failed}.`
+    )
+  );
 }
 
 export async function createInventoryItemInlineAction(formData: FormData) {

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { processAdminPushDispatchQueue } from "@/lib/push/admin-paid-order-notifications";
 import { AdminAuthorizationError, requireApprovedAdminRole } from "@/lib/auth/admin-role";
+import { isContentLengthTooLarge } from "@/lib/request-limits";
+import { enforceRateLimit } from "@/lib/rate-limit";
 import { createAdminSupabaseClient } from "@/lib/supabase/server";
 
 type AdminPushSubscriptionInput = {
@@ -45,12 +47,34 @@ export async function POST(request: Request) {
   try {
     await requireApprovedAdminRole();
 
+    if (isContentLengthTooLarge(request, 16 * 1024)) {
+      return NextResponse.json({ message: "Push subscription payload is too large." }, { status: 413 });
+    }
+
+    const routeRateLimit = await enforceRateLimit(request, "admin-push-subscribe", 12, 60_000);
+    if (!routeRateLimit.allowed) {
+      return NextResponse.json(
+        { message: "Too many requests. Please wait and try again." },
+        { status: 429, headers: { "Retry-After": String(routeRateLimit.retryAfterSeconds) } }
+      );
+    }
+
     const body = (await request.json().catch(() => null)) as AdminPushSubscriptionInput | null;
     if (!body || typeof body !== "object") {
       return NextResponse.json({ message: "Invalid push subscription payload." }, { status: 400 });
     }
 
     const input = parseSubscriptionInput(body);
+    const endpointRateLimit = await enforceRateLimit(request, "admin-push-subscribe-endpoint", 6, 60_000, {
+      bucketSuffix: input.endpoint
+    });
+    if (!endpointRateLimit.allowed) {
+      return NextResponse.json(
+        { message: "Too many requests. Please wait and try again." },
+        { status: 429, headers: { "Retry-After": String(endpointRateLimit.retryAfterSeconds) } }
+      );
+    }
+
     const timestamp = new Date().toISOString();
     const supabaseAdmin = createAdminSupabaseClient();
     const { data, error } = await supabaseAdmin

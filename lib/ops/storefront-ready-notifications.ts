@@ -17,7 +17,21 @@ type ReadyNotificationResult = {
 };
 
 const READY_PROCESS_PURPOSE = "storefront_order_ready_process";
+const READY_DUE_PROCESS_PURPOSE = "storefront_order_ready_process_due";
 const STOREFRONT_READY_NOTIFICATION_TIMEOUT_MS = 8_000;
+const STOREFRONT_READY_DUE_PROCESS_PATH = "/api/internal/push/order-ready/process-due";
+
+export type StorefrontReadyQueueProcessResult = {
+  configured: boolean;
+  accepted: boolean;
+  stats: {
+    scanned: number;
+    processed: number;
+    completed: number;
+    retried: number;
+    failed: number;
+  } | null;
+};
 
 function normalizeStatus(status: string | null | undefined) {
   return status?.trim().toLowerCase() ?? "";
@@ -33,6 +47,10 @@ function getStorefrontBaseUrl() {
 
 function getStorefrontSigningSecret() {
   return process.env.STOREFRONT_INTERNAL_AUTH_TOKEN?.trim() || null;
+}
+
+export function isStorefrontReadyNotificationKickoffConfigured() {
+  return Boolean(getStorefrontBaseUrl() && getStorefrontSigningSecret());
 }
 
 async function enqueueReadyNotification(order: { id: number; updatedAt: string }) {
@@ -89,6 +107,38 @@ function buildKickoffRequest(order: { id: number; updatedAt: string }) {
         Authorization: `Bearer ${token}`
       },
       body: JSON.stringify({ idempotencyKey }),
+      cache: "no-store" as const,
+      signal: AbortSignal.timeout(STOREFRONT_READY_NOTIFICATION_TIMEOUT_MS)
+    }
+  };
+}
+
+function buildDueProcessRequest(limit: number) {
+  const baseUrl = getStorefrontBaseUrl();
+  const secret = getStorefrontSigningSecret();
+  if (!baseUrl || !secret) {
+    return null;
+  }
+
+  const token = signInternalRequestToken({
+    secret,
+    issuer: "thesmokehouse-admin",
+    audience: "thesmokehouse-storefront",
+    purpose: READY_DUE_PROCESS_PURPOSE,
+    method: "POST",
+    path: STOREFRONT_READY_DUE_PROCESS_PATH
+  });
+
+  return {
+    url: `${baseUrl}${STOREFRONT_READY_DUE_PROCESS_PATH}`,
+    init: {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ limit }),
       cache: "no-store" as const,
       signal: AbortSignal.timeout(STOREFRONT_READY_NOTIFICATION_TIMEOUT_MS)
     }
@@ -168,6 +218,54 @@ export async function triggerStorefrontReadyNotification(order: {
       queued: true,
       duplicate: enqueueResult.duplicate,
       kickoffAccepted: false
+    };
+  }
+}
+
+export async function triggerStorefrontReadyQueueProcessing(limit = 5): Promise<StorefrontReadyQueueProcessResult> {
+  const normalizedLimit = Math.max(1, Math.min(10, Math.trunc(limit)));
+  const request = buildDueProcessRequest(normalizedLimit);
+  if (!request) {
+    console.warn("storefront_ready_due_process_not_configured", {
+      limit: normalizedLimit
+    });
+
+    return {
+      configured: false,
+      accepted: false,
+      stats: null
+    };
+  }
+
+  try {
+    const response = await fetch(request.url, request.init);
+    const payload = (await response.json().catch(() => null)) as
+      | {
+          accepted?: boolean;
+          stats?: StorefrontReadyQueueProcessResult["stats"];
+          message?: string;
+        }
+      | null;
+
+    if (!response.ok) {
+      throw new Error(payload?.message ?? `Storefront ready queue request failed with ${response.status}.`);
+    }
+
+    return {
+      configured: true,
+      accepted: Boolean(payload?.accepted),
+      stats: payload?.stats ?? null
+    };
+  } catch (error) {
+    console.error("storefront_ready_due_process_failed", {
+      limit: normalizedLimit,
+      error: error instanceof Error ? error.message : "unknown_error"
+    });
+
+    return {
+      configured: true,
+      accepted: false,
+      stats: null
     };
   }
 }

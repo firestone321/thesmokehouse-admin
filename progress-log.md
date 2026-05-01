@@ -2069,9 +2069,31 @@ Live paranoid-review tracking:
   C-01, XH-01, XH-02, H-01, and H-02 now show local implementation or verification-pending status
 - H-03 was delegated for bakery-style signed order-access hardening so public tokens remain bootstrap links while repeated reads move toward signed device/order access
 - H-04 and M-01 were delegated together for bakery-style admin realtime reconciliation and capped admin order/dashboard reads
-- M-02 is partially covered by the admin role-gate work; the remaining check is admin push endpoint rate limiting
-- M-03 is partially covered by Phase 31 shared public rate limits; security-event logging remains a separate follow-up
+- M-02, M-03, and M-04 have since moved past planning and now have local implementation notes below
 - Continue updating both this progress log and `smokehouse-paranoid-review.md` as subagent results come in, before commit/push
+
+## 2026-05-01: M-02, M-03, and M-04 Queue and Payment Hardening
+
+Status: implemented locally in `thesmokehouse-admin` and `thesmokehouse`, pending deploy verification
+
+What changed:
+
+- Added admin-local shared `lib/rate-limit.ts` and `lib/request-limits.ts` helpers so admin push endpoints can use the same Supabase-backed abuse controls as the storefront
+- Hardened `POST /api/admin/push/subscriptions` with a 16 KB pre-parse payload guard, a shared route rate limit, and a per-endpoint churn limit
+- Hardened `POST /api/admin/push/process` with a shared rate limit before queue fan-out work begins
+- Added admin queue/storefront queue health reads to `lib/ops/queries.ts`, including backlog counts, due-now counts, stalled-processing counts, retry pressure, subscription counts, and dispatch previews
+- Added compact orders-page queue controls in `app/(admin)/orders/page.tsx` plus `components/orders/push-queue-health-card.tsx`, so staff can inspect both push queues and manually process them without leaving the live orders workflow
+- Added server actions for manual queue processing in `lib/ops/actions.ts`
+- Extended `lib/ops/storefront-ready-notifications.ts` so the admin repo can send a signed manual due-queue process request to the storefront
+- Added `thesmokehouse/app/api/internal/push/order-ready/process-due/route.ts` so customer Ready notifications can be manually processed on demand while preserving the accepted no-cron design
+- Added `thesmokehouse/lib/observability/security-events.ts` and `thesmokehouse/lib/ops/incidents.ts`
+- Instrumented Smokehouse payment `status`, `callback`, and `ipn` routes with bakery-style structured security-event logging
+- Limited incident escalation to actionable payment sync failures, so only callback/IPN verification failures create or reuse `ops_incidents` rows
+
+Verification:
+
+- `thesmokehouse-admin`: `git diff --check`, `npx.cmd tsc --noEmit`
+- `thesmokehouse`: `git diff --check`, `npx.cmd tsc --noEmit`
 
 ## 2026-04-30: H-03 Customer Order Access Hardening
 
@@ -2106,3 +2128,50 @@ Status: implemented locally in the admin repo, not committed
 - Added default 50 / max 100 order-list caps and 100-row dashboard active/today caps
 - Added admin-role-gated JSON endpoints for order list, order detail summary, and dashboard snapshot reconciliation
 - Verified admin `npx tsc --noEmit` and `npm run build`
+
+## 2026-05-01: M-06 Operational RPC Execute Lockdown
+
+Status: implemented locally in the admin repo, pending Supabase migration application
+
+Why this change was needed:
+
+- Core operational RPCs still relied on Postgres default function execute privileges
+- The admin app already uses service-role server-side call paths for these operations, so the database privileges should reflect that explicitly
+- Leaving these grants implicit would make future auth, RLS, or `security definer` changes riskier than necessary
+
+Implemented changes:
+
+- Added `db/phase-32-operational-rpc-execute-lockdown.sql`
+- Explicitly revoked execute on the following final effective RPC signatures from `public`, `anon`, and `authenticated`:
+  `get_daily_menu_stock(...)`, `add_order_note(...)`, `apply_inventory_adjustment(...)`, `process_procurement_receipt_to_finished_stock(...)`, `process_whole_chicken_receipt_allocation(...)`, `record_procurement_receipt(...)`, `mark_order_as_paid(...)`, `transition_order_status(...)`, `reserve_paid_order_stock(...)`, `release_reserved_order_stock(...)`, and `finalize_reserved_order_sale(...)`
+- Granted execute on those same RPCs only to `service_role`
+- Updated `db/merged-live-schema.sql` so the merged local schema mirrors the post-migration privilege state
+- Updated `smokehouse-paranoid-review.md` so M-06 now reflects local implementation instead of an unpatched finding
+
+Verification completed:
+
+- Confirmed the admin repo currently calls the affected RPCs through `createAdminSupabaseClient()` in `lib/supabase/server.ts`, which uses `SUPABASE_SERVICE_ROLE_KEY`
+- Rechecked `db/merged-live-schema.sql` for each targeted RPC signature before writing the revoke/grant statements
+
+Deployment verification still needed:
+
+- Apply Phase 32 in Supabase
+- Smoke-test inventory adjustment, procurement receipt, finished-stock processing, order-note, order-status, daily-stock, and manual payment reverify flows against the deployed database
+
+## 2026-05-01: Storefront Order Tracking Polling Boundaries
+
+Status: implemented locally in `thesmokehouse`, pending browser/dev verification
+
+What changed:
+
+- Replaced the fixed 15-second `/order/[public_token]` polling loop with state-based storefront tracking rules
+- `payment_status = pending` now polls every 10 seconds and stops after 5 minutes
+- `payment_status = paid` plus `status = new|confirmed|in_prep` now polls every 30 seconds and stops after 30 minutes
+- Terminal states now stop auto-refresh immediately: `ready`, `completed`, `cancelled`, `payment_status = cancelled`, and `payment_status = failed`
+- Auto-refresh pauses while the tab is hidden, does one refresh when the tab becomes visible again, and only continues if the order is still in a live state
+- Added a manual `Refresh Status` action and kept refresh failures non-fatal once an order is already on screen
+- Updated the hero copy so the tracking page no longer promises constant every-few-seconds kitchen refreshes
+
+Verification:
+
+- `thesmokehouse`: pending final `git diff --check` and `npx.cmd tsc --noEmit`

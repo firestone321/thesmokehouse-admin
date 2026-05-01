@@ -27,9 +27,12 @@ import {
   OrderItemRecord,
   OrderListItem,
   OrderStatus,
-  OrderStatusEventRecord
+  OrderStatusEventRecord,
+  PushQueueDispatchPreview,
+  PushQueueSnapshot
 } from "@/lib/ops/types";
 import { toOperationsError } from "@/lib/ops/errors";
+import { isStorefrontReadyNotificationKickoffConfigured } from "@/lib/ops/storefront-ready-notifications";
 import { getUgandaDayRange, getUgandaServiceDate, isDailyStockLow } from "@/lib/ops/utils";
 
 const procurementMigrationFiles = [
@@ -59,6 +62,7 @@ const DEFAULT_ORDER_LIST_LIMIT = 50;
 const MAX_ORDER_LIST_LIMIT = 100;
 const DASHBOARD_ACTIVE_ORDERS_LIMIT = 100;
 const DASHBOARD_TODAY_ORDERS_LIMIT = 100;
+const PUSH_PROCESSING_STALE_MS = 5 * 60 * 1000;
 
 const orderListSelection = `
   id,
@@ -220,6 +224,10 @@ async function loadDailyMenuStock(serviceDate: string, options?: { allowTransien
 function normalizeNumber(value: unknown) {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeCount(value: number | null) {
+  return typeof value === "number" ? value : 0;
 }
 
 function normalizeOrderListLimit(value: unknown) {
@@ -571,6 +579,264 @@ export async function getOrdersPageData(options?: {
     limit,
     orders: (data ?? []).map(mapOrderListItem)
   };
+}
+
+type AdminPushDispatchSummaryRow = {
+  id: string;
+  order_id: number;
+  status: string;
+  attempt_count: number;
+  created_at: string;
+  next_attempt_at: string | null;
+  last_attempt_at: string | null;
+  completed_at: string | null;
+  last_error: string | null;
+};
+
+type StorefrontPushDispatchSummaryRow = {
+  idempotency_key: string;
+  order_id: number;
+  attempt_count: number;
+  created_at: string;
+  next_attempt_at: string | null;
+  last_attempt_at: string | null;
+  processing_started_at: string | null;
+  completed_at: string | null;
+  last_error: string | null;
+};
+
+function isTimestampDue(value: string | null | undefined, thresholdMs = Date.now()) {
+  if (!value) {
+    return false;
+  }
+
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && timestamp <= thresholdMs;
+}
+
+function mapAdminPushDispatchPreview(row: AdminPushDispatchSummaryRow): PushQueueDispatchPreview {
+  return {
+    id: row.id,
+    orderId: normalizeNumber(row.order_id),
+    status: row.status,
+    attemptCount: normalizeNumber(row.attempt_count),
+    createdAt: row.created_at,
+    nextAttemptAt: row.next_attempt_at,
+    lastAttemptAt: row.last_attempt_at,
+    processingStartedAt: null,
+    completedAt: row.completed_at,
+    lastError: row.last_error
+  };
+}
+
+function getStorefrontPushDispatchStatus(row: StorefrontPushDispatchSummaryRow) {
+  if (row.completed_at) {
+    return row.last_error ? "failed" : "succeeded";
+  }
+
+  if (row.processing_started_at) {
+    return isTimestampDue(row.processing_started_at, Date.now() - PUSH_PROCESSING_STALE_MS) ? "stalled" : "processing";
+  }
+
+  if (normalizeNumber(row.attempt_count) > 0) {
+    return isTimestampDue(row.next_attempt_at) ? "retry_due" : "retry_scheduled";
+  }
+
+  return isTimestampDue(row.next_attempt_at) ? "pending" : "scheduled";
+}
+
+function mapStorefrontPushDispatchPreview(row: StorefrontPushDispatchSummaryRow): PushQueueDispatchPreview {
+  return {
+    id: row.idempotency_key,
+    orderId: normalizeNumber(row.order_id),
+    status: getStorefrontPushDispatchStatus(row),
+    attemptCount: normalizeNumber(row.attempt_count),
+    createdAt: row.created_at,
+    nextAttemptAt: row.next_attempt_at,
+    lastAttemptAt: row.last_attempt_at,
+    processingStartedAt: row.processing_started_at,
+    completedAt: row.completed_at,
+    lastError: row.last_error
+  };
+}
+
+export async function getPushQueueSnapshots(): Promise<PushQueueSnapshot[]> {
+  noStore();
+
+  const supabase = createAdminSupabaseClient();
+  const nowIso = new Date().toISOString();
+  const staleIso = new Date(Date.now() - PUSH_PROCESSING_STALE_MS).toISOString();
+
+  const [
+    adminSubscriptionCountResponse,
+    adminPendingCountResponse,
+    adminProcessingCountResponse,
+    adminDueCountResponse,
+    adminStalledCountResponse,
+    adminRetryingCountResponse,
+    adminFailedCountResponse,
+    adminNoSubscribersCountResponse,
+    adminOldestOpenResponse,
+    adminNextAttemptResponse,
+    adminPreviewResponse,
+    storefrontSubscriptionCountResponse,
+    storefrontOpenCountResponse,
+    storefrontDueCountResponse,
+    storefrontStalledCountResponse,
+    storefrontRetryingCountResponse,
+    storefrontFailedCountResponse,
+    storefrontOldestOpenResponse,
+    storefrontNextAttemptResponse,
+    storefrontPreviewResponse
+  ] = await Promise.all([
+    supabase.from("admin_push_subscriptions").select("*", { count: "exact", head: true }),
+    supabase.from("admin_push_dispatches").select("*", { count: "exact", head: true }).eq("status", "pending"),
+    supabase.from("admin_push_dispatches").select("*", { count: "exact", head: true }).eq("status", "processing"),
+    supabase.from("admin_push_dispatches").select("*", { count: "exact", head: true }).eq("status", "pending").lte("next_attempt_at", nowIso),
+    supabase.from("admin_push_dispatches").select("*", { count: "exact", head: true }).eq("status", "processing").lte("last_attempt_at", staleIso),
+    supabase.from("admin_push_dispatches").select("*", { count: "exact", head: true }).eq("status", "pending").gt("attempt_count", 0),
+    supabase.from("admin_push_dispatches").select("*", { count: "exact", head: true }).eq("status", "failed"),
+    supabase.from("admin_push_dispatches").select("*", { count: "exact", head: true }).eq("status", "no_subscribers"),
+    supabase
+      .from("admin_push_dispatches")
+      .select("created_at")
+      .in("status", ["pending", "processing"])
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("admin_push_dispatches")
+      .select("next_attempt_at")
+      .in("status", ["pending", "processing"])
+      .order("next_attempt_at", { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("admin_push_dispatches")
+      .select("id,order_id,status,attempt_count,created_at,next_attempt_at,last_attempt_at,completed_at,last_error")
+      .in("status", ["pending", "processing", "failed", "no_subscribers"])
+      .order("created_at", { ascending: false })
+      .limit(5),
+    supabase.from("push_subscriptions").select("*", { count: "exact", head: true }),
+    supabase.from("push_notification_dispatches").select("*", { count: "exact", head: true }).is("completed_at", null),
+    supabase.from("push_notification_dispatches").select("*", { count: "exact", head: true }).is("completed_at", null).lte("next_attempt_at", nowIso),
+    supabase
+      .from("push_notification_dispatches")
+      .select("*", { count: "exact", head: true })
+      .is("completed_at", null)
+      .not("processing_started_at", "is", null)
+      .lte("processing_started_at", staleIso),
+    supabase.from("push_notification_dispatches").select("*", { count: "exact", head: true }).is("completed_at", null).gt("attempt_count", 0),
+    supabase.from("push_notification_dispatches").select("*", { count: "exact", head: true }).not("completed_at", "is", null).not("last_error", "is", null),
+    supabase
+      .from("push_notification_dispatches")
+      .select("created_at")
+      .is("completed_at", null)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("push_notification_dispatches")
+      .select("next_attempt_at")
+      .is("completed_at", null)
+      .order("next_attempt_at", { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("push_notification_dispatches")
+      .select("idempotency_key,order_id,attempt_count,created_at,next_attempt_at,last_attempt_at,processing_started_at,completed_at,last_error")
+      .or("completed_at.is.null,last_error.not.is.null")
+      .order("created_at", { ascending: false })
+      .limit(5)
+  ]);
+
+  [
+    adminSubscriptionCountResponse,
+    adminPendingCountResponse,
+    adminProcessingCountResponse,
+    adminDueCountResponse,
+    adminStalledCountResponse,
+    adminRetryingCountResponse,
+    adminFailedCountResponse,
+    adminNoSubscribersCountResponse,
+    adminOldestOpenResponse,
+    adminNextAttemptResponse,
+    adminPreviewResponse,
+    storefrontSubscriptionCountResponse,
+    storefrontOpenCountResponse,
+    storefrontDueCountResponse,
+    storefrontStalledCountResponse,
+    storefrontRetryingCountResponse,
+    storefrontFailedCountResponse,
+    storefrontOldestOpenResponse,
+    storefrontNextAttemptResponse,
+    storefrontPreviewResponse
+  ].forEach((response, index) => {
+    const context = [
+      "admin push subscription count",
+      "admin push pending count",
+      "admin push processing count",
+      "admin push due count",
+      "admin push stalled count",
+      "admin push retrying count",
+      "admin push failed count",
+      "admin push no subscribers count",
+      "admin push oldest open",
+      "admin push next attempt",
+      "admin push preview",
+      "storefront push subscription count",
+      "storefront push open count",
+      "storefront push due count",
+      "storefront push stalled count",
+      "storefront push retrying count",
+      "storefront push failed count",
+      "storefront push oldest open",
+      "storefront push next attempt",
+      "storefront push preview"
+    ][index];
+
+    ensureNoError(response.error, `Unable to load ${context}`);
+  });
+
+  const adminQueue: PushQueueSnapshot = {
+    key: "admin_paid_order",
+    title: "Admin paid-order push queue",
+    description: "Staff notifications for newly paid orders awaiting review.",
+    configured: Boolean(
+      process.env.WEB_PUSH_VAPID_SUBJECT?.trim()
+      && process.env.NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY?.trim()
+      && process.env.WEB_PUSH_VAPID_PRIVATE_KEY?.trim()
+    ),
+    activeSubscriptionCount: normalizeCount(adminSubscriptionCountResponse.count),
+    openCount: normalizeCount(adminPendingCountResponse.count) + normalizeCount(adminProcessingCountResponse.count),
+    dueNowCount: normalizeCount(adminDueCountResponse.count),
+    stalledCount: normalizeCount(adminStalledCountResponse.count),
+    retryingCount: normalizeCount(adminRetryingCountResponse.count),
+    failedCount: normalizeCount(adminFailedCountResponse.count),
+    noSubscribersCount: normalizeCount(adminNoSubscribersCountResponse.count),
+    oldestOpenCreatedAt: adminOldestOpenResponse.data?.created_at ?? null,
+    nextAttemptAt: adminNextAttemptResponse.data?.next_attempt_at ?? null,
+    recentDispatches: ((adminPreviewResponse.data ?? []) as AdminPushDispatchSummaryRow[]).map(mapAdminPushDispatchPreview)
+  };
+
+  const storefrontQueue: PushQueueSnapshot = {
+    key: "storefront_ready",
+    title: "Customer Ready push queue",
+    description: "Ready-for-pickup notifications waiting to reach customer devices.",
+    configured: isStorefrontReadyNotificationKickoffConfigured(),
+    activeSubscriptionCount: normalizeCount(storefrontSubscriptionCountResponse.count),
+    openCount: normalizeCount(storefrontOpenCountResponse.count),
+    dueNowCount: normalizeCount(storefrontDueCountResponse.count),
+    stalledCount: normalizeCount(storefrontStalledCountResponse.count),
+    retryingCount: normalizeCount(storefrontRetryingCountResponse.count),
+    failedCount: normalizeCount(storefrontFailedCountResponse.count),
+    noSubscribersCount: 0,
+    oldestOpenCreatedAt: storefrontOldestOpenResponse.data?.created_at ?? null,
+    nextAttemptAt: storefrontNextAttemptResponse.data?.next_attempt_at ?? null,
+    recentDispatches: ((storefrontPreviewResponse.data ?? []) as StorefrontPushDispatchSummaryRow[]).map(mapStorefrontPushDispatchPreview)
+  };
+
+  return [adminQueue, storefrontQueue];
 }
 
 export async function getOrderListItemById(orderId: number | string): Promise<OrderListItem | null> {

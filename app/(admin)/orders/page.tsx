@@ -1,7 +1,8 @@
 import { SchemaSetupNotice } from "@/components/admin/schema-setup-notice";
+import { PushQueueHealthCard } from "@/components/orders/push-queue-health-card";
 import { LiveOrdersPanel } from "@/components/orders/live-orders-panel";
 import { OperationsSchemaMissingError } from "@/lib/ops/errors";
-import { getOrdersPageData } from "@/lib/ops/queries";
+import { getOrdersPageData, getPushQueueSnapshots } from "@/lib/ops/queries";
 
 function getFirstValue(value?: string | string[]) {
   return Array.isArray(value) ? value[0] : value;
@@ -15,10 +16,16 @@ export default async function OrdersPage({
   const params = await searchParams;
   const status = getFirstValue(params.status) ?? "all";
   const search = getFirstValue(params.search) ?? "";
+  const pushQueueStatus = getFirstValue(params.push_queue_status);
+  const pushQueueMessage = getFirstValue(params.push_queue_message);
   let data;
+  let pushQueues;
 
   try {
-    data = await getOrdersPageData({ status, search });
+    [data, pushQueues] = await Promise.all([
+      getOrdersPageData({ status, search }),
+      getPushQueueSnapshots()
+    ]);
   } catch (error) {
     if (error instanceof OperationsSchemaMissingError) {
       return <SchemaSetupNotice title="Orders cannot load yet" error={error} />;
@@ -28,6 +35,14 @@ export default async function OrdersPage({
   }
 
   const { orders, limit } = data;
+  const returnToParams = new URLSearchParams();
+  if (status !== "all") {
+    returnToParams.set("status", status);
+  }
+  if (search) {
+    returnToParams.set("search", search);
+  }
+  const returnTo = returnToParams.size > 0 ? `/orders?${returnToParams.toString()}` : "/orders";
 
   return (
     <div className="space-y-4 text-[#111418]">
@@ -81,6 +96,19 @@ export default async function OrdersPage({
         </div>
       </section>
 
+      {pushQueueMessage ? (
+        <section
+          className={`rounded-[24px] px-4 py-4 text-sm leading-6 ${
+            pushQueueStatus === "error"
+              ? "border border-[#F7D2B1] bg-[#FFF9F2] text-[#8A3F16]"
+              : "border border-[#D7E8DA] bg-[#F4FBF5] text-[#166534]"
+          }`}
+        >
+          {pushQueueMessage}
+        </section>
+      ) : null}
+
+      <PushQueueHealthCard queues={pushQueues} returnTo={returnTo} />
       <LiveOrdersPanel orders={orders} status={status} search={search} limit={limit} />
     </div>
   );
