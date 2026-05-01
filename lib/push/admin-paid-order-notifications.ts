@@ -7,6 +7,7 @@ import { requireEnv } from "@/lib/supabase/shared";
 const ADMIN_PAID_ORDER_NOTIFICATION_TYPE = "new_paid_order";
 const MAX_DISPATCH_BATCH_SIZE = 25;
 const MAX_DISPATCH_ATTEMPTS = 6;
+const NO_SUBSCRIBER_RETRY_DELAY_MS = 5 * 60_000;
 const RETRY_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000, 30 * 60_000, 60 * 60_000, 2 * 60 * 60_000];
 
 type AdminPushSubscriptionRow = {
@@ -251,7 +252,8 @@ async function processDispatch(dispatch: AdminPushDispatchRow) {
   if (subscriptions.length === 0) {
     await updateDispatchState(dispatch.id, {
       status: "no_subscribers",
-      completed_at: new Date().toISOString(),
+      next_attempt_at: new Date(Date.now() + NO_SUBSCRIBER_RETRY_DELAY_MS).toISOString(),
+      completed_at: null,
       last_error: "no_active_subscriptions"
     });
 
@@ -356,4 +358,39 @@ export async function processAdminPushDispatchQueue(options?: { limit?: number; 
 
   console.info("admin_push_dispatch_queue_processed", stats);
   return stats;
+}
+
+export async function reopenNoSubscriberAdminPushDispatches(limit = 10) {
+  const supabaseAdmin = createAdminSupabaseClient();
+  const { data, error } = await supabaseAdmin
+    .from("admin_push_dispatches")
+    .select("id")
+    .eq("status", "no_subscribers")
+    .order("created_at", { ascending: false })
+    .limit(Math.max(1, Math.min(25, Math.trunc(limit))));
+
+  if (error) {
+    throw new Error(`Unable to load no-subscriber admin push dispatches: ${error.message}`);
+  }
+
+  const dispatchIds = ((data ?? []) as Array<{ id: string }>).map((row) => row.id);
+  if (dispatchIds.length === 0) {
+    return 0;
+  }
+
+  const { error: updateError } = await supabaseAdmin
+    .from("admin_push_dispatches")
+    .update({
+      status: "pending",
+      next_attempt_at: new Date().toISOString(),
+      completed_at: null,
+      last_error: "subscriber_available_retry"
+    })
+    .in("id", dispatchIds);
+
+  if (updateError) {
+    throw new Error(`Unable to reopen no-subscriber admin push dispatches: ${updateError.message}`);
+  }
+
+  return dispatchIds.length;
 }

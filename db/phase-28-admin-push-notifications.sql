@@ -127,7 +127,7 @@ begin
     from public.admin_push_dispatches d
     where (
       (
-        d.status = 'pending'
+        d.status in ('pending', 'no_subscribers')
         and d.next_attempt_at <= now()
       )
       or (
@@ -146,6 +146,7 @@ begin
     status = 'processing',
     attempt_count = d.attempt_count + 1,
     last_attempt_at = now(),
+    completed_at = null,
     last_error = null,
     updated_at = now()
   from candidates

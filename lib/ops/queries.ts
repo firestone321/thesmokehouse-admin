@@ -690,9 +690,9 @@ export async function getPushQueueSnapshots(): Promise<PushQueueSnapshot[]> {
     storefrontPreviewResponse
   ] = await Promise.all([
     supabase.from("admin_push_subscriptions").select("*", { count: "exact", head: true }),
-    supabase.from("admin_push_dispatches").select("*", { count: "exact", head: true }).eq("status", "pending"),
+    supabase.from("admin_push_dispatches").select("*", { count: "exact", head: true }).in("status", ["pending", "no_subscribers"]),
     supabase.from("admin_push_dispatches").select("*", { count: "exact", head: true }).eq("status", "processing"),
-    supabase.from("admin_push_dispatches").select("*", { count: "exact", head: true }).eq("status", "pending").lte("next_attempt_at", nowIso),
+    supabase.from("admin_push_dispatches").select("*", { count: "exact", head: true }).in("status", ["pending", "no_subscribers"]).lte("next_attempt_at", nowIso),
     supabase.from("admin_push_dispatches").select("*", { count: "exact", head: true }).eq("status", "processing").lte("last_attempt_at", staleIso),
     supabase.from("admin_push_dispatches").select("*", { count: "exact", head: true }).eq("status", "pending").gt("attempt_count", 0),
     supabase.from("admin_push_dispatches").select("*", { count: "exact", head: true }).eq("status", "failed"),
@@ -700,14 +700,14 @@ export async function getPushQueueSnapshots(): Promise<PushQueueSnapshot[]> {
     supabase
       .from("admin_push_dispatches")
       .select("created_at")
-      .in("status", ["pending", "processing"])
+      .in("status", ["pending", "processing", "no_subscribers"])
       .order("created_at", { ascending: true })
       .limit(1)
       .maybeSingle(),
     supabase
       .from("admin_push_dispatches")
       .select("next_attempt_at")
-      .in("status", ["pending", "processing"])
+      .in("status", ["pending", "processing", "no_subscribers"])
       .order("next_attempt_at", { ascending: true })
       .limit(1)
       .maybeSingle(),

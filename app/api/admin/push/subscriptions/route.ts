@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { processAdminPushDispatchQueue } from "@/lib/push/admin-paid-order-notifications";
+import {
+  processAdminPushDispatchQueue,
+  reopenNoSubscriberAdminPushDispatches
+} from "@/lib/push/admin-paid-order-notifications";
 import { AdminAuthorizationError, requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import { isContentLengthTooLarge } from "@/lib/request-limits";
 import { enforceRateLimit } from "@/lib/rate-limit";
@@ -98,9 +101,11 @@ export async function POST(request: Request) {
       throw new Error(`Unable to save admin push subscription: ${error.message}`);
     }
 
-    void processAdminPushDispatchQueue({ limit: 2 }).catch((queueError) => {
+    void reopenNoSubscriberAdminPushDispatches(10)
+      .then(() => processAdminPushDispatchQueue({ limit: 5 }))
+      .catch((queueError) => {
       console.error("admin_push_dispatch_after_subscription_failed", queueError);
-    });
+      });
 
     return NextResponse.json({
       ok: true,

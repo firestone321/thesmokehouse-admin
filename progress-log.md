@@ -19,6 +19,26 @@ Current local repo locations used for this project:
 - Admin dashboard repo: `C:\Users\Jurugo\OneDrive\VS Code\Web Development\thesmokehouse-admin`
 - Client storefront repo: `C:\Users\Jurugo\OneDrive\VS Code\Web Development\thesmokehouse`
 
+## 2026-05-01: Device-Scoped Push Reliability
+
+Status: implemented locally across admin and storefront
+
+What changed:
+
+- Customer push subscriptions are now treated as device/browser subscriptions instead of order-owned subscriptions.
+- Storefront subscription payloads include a stable local device ID and still link the current order for delivery targeting.
+- `push_subscription_orders` remains the targeting table for which device subscriptions should receive a Ready notification for a specific order.
+- Storefront payment verification now kicks the admin paid-order push processor after a payment first becomes paid.
+- Admin has a signed internal paid-order push processor endpoint for storefront-triggered kicks.
+- Admin paid-order dispatches that find no staff subscribers are kept retryable instead of being closed permanently.
+- Admin push setup now has a visible recovery prompt when browser permission is missing, blocked, unsupported, or setup fails.
+- Added `db/phase-33-device-push-reliability.sql` and updated the merged schema to add customer push `device_id` / `last_seen_at` and no-subscriber retry claiming.
+
+Current push rule:
+
+- Subscriptions belong to devices.
+- Orders only decide which subscribed devices should receive a specific notification.
+
 ## Phase 1: Reference Tables And Menu Modeling
 
 Status: drafted in SQL

@@ -3057,10 +3057,12 @@ $$;
 create table if not exists public.push_subscriptions (
   id uuid primary key default gen_random_uuid(),
   endpoint text not null unique,
+  device_id text,
   p256dh text not null,
   auth text not null,
   platform text,
   user_agent text,
+  last_seen_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -3100,6 +3102,10 @@ create table if not exists public.push_notification_dispatches (
 
 create index if not exists push_subscription_orders_order_id_idx
   on public.push_subscription_orders (order_id);
+
+create index if not exists push_subscriptions_device_id_idx
+  on public.push_subscriptions (device_id)
+  where device_id is not null;
 
 create index if not exists push_notification_dispatches_order_id_idx
   on public.push_notification_dispatches (order_id);
@@ -3332,7 +3338,7 @@ begin
     from public.admin_push_dispatches d
     where (
       (
-        d.status = 'pending'
+        d.status in ('pending', 'no_subscribers')
         and d.next_attempt_at <= now()
       )
       or (
@@ -3351,6 +3357,7 @@ begin
     status = 'processing',
     attempt_count = d.attempt_count + 1,
     last_attempt_at = now(),
+    completed_at = null,
     last_error = null,
     updated_at = now()
   from candidates

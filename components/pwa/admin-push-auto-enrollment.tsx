@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { publicEnv } from "@/lib/public-env";
 import {
   decodeVapidPublicKey,
@@ -54,6 +54,9 @@ async function saveAdminPushSubscription(subscription: PushSubscription) {
 }
 
 export function AdminPushAutoEnrollment() {
+  const [status, setStatus] = useState<"checking" | "active" | "needs_permission" | "blocked" | "unsupported" | "not_configured" | "error">("checking");
+  const [message, setMessage] = useState<string | null>(null);
+
   async function createOrRefreshSubscription(registration: ServiceWorkerRegistration) {
     const existingSubscription = await registration.pushManager.getSubscription();
 
@@ -71,52 +74,90 @@ export function AdminPushAutoEnrollment() {
     });
   }
 
+  async function enroll(options?: { requestPermission?: boolean }) {
+    if (!supportsPushNotifications()) {
+      setStatus("unsupported");
+      setMessage("This browser cannot receive push alerts.");
+      return;
+    }
+
+    if (!publicEnv.webPushVapidPublicKey) {
+      setStatus("not_configured");
+      setMessage("Push alerts need VAPID config.");
+      return;
+    }
+
+    if (Notification.permission === "denied") {
+      setStatus("blocked");
+      setMessage("Notifications are blocked in this browser.");
+      return;
+    }
+
+    if (Notification.permission !== "granted") {
+      if (!options?.requestPermission) {
+        setStatus("needs_permission");
+        setMessage("Allow alerts on this device to receive paid-order pushes.");
+        return;
+      }
+
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") {
+        setStatus(permission === "denied" ? "blocked" : "needs_permission");
+        setMessage(
+          permission === "denied"
+            ? "Notifications are blocked in this browser."
+            : "Allow alerts on this device to receive paid-order pushes."
+        );
+        return;
+      }
+    }
+
+    setStatus("checking");
+    setMessage("Setting up paid-order alerts...");
+
+    try {
+      const registration = await getAppServiceWorkerRegistration();
+      if (!registration) {
+        throw new Error("Service worker registration is unavailable.");
+      }
+
+      const subscription = await createOrRefreshSubscription(registration);
+      await saveAdminPushSubscription(subscription);
+      void fetch("/api/admin/push/process", { method: "POST" }).catch((error) => {
+        console.warn("admin_push_queue_kick_failed", error);
+      });
+      setStatus("active");
+      setMessage(null);
+    } catch (error) {
+      console.warn("admin_push_auto_enrollment_failed", error);
+      setStatus("error");
+      setMessage(error instanceof Error ? error.message : "Unable to set up paid-order alerts.");
+    }
+  }
+
   useEffect(() => {
-    let cancelled = false;
-
-    const enroll = async () => {
-      if (!supportsPushNotifications() || !publicEnv.webPushVapidPublicKey) {
-        return;
-      }
-
-      if (Notification.permission === "denied") {
-        return;
-      }
-
-      try {
-        const permission =
-          Notification.permission === "granted"
-            ? "granted"
-            : await Notification.requestPermission();
-
-        if (cancelled || permission !== "granted") {
-          return;
-        }
-
-        const registration = await getAppServiceWorkerRegistration();
-        if (!registration) {
-          return;
-        }
-
-        const subscription = await createOrRefreshSubscription(registration);
-
-        if (!cancelled) {
-          await saveAdminPushSubscription(subscription);
-          void fetch("/api/admin/push/process", { method: "POST" }).catch((error) => {
-            console.warn("admin_push_queue_kick_failed", error);
-          });
-        }
-      } catch (error) {
-        console.warn("admin_push_auto_enrollment_failed", error);
-      }
-    };
-
-    void enroll();
-
-    return () => {
-      cancelled = true;
-    };
+    void enroll({ requestPermission: false });
   }, []);
 
-  return null;
+  if (status === "active" || status === "checking") {
+    return null;
+  }
+
+  return (
+    <div className="fixed bottom-4 right-4 z-50 max-w-sm rounded-md border border-[#2B211B]/15 bg-white px-4 py-3 text-sm font-semibold text-[#2B211B] shadow-[0_14px_35px_rgba(17,20,24,0.16)]">
+      <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#8A6246]">Paid-order alerts</p>
+      {message ? <p className="mt-2 leading-5 text-[#5C4A3E]">{message}</p> : null}
+      {status === "needs_permission" || status === "error" ? (
+        <button
+          type="button"
+          onClick={() => {
+            void enroll({ requestPermission: true });
+          }}
+          className="mt-3 rounded-md bg-[#2B211B] px-3 py-2 text-xs font-black uppercase tracking-wide text-white"
+        >
+          Enable alerts
+        </button>
+      ) : null}
+    </div>
+  );
 }
