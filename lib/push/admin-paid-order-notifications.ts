@@ -193,9 +193,9 @@ async function sendPushNotification(
 ): Promise<PushSendOutcome> {
   try {
     webpush.setVapidDetails(
-      requireEnv("WEB_PUSH_VAPID_SUBJECT"),
-      requireEnv("NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY"),
-      requireEnv("WEB_PUSH_VAPID_PRIVATE_KEY")
+      requireEnv("VAPID_SUBJECT", "WEB_PUSH_VAPID_SUBJECT"),
+      requireEnv("NEXT_PUBLIC_VAPID_PUBLIC_KEY", "NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY"),
+      requireEnv("VAPID_PRIVATE_KEY", "WEB_PUSH_VAPID_PRIVATE_KEY")
     );
 
     await webpush.sendNotification(

@@ -1,8 +1,17 @@
-export function requireEnv(name: string) {
-  const value = process.env[name];
+function readEnv(name: string) {
+  const value = process.env[name]?.trim();
+  return value ? value : undefined;
+}
+
+export function requireEnv(name: string, fallbackName?: string) {
+  const value = readEnv(name) ?? (fallbackName ? readEnv(fallbackName) : undefined);
 
   if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
+    throw new Error(
+      fallbackName
+        ? `Missing required environment variable: ${name} (or legacy ${fallbackName})`
+        : `Missing required environment variable: ${name}`
+    );
   }
 
   return value;

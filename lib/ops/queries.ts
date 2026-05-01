@@ -803,9 +803,9 @@ export async function getPushQueueSnapshots(): Promise<PushQueueSnapshot[]> {
     title: "Admin paid-order push queue",
     description: "Staff notifications for newly paid orders awaiting review.",
     configured: Boolean(
-      process.env.WEB_PUSH_VAPID_SUBJECT?.trim()
-      && process.env.NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY?.trim()
-      && process.env.WEB_PUSH_VAPID_PRIVATE_KEY?.trim()
+      (process.env.VAPID_SUBJECT?.trim() || process.env.WEB_PUSH_VAPID_SUBJECT?.trim())
+      && (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim() || process.env.NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY?.trim())
+      && (process.env.VAPID_PRIVATE_KEY?.trim() || process.env.WEB_PUSH_VAPID_PRIVATE_KEY?.trim())
     ),
     activeSubscriptionCount: normalizeCount(adminSubscriptionCountResponse.count),
     openCount: normalizeCount(adminPendingCountResponse.count) + normalizeCount(adminProcessingCountResponse.count),

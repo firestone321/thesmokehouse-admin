@@ -2158,6 +2158,14 @@ Deployment verification still needed:
 - Apply Phase 32 in Supabase
 - Smoke-test inventory adjustment, procurement receipt, finished-stock processing, order-note, order-status, daily-stock, and manual payment reverify flows against the deployed database
 
+## 2026-05-01: Admin Push Env Name Alignment
+
+Status: implemented locally
+
+- Aligned the admin push wiring to prefer `VAPID_SUBJECT`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, and `VAPID_PRIVATE_KEY`
+- Kept the older `WEB_PUSH_*` names as fallbacks so any still-live environment using the old contract keeps working
+- Updated the admin push queue config check and public enrollment key lookup to prefer the shorter names
+
 ## 2026-05-01: Storefront Order Tracking Polling Boundaries
 
 Status: implemented locally in `thesmokehouse`, pending browser/dev verification
