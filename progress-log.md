@@ -2211,3 +2211,13 @@ What changed:
 Verification:
 
 - `thesmokehouse`: pending final `git diff --check` and `npx.cmd tsc --noEmit`
+
+## 2026-05-01: Admin Zod Validation Rollout
+
+Status: implemented locally in `thesmokehouse-admin`
+
+- Added `zod` to the admin repo and introduced shared validation helpers under `lib/validation/`
+- Added `lib/schemas/admin.ts` for shared request-body, query-param, and FormData schemas
+- Converted the admin paid-order internal push processor, admin push subscription route, admin orders route, and order detail route params to schema-driven validation
+- Replaced the highest-risk manual FormData coercion in `lib/ops/actions.ts` with zod-backed parsing for order, menu, inventory, procurement, supplier, portion, and queue actions
+- Verified `npx.cmd tsc --noEmit`, `npm run build`, and `git diff --check`

@@ -11,23 +11,35 @@ import {
 import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import { getPesapalTransactionStatus } from "@/lib/payments/pesapal";
 import { processAdminPushDispatchQueue } from "@/lib/push/admin-paid-order-notifications";
+import {
+  addOrderNoteActionSchema,
+  completeOrderWithPickupCodeActionSchema,
+  ingredientProcurementActionSchema,
+  inventoryAdjustmentActionSchema,
+  inventoryItemActionSchema,
+  menuCategoryActionSchema,
+  menuItemComponentActionSchema,
+  menuItemActionSchema,
+  menuItemImageActionSchema,
+  portionTypeActionSchema,
+  processProcurementReceiptToFinishedStockActionSchema,
+  proteinProcurementActionSchema,
+  queueActionSchema,
+  removeMenuItemComponentActionSchema,
+  reverifyOrderPaymentActionSchema,
+  supplierActionSchema,
+  supplyProcurementActionSchema,
+  toggleMenuItemFlagActionSchema,
+  updateOrderStatusActionSchema
+} from "@/lib/schemas/admin";
+import { parseFormData } from "@/lib/validation/form-data";
 import { createAdminSupabaseClient } from "@/lib/supabase/server";
-import { toCode, toInteger, toNumber, toOptionalText } from "@/lib/ops/utils";
+import { toCode } from "@/lib/ops/utils";
 
 const menuImageBucket = "menu-item-images";
 const maxMenuImageBytes = 5 * 1024 * 1024;
 const pendingPaymentSoftCancelMs = 7 * 60_000;
 const allowedMenuImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
-
-function requiredText(formData: FormData, key: string) {
-  const value = String(formData.get(key) ?? "").trim();
-
-  if (!value) {
-    throw new Error(`${key} is required`);
-  }
-
-  return value;
-}
 
 function buildProcurementBatchNumber(sourceCode: string, deliveryDate: string) {
   const normalizedProteinCode = sourceCode.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "-");
@@ -66,11 +78,6 @@ function revalidateOperationalPaths() {
   revalidatePath("/inventory");
   revalidatePath("/menu");
   revalidatePath("/orders");
-}
-
-function getReturnTo(formData: FormData, fallback = "/orders") {
-  const value = String(formData.get("return_to") ?? "").trim();
-  return value.startsWith("/") ? value : fallback;
 }
 
 function buildOrdersFlashRedirect(returnTo: string, status: "success" | "error", message: string) {
@@ -139,16 +146,17 @@ async function uploadMenuItemImage(menuItemId: number, file: File) {
 }
 
 async function saveMenuItemRecord(formData: FormData) {
+  const input = parseFormData(formData, menuItemActionSchema);
   const supabase = createAdminSupabaseClient();
-  const menuItemId = String(formData.get("menu_item_id") ?? "").trim();
-  const name = requiredText(formData, "name");
+  const menuItemId = input.menu_item_id;
+  const name = input.name;
   let code = toCode(name);
 
   if (menuItemId) {
     const { data: existingMenuItem, error: existingMenuItemError } = await supabase
       .from("menu_items")
       .select("code")
-      .eq("id", Number(menuItemId))
+      .eq("id", menuItemId)
       .maybeSingle();
 
     if (existingMenuItemError) {
@@ -165,14 +173,14 @@ async function saveMenuItemRecord(formData: FormData) {
   const payload = {
     code,
     name,
-    description: toOptionalText(formData.get("description")),
-    base_price: toInteger(formData.get("base_price"), 0),
-    prep_type: requiredText(formData, "prep_type"),
-    menu_category_id: toInteger(formData.get("menu_category_id")),
-    portion_type_id: toInteger(formData.get("portion_type_id")),
-    sort_order: toInteger(formData.get("sort_order"), 1),
-    is_active: formData.get("is_active") === "on",
-    is_available_today: formData.get("is_available_today") === "on"
+    description: input.description,
+    base_price: input.base_price,
+    prep_type: input.prep_type,
+    menu_category_id: input.menu_category_id,
+    portion_type_id: input.portion_type_id,
+    sort_order: input.sort_order,
+    is_active: input.is_active,
+    is_available_today: input.is_available_today
   };
 
   let conflictQuery = supabase
@@ -181,7 +189,7 @@ async function saveMenuItemRecord(formData: FormData) {
     .eq("portion_type_id", payload.portion_type_id);
 
   if (menuItemId) {
-    conflictQuery = conflictQuery.neq("id", Number(menuItemId));
+    conflictQuery = conflictQuery.neq("id", menuItemId);
   }
 
   const { data: conflictingMenuItem, error: conflictError } = await conflictQuery.maybeSingle();
@@ -194,19 +202,19 @@ async function saveMenuItemRecord(formData: FormData) {
     return {
       ok: false as const,
       error: "That portion type is already linked to another menu item.",
-      menuItemId: menuItemId ? Number(menuItemId) : null
+      menuItemId
     };
   }
 
   if (menuItemId) {
-    const { error } = await supabase.from("menu_items").update(payload).eq("id", Number(menuItemId));
+    const { error } = await supabase.from("menu_items").update(payload).eq("id", menuItemId);
 
     if (error) {
       if (error.message.includes("menu_items_portion_type_id_key")) {
         return {
           ok: false as const,
           error: "That portion type is already linked to another menu item.",
-          menuItemId: Number(menuItemId)
+          menuItemId
         };
       }
 
@@ -217,7 +225,7 @@ async function saveMenuItemRecord(formData: FormData) {
 
     return {
       ok: true as const,
-      menuItemId: Number(menuItemId),
+      menuItemId,
       mode: "updated" as const
     };
   }
@@ -247,28 +255,23 @@ async function saveMenuItemRecord(formData: FormData) {
 
 export async function saveInventoryItemAction(formData: FormData) {
   await requireApprovedAdminRole();
+  const input = parseFormData(formData, inventoryItemActionSchema);
   const supabase = createAdminSupabaseClient();
-  const inventoryItemId = String(formData.get("inventory_item_id") ?? "").trim();
-  const codeInput = String(formData.get("code") ?? "").trim();
-  const name = requiredText(formData, "name");
-  const unitName = requiredText(formData, "unit_name");
-  const reorderThreshold = toNumber(formData.get("reorder_threshold"), 0);
-  const initialQuantity = toNumber(formData.get("initial_quantity"), 0);
-  const itemType = toOptionalText(formData.get("item_type")) ?? "supply";
-  const code = codeInput || toCode(name);
+  const inventoryItemId = input.inventory_item_id;
+  const code = input.code ?? toCode(input.name);
 
   if (inventoryItemId) {
     const { error } = await supabase
       .from("inventory_items")
       .update({
         code,
-        name,
-        unit_name: unitName,
-        reorder_threshold: reorderThreshold,
-        item_type: itemType,
-        is_active: formData.get("is_active") === "on"
+        name: input.name,
+        unit_name: input.unit_name,
+        reorder_threshold: input.reorder_threshold,
+        item_type: input.item_type,
+        is_active: input.is_active
       })
-      .eq("id", Number(inventoryItemId));
+      .eq("id", inventoryItemId);
 
     if (error) {
       throw new Error(`Unable to update inventory item: ${error.message}`);
@@ -282,10 +285,10 @@ export async function saveInventoryItemAction(formData: FormData) {
     .from("inventory_items")
     .insert({
       code,
-      name,
-      unit_name: unitName,
-      reorder_threshold: reorderThreshold,
-      item_type: itemType,
+      name: input.name,
+      unit_name: input.unit_name,
+      reorder_threshold: input.reorder_threshold,
+      item_type: input.item_type,
       is_active: true
     })
     .select("id")
@@ -295,11 +298,11 @@ export async function saveInventoryItemAction(formData: FormData) {
     throw new Error(`Unable to create inventory item: ${error?.message ?? "Unknown error"}`);
   }
 
-  if (initialQuantity !== 0) {
+  if (input.initial_quantity !== 0) {
     const { error: adjustmentError } = await supabase.rpc("apply_inventory_adjustment", {
       p_inventory_item_id: data.id,
-      p_quantity_delta: initialQuantity,
-      p_movement_type: initialQuantity > 0 ? "restock" : "usage",
+      p_quantity_delta: input.initial_quantity,
+      p_movement_type: input.initial_quantity > 0 ? "restock" : "usage",
       p_note: "Initial quantity"
     });
 
@@ -314,7 +317,7 @@ export async function saveInventoryItemAction(formData: FormData) {
 
 export async function processAdminPushQueueAction(formData: FormData) {
   await requireApprovedAdminRole();
-  const returnTo = getReturnTo(formData);
+  const { return_to: returnTo } = parseFormData(formData, queueActionSchema);
   const stats = await processAdminPushDispatchQueue({ limit: 10 });
 
   revalidateOperationalPaths();
@@ -329,7 +332,7 @@ export async function processAdminPushQueueAction(formData: FormData) {
 
 export async function processStorefrontReadyQueueAction(formData: FormData) {
   await requireApprovedAdminRole();
-  const returnTo = getReturnTo(formData);
+  const { return_to: returnTo } = parseFormData(formData, queueActionSchema);
   const result = await triggerStorefrontReadyQueueProcessing(10);
 
   revalidateOperationalPaths();
@@ -353,22 +356,18 @@ export async function processStorefrontReadyQueueAction(formData: FormData) {
 
 export async function createInventoryItemInlineAction(formData: FormData) {
   await requireApprovedAdminRole();
+  const input = parseFormData(formData, inventoryItemActionSchema);
   const supabase = createAdminSupabaseClient();
-  const codeInput = String(formData.get("code") ?? "").trim();
-  const name = requiredText(formData, "name");
-  const unitName = requiredText(formData, "unit_name");
-  const reorderThreshold = toNumber(formData.get("reorder_threshold"), 0);
-  const itemType = toOptionalText(formData.get("item_type")) ?? "supply";
-  const code = codeInput || toCode(name);
+  const code = input.code ?? toCode(input.name);
 
   const { data, error } = await supabase
     .from("inventory_items")
     .insert({
       code,
-      name,
-      unit_name: unitName,
-      reorder_threshold: reorderThreshold,
-      item_type: itemType,
+      name: input.name,
+      unit_name: input.unit_name,
+      reorder_threshold: input.reorder_threshold,
+      item_type: input.item_type,
       is_active: true
     })
     .select("id, code, name, unit_name, item_type, current_quantity, reorder_threshold")
@@ -396,17 +395,14 @@ export async function createInventoryItemInlineAction(formData: FormData) {
 
 export async function adjustInventoryItemAction(formData: FormData) {
   await requireApprovedAdminRole();
+  const input = parseFormData(formData, inventoryAdjustmentActionSchema);
   const supabase = createAdminSupabaseClient();
-  const inventoryItemId = toInteger(formData.get("inventory_item_id"));
-  const quantityDelta = toNumber(formData.get("quantity_delta"));
-  const movementType = requiredText(formData, "movement_type");
-  const note = toOptionalText(formData.get("note"));
 
   const { error } = await supabase.rpc("apply_inventory_adjustment", {
-    p_inventory_item_id: inventoryItemId,
-    p_quantity_delta: quantityDelta,
-    p_movement_type: movementType,
-    p_note: note
+    p_inventory_item_id: input.inventory_item_id,
+    p_quantity_delta: input.quantity_delta,
+    p_movement_type: input.movement_type,
+    p_note: input.note
   });
 
   if (error) {
@@ -414,45 +410,33 @@ export async function adjustInventoryItemAction(formData: FormData) {
   }
 
   revalidateOperationalPaths();
-  redirect(`/inventory?item=${inventoryItemId}`);
+  redirect(`/inventory?item=${input.inventory_item_id}`);
 }
 
 export async function recordProteinProcurementAction(formData: FormData) {
   await requireApprovedAdminRole();
+  const input = parseFormData(formData, proteinProcurementActionSchema);
   const supabase = createAdminSupabaseClient();
-  const supplierId = toInteger(formData.get("supplier_id"));
-  const proteinCode = requiredText(formData, "protein_code");
-  const deliveryDate = requiredText(formData, "delivery_date");
-  const batchNumber = buildProcurementBatchNumber(proteinCode, deliveryDate);
-  const butcheredOn = requiredText(formData, "butchered_on");
-  const abattoirName = requiredText(formData, "abattoir_name");
-  const vetStampNumber = requiredText(formData, "vet_stamp_number");
-  const inspectionOfficerName = requiredText(formData, "inspection_officer_name");
-  const quantityReceived = toNumber(formData.get("quantity_received"));
-  const unitName = requiredText(formData, "unit_name");
-  const unitCost = toOptionalText(formData.get("unit_cost"));
-  const note = toOptionalText(formData.get("note"));
-  const allocatedToHalves = toInteger(formData.get("allocated_to_halves"), 0);
-  const allocatedToQuarters = toInteger(formData.get("allocated_to_quarters"), 0);
+  const batchNumber = buildProcurementBatchNumber(input.protein_code, input.delivery_date);
 
   const { error } = await supabase.rpc("record_procurement_receipt", {
     p_intake_type: "protein",
-    p_protein_code: proteinCode,
+    p_protein_code: input.protein_code,
     p_inventory_item_id: null,
-    p_supplier_id: supplierId,
+    p_supplier_id: input.supplier_id,
     p_supplier_name: null,
     p_batch_number: batchNumber,
-    p_delivery_date: deliveryDate,
-    p_butchered_on: butcheredOn,
-    p_abattoir_name: abattoirName,
-    p_vet_stamp_number: vetStampNumber,
-    p_inspection_officer_name: inspectionOfficerName,
-    p_quantity_received: quantityReceived,
-    p_unit_name: unitName,
-    p_unit_cost: unitCost ? toNumber(unitCost) : null,
-    p_note: note,
-    p_allocated_to_halves: allocatedToHalves,
-    p_allocated_to_quarters: allocatedToQuarters
+    p_delivery_date: input.delivery_date,
+    p_butchered_on: input.butchered_on,
+    p_abattoir_name: input.abattoir_name,
+    p_vet_stamp_number: input.vet_stamp_number,
+    p_inspection_officer_name: input.inspection_officer_name,
+    p_quantity_received: input.quantity_received,
+    p_unit_name: input.unit_name,
+    p_unit_cost: input.unit_cost,
+    p_note: input.note,
+    p_allocated_to_halves: input.allocated_to_halves,
+    p_allocated_to_quarters: input.allocated_to_quarters
   });
 
   if (error) {
@@ -465,38 +449,34 @@ export async function recordProteinProcurementAction(formData: FormData) {
 
 export async function recordSupplyProcurementAction(formData: FormData) {
   await requireApprovedAdminRole();
+  const input = parseFormData(formData, supplyProcurementActionSchema);
   const supabase = createAdminSupabaseClient();
-  const inventoryItemId = toInteger(formData.get("inventory_item_id"));
-  const returnTo = toOptionalText(formData.get("return_to"));
-  const supplierIdValue = String(formData.get("supplier_id") ?? "").trim();
-  const supplierId = supplierIdValue ? Number(supplierIdValue) : null;
-  const supplierName = toOptionalText(formData.get("supplier_name"));
-  const deliveryDate = requiredText(formData, "delivery_date");
-  const batchNumber = buildProcurementBatchNumber(await getInventoryItemBatchCode(inventoryItemId), deliveryDate);
-  const quantityReceived = toNumber(formData.get("quantity_received"));
-  const unitCost = toOptionalText(formData.get("unit_cost"));
-  const note = toOptionalText(formData.get("note"));
+  const batchNumber = buildProcurementBatchNumber(
+    await getInventoryItemBatchCode(input.inventory_item_id),
+    input.delivery_date
+  );
+  const returnTo = input.return_to ?? `/inventory?item=${input.inventory_item_id}`;
 
-  if (supplierId === null && !supplierName) {
+  if (input.supplier_id === null && !input.supplier_name) {
     throw new Error("Supplier is required");
   }
 
   const { error } = await supabase.rpc("record_procurement_receipt", {
     p_intake_type: "supply",
     p_protein_code: null,
-    p_inventory_item_id: inventoryItemId,
-    p_supplier_id: supplierId,
-    p_supplier_name: supplierName,
+    p_inventory_item_id: input.inventory_item_id,
+    p_supplier_id: input.supplier_id,
+    p_supplier_name: input.supplier_name,
     p_batch_number: batchNumber,
-    p_delivery_date: deliveryDate,
+    p_delivery_date: input.delivery_date,
     p_butchered_on: null,
     p_abattoir_name: null,
     p_vet_stamp_number: null,
     p_inspection_officer_name: null,
-    p_quantity_received: quantityReceived,
+    p_quantity_received: input.quantity_received,
     p_unit_name: null,
-    p_unit_cost: unitCost ? toNumber(unitCost) : null,
-    p_note: note,
+    p_unit_cost: input.unit_cost,
+    p_note: input.note,
     p_allocated_to_halves: 0,
     p_allocated_to_quarters: 0
   });
@@ -506,42 +486,38 @@ export async function recordSupplyProcurementAction(formData: FormData) {
   }
 
   revalidateOperationalPaths();
-  redirect(returnTo ?? `/inventory?item=${inventoryItemId}`);
+  redirect(returnTo);
 }
 
 export async function recordIngredientProcurementAction(formData: FormData) {
   await requireApprovedAdminRole();
+  const input = parseFormData(formData, ingredientProcurementActionSchema);
   const supabase = createAdminSupabaseClient();
-  const inventoryItemId = toInteger(formData.get("inventory_item_id"));
-  const supplierIdValue = String(formData.get("supplier_id") ?? "").trim();
-  const supplierId = supplierIdValue ? Number(supplierIdValue) : null;
-  const supplierName = toOptionalText(formData.get("supplier_name"));
-  const deliveryDate = requiredText(formData, "delivery_date");
-  const batchNumber = buildProcurementBatchNumber(await getInventoryItemBatchCode(inventoryItemId), deliveryDate);
-  const quantityReceived = toNumber(formData.get("quantity_received"));
-  const unitCost = toOptionalText(formData.get("unit_cost"));
-  const note = toOptionalText(formData.get("note"));
+  const batchNumber = buildProcurementBatchNumber(
+    await getInventoryItemBatchCode(input.inventory_item_id),
+    input.delivery_date
+  );
 
-  if (supplierId === null && !supplierName) {
+  if (input.supplier_id === null && !input.supplier_name) {
     throw new Error("Supplier is required");
   }
 
   const { error } = await supabase.rpc("record_procurement_receipt", {
     p_intake_type: "ingredient",
     p_protein_code: null,
-    p_inventory_item_id: inventoryItemId,
-    p_supplier_id: supplierId,
-    p_supplier_name: supplierName,
+    p_inventory_item_id: input.inventory_item_id,
+    p_supplier_id: input.supplier_id,
+    p_supplier_name: input.supplier_name,
     p_batch_number: batchNumber,
-    p_delivery_date: deliveryDate,
+    p_delivery_date: input.delivery_date,
     p_butchered_on: null,
     p_abattoir_name: null,
     p_vet_stamp_number: null,
     p_inspection_officer_name: null,
-    p_quantity_received: quantityReceived,
+    p_quantity_received: input.quantity_received,
     p_unit_name: null,
-    p_unit_cost: unitCost ? toNumber(unitCost) : null,
-    p_note: note,
+    p_unit_cost: input.unit_cost,
+    p_note: input.note,
     p_allocated_to_halves: 0,
     p_allocated_to_quarters: 0
   });
@@ -564,23 +540,23 @@ export async function saveSupplierAction(formData: FormData) {
 }
 
 async function saveSupplierRecord(formData: FormData) {
+  const input = parseFormData(formData, supplierActionSchema);
   const supabase = createAdminSupabaseClient();
-  const supplierId = String(formData.get("supplier_id") ?? "").trim();
   const payload = {
-    name: requiredText(formData, "name"),
-    phone_number: toOptionalText(formData.get("phone_number")),
-    license_number: toOptionalText(formData.get("license_number")),
-    supplier_type: requiredText(formData, "supplier_type"),
-    default_abattoir_name: toOptionalText(formData.get("default_abattoir_name")),
-    is_active: formData.get("is_active") === "on",
-    notes: toOptionalText(formData.get("notes"))
+    name: input.name,
+    phone_number: input.phone_number,
+    license_number: input.license_number,
+    supplier_type: input.supplier_type,
+    default_abattoir_name: input.default_abattoir_name,
+    is_active: input.is_active,
+    notes: input.notes
   };
 
-  if (supplierId) {
+  if (input.supplier_id) {
     const { data, error } = await supabase
       .from("suppliers")
       .update(payload)
-      .eq("id", Number(supplierId))
+      .eq("id", input.supplier_id)
       .select("id, name, phone_number, license_number, supplier_type, default_abattoir_name, is_active")
       .single();
 
@@ -640,14 +616,9 @@ export async function createSupplierInlineAction(formData: FormData) {
 }
 
 async function savePortionTypeRecord(formData: FormData) {
+  const input = parseFormData(formData, portionTypeActionSchema);
   const supabase = createAdminSupabaseClient();
-  const name = requiredText(formData, "name");
-  const grams = toInteger(formData.get("grams"));
-  const code = toCode(name);
-
-  if (grams <= 0) {
-    throw new Error("Grams must be greater than zero.");
-  }
+  const code = toCode(input.name);
 
   const { data: existingPortionType, error: existingPortionTypeError } = await supabase
     .from("portion_types")
@@ -674,14 +645,14 @@ async function savePortionTypeRecord(formData: FormData) {
     throw new Error(`Unable to determine the next portion sort order: ${latestPortionTypeError.message}`);
   }
 
-  const nextSortOrder = toInteger(latestPortionType?.sort_order ?? 0, 0) + 1;
-  const portionLabel = `${grams}g`;
+  const nextSortOrder = Number(latestPortionType?.sort_order ?? 0) + 1;
+  const portionLabel = `${input.grams}g`;
 
   const { data, error } = await supabase
     .from("portion_types")
     .insert({
       code,
-      name,
+      name: input.name,
       portion_label: portionLabel,
       protein_id: null,
       packaging_type_id: null,
@@ -717,16 +688,13 @@ export async function createPortionTypeInlineAction(formData: FormData) {
 
 export async function processProcurementReceiptToFinishedStockAction(formData: FormData) {
   await requireApprovedAdminRole();
+  const input = parseFormData(formData, processProcurementReceiptToFinishedStockActionSchema);
   const supabase = createAdminSupabaseClient();
-  const procurementReceiptId = toInteger(formData.get("procurement_receipt_id"));
-  const birdsAllocatedToHalves = toInteger(formData.get("birds_allocated_to_halves"), 0);
-  const birdsAllocatedToQuarters = toInteger(formData.get("birds_allocated_to_quarters"), 0);
-  const note = toOptionalText(formData.get("note"));
 
   const { data: receipt, error: receiptError } = await supabase
     .from("procurement_receipts")
     .select("protein_code")
-    .eq("id", procurementReceiptId)
+    .eq("id", input.procurement_receipt_id)
     .maybeSingle();
 
   if (receiptError) {
@@ -734,15 +702,15 @@ export async function processProcurementReceiptToFinishedStockAction(formData: F
   }
 
   if (!receipt) {
-    throw new Error(`Unable to find procurement receipt ${procurementReceiptId}`);
+    throw new Error(`Unable to find procurement receipt ${input.procurement_receipt_id}`);
   }
 
   if (receipt.protein_code === "whole_chicken") {
     const { error } = await supabase.rpc("process_whole_chicken_receipt_allocation", {
-      p_procurement_receipt_id: procurementReceiptId,
-      p_birds_allocated_to_halves: birdsAllocatedToHalves,
-      p_birds_allocated_to_quarters: birdsAllocatedToQuarters,
-      p_note: note
+      p_procurement_receipt_id: input.procurement_receipt_id,
+      p_birds_allocated_to_halves: input.birds_allocated_to_halves,
+      p_birds_allocated_to_quarters: input.birds_allocated_to_quarters,
+      p_note: input.note
     });
 
     if (error) {
@@ -753,16 +721,16 @@ export async function processProcurementReceiptToFinishedStockAction(formData: F
     redirect("/procurement");
   }
 
-  const portionTypeId = toInteger(formData.get("portion_type_id"));
-  const quantityProduced = toInteger(formData.get("quantity_produced"));
-  const postRoastPackedWeight = toOptionalText(formData.get("post_roast_packed_weight_kg"));
+  if (input.portion_type_id === null || input.quantity_produced === null) {
+    throw new Error("Portion type and quantity produced are required.");
+  }
 
   const { error } = await supabase.rpc("process_procurement_receipt_to_finished_stock", {
-    p_procurement_receipt_id: procurementReceiptId,
-    p_portion_type_id: portionTypeId,
-    p_quantity_produced: quantityProduced,
-    p_post_roast_packed_weight_kg: postRoastPackedWeight ? toNumber(postRoastPackedWeight) : null,
-    p_note: note
+    p_procurement_receipt_id: input.procurement_receipt_id,
+    p_portion_type_id: input.portion_type_id,
+    p_quantity_produced: input.quantity_produced,
+    p_post_roast_packed_weight_kg: input.post_roast_packed_weight_kg,
+    p_note: input.note
   });
 
   if (error) {
@@ -775,16 +743,15 @@ export async function processProcurementReceiptToFinishedStockAction(formData: F
 
 export async function saveMenuCategoryAction(formData: FormData) {
   await requireApprovedAdminRole();
+  const input = parseFormData(formData, menuCategoryActionSchema);
   const supabase = createAdminSupabaseClient();
-  const name = requiredText(formData, "name");
-  const code = toCode(name);
-  const sortOrder = toInteger(formData.get("sort_order"), 1);
+  const code = toCode(input.name);
 
   const { error } = await supabase.from("menu_categories").upsert(
     {
       code,
-      name,
-      sort_order: sortOrder,
+      name: input.name,
+      sort_order: input.sort_order,
       is_active: true
     },
     {
@@ -824,7 +791,7 @@ export async function saveMenuItemDetailsAction(formData: FormData) {
 
 export async function uploadMenuItemImageAction(formData: FormData) {
   await requireApprovedAdminRole();
-  const menuItemId = toInteger(formData.get("menu_item_id"));
+  const { menu_item_id: menuItemId } = parseFormData(formData, menuItemImageActionSchema);
   const imageFile = getOptionalImageFile(formData, "image");
 
   if (!imageFile) {
@@ -843,8 +810,8 @@ export async function uploadMenuItemImageAction(formData: FormData) {
 
 export async function deleteMenuItemAction(formData: FormData) {
   await requireApprovedAdminRole();
+  const { menu_item_id: menuItemId } = parseFormData(formData, menuItemImageActionSchema);
   const supabase = createAdminSupabaseClient();
-  const menuItemId = toInteger(formData.get("menu_item_id"));
 
   const { error } = await supabase.from("menu_items").delete().eq("id", menuItemId);
 
@@ -858,9 +825,8 @@ export async function deleteMenuItemAction(formData: FormData) {
 
 export async function toggleMenuItemActiveAction(formData: FormData) {
   await requireApprovedAdminRole();
+  const { menu_item_id: menuItemId, next_value: nextValue } = parseFormData(formData, toggleMenuItemFlagActionSchema);
   const supabase = createAdminSupabaseClient();
-  const menuItemId = toInteger(formData.get("menu_item_id"));
-  const nextValue = String(formData.get("next_value") ?? "false") === "true";
 
   const { error } = await supabase.from("menu_items").update({ is_active: nextValue }).eq("id", menuItemId);
 
@@ -874,9 +840,8 @@ export async function toggleMenuItemActiveAction(formData: FormData) {
 
 export async function toggleMenuItemAvailabilityAction(formData: FormData) {
   await requireApprovedAdminRole();
+  const { menu_item_id: menuItemId, next_value: nextValue } = parseFormData(formData, toggleMenuItemFlagActionSchema);
   const supabase = createAdminSupabaseClient();
-  const menuItemId = toInteger(formData.get("menu_item_id"));
-  const nextValue = String(formData.get("next_value") ?? "false") === "true";
 
   const { error } = await supabase.from("menu_items").update({ is_available_today: nextValue }).eq("id", menuItemId);
 
@@ -890,16 +855,14 @@ export async function toggleMenuItemAvailabilityAction(formData: FormData) {
 
 export async function addMenuItemComponentAction(formData: FormData) {
   await requireApprovedAdminRole();
+  const input = parseFormData(formData, menuItemComponentActionSchema);
   const supabase = createAdminSupabaseClient();
-  const menuItemId = toInteger(formData.get("menu_item_id"));
-  const inventoryItemId = toInteger(formData.get("inventory_item_id"));
-  const quantityRequired = toNumber(formData.get("quantity_required"), 0);
 
   const { error } = await supabase.from("menu_item_components").upsert(
     {
-      menu_item_id: menuItemId,
-      inventory_item_id: inventoryItemId,
-      quantity_required: quantityRequired
+      menu_item_id: input.menu_item_id,
+      inventory_item_id: input.inventory_item_id,
+      quantity_required: input.quantity_required
     },
     {
       onConflict: "menu_item_id,inventory_item_id"
@@ -911,31 +874,31 @@ export async function addMenuItemComponentAction(formData: FormData) {
   }
 
   revalidateOperationalPaths();
-  redirect(`/menu?edit=${menuItemId}`);
+  redirect(`/menu?edit=${input.menu_item_id}`);
 }
 
 export async function removeMenuItemComponentAction(formData: FormData) {
   await requireApprovedAdminRole();
+  const input = parseFormData(formData, removeMenuItemComponentActionSchema);
   const supabase = createAdminSupabaseClient();
-  const componentId = toInteger(formData.get("component_id"));
-  const menuItemId = toInteger(formData.get("menu_item_id"));
 
-  const { error } = await supabase.from("menu_item_components").delete().eq("id", componentId);
+  const { error } = await supabase.from("menu_item_components").delete().eq("id", input.component_id);
 
   if (error) {
     throw new Error(`Unable to remove menu item component: ${error.message}`);
   }
 
   revalidateOperationalPaths();
-  redirect(`/menu?edit=${menuItemId}`);
+  redirect(`/menu?edit=${input.menu_item_id}`);
 }
 
 export async function updateOrderStatusAction(formData: FormData) {
   await requireApprovedAdminRole();
+  const input = parseFormData(formData, updateOrderStatusActionSchema);
   const supabase = createAdminSupabaseClient();
-  const orderId = toInteger(formData.get("order_id"));
-  const nextStatus = requiredText(formData, "next_status");
-  const note = toOptionalText(formData.get("note"));
+  const orderId = input.order_id;
+  const nextStatus = input.next_status;
+  const note = input.note;
 
   if (nextStatus === "completed") {
     redirect(`/orders/${orderId}?error=${encodeURIComponent("Use the pickup code form to complete this order.")}`);
@@ -978,13 +941,10 @@ export async function updateOrderStatusAction(formData: FormData) {
 
 export async function completeOrderWithPickupCodeAction(formData: FormData) {
   await requireApprovedAdminRole();
+  const input = parseFormData(formData, completeOrderWithPickupCodeActionSchema);
   const supabase = createAdminSupabaseClient();
-  const orderId = toInteger(formData.get("order_id"));
-  const pickupCode = requiredText(formData, "pickup_code").replace(/\D/g, "");
-
-  if (!/^\d{4}$/.test(pickupCode)) {
-    redirect(`/orders/${orderId}?error=${encodeURIComponent("Enter the 4-digit pickup code shown in the customer app.")}`);
-  }
+  const orderId = input.order_id;
+  const pickupCode = input.pickup_code;
 
   const { data: order, error: orderError } = await supabase
     .from("orders")
@@ -1028,8 +988,9 @@ export async function completeOrderWithPickupCodeAction(formData: FormData) {
 
 export async function reverifyOrderPaymentAction(formData: FormData) {
   await requireApprovedAdminRole();
+  const input = parseFormData(formData, reverifyOrderPaymentActionSchema);
   const supabase = createAdminSupabaseClient();
-  const orderId = toInteger(formData.get("order_id"));
+  const orderId = input.order_id;
 
   const { data: order, error: orderError } = await supabase
     .from("orders")
@@ -1108,9 +1069,10 @@ export async function reverifyOrderPaymentAction(formData: FormData) {
 
 export async function addOrderNoteAction(formData: FormData) {
   await requireApprovedAdminRole();
+  const input = parseFormData(formData, addOrderNoteActionSchema);
   const supabase = createAdminSupabaseClient();
-  const orderId = toInteger(formData.get("order_id"));
-  const note = requiredText(formData, "note");
+  const orderId = input.order_id;
+  const note = input.note;
 
   const { error } = await supabase.rpc("add_order_note", {
     p_order_id: orderId,

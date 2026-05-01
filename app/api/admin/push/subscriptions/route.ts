@@ -6,45 +6,9 @@ import {
 import { AdminAuthorizationError, requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import { isContentLengthTooLarge } from "@/lib/request-limits";
 import { enforceRateLimit } from "@/lib/rate-limit";
+import { adminPushSubscriptionSchema } from "@/lib/schemas/admin";
 import { createAdminSupabaseClient } from "@/lib/supabase/server";
-
-type AdminPushSubscriptionInput = {
-  endpoint?: unknown;
-  expirationTime?: unknown;
-  keys?: {
-    p256dh?: unknown;
-    auth?: unknown;
-  };
-};
-
-function readString(value: unknown, name: string, maxLength: number) {
-  if (typeof value !== "string") {
-    throw new Error(`${name} is required.`);
-  }
-
-  const trimmed = value.trim();
-  if (!trimmed || trimmed.length > maxLength) {
-    throw new Error(`${name} is invalid.`);
-  }
-
-  return trimmed;
-}
-
-function parseSubscriptionInput(input: AdminPushSubscriptionInput) {
-  const endpoint = readString(input.endpoint, "endpoint", 2_000);
-
-  try {
-    new URL(endpoint);
-  } catch {
-    throw new Error("endpoint is invalid.");
-  }
-
-  return {
-    endpoint,
-    p256dh: readString(input.keys?.p256dh, "p256dh", 1_000),
-    auth: readString(input.keys?.auth, "auth", 1_000)
-  };
-}
+import { RequestValidationError, parseJsonBody } from "@/lib/validation/http";
 
 export async function POST(request: Request) {
   try {
@@ -62,14 +26,9 @@ export async function POST(request: Request) {
       );
     }
 
-    const body = (await request.json().catch(() => null)) as AdminPushSubscriptionInput | null;
-    if (!body || typeof body !== "object") {
-      return NextResponse.json({ message: "Invalid push subscription payload." }, { status: 400 });
-    }
-
-    const input = parseSubscriptionInput(body);
+    const body = await parseJsonBody(request, adminPushSubscriptionSchema);
     const endpointRateLimit = await enforceRateLimit(request, "admin-push-subscribe-endpoint", 6, 60_000, {
-      bucketSuffix: input.endpoint
+      bucketSuffix: body.endpoint
     });
     if (!endpointRateLimit.allowed) {
       return NextResponse.json(
@@ -84,9 +43,9 @@ export async function POST(request: Request) {
       .from("admin_push_subscriptions")
       .upsert(
         {
-          endpoint: input.endpoint,
-          p256dh: input.p256dh,
-          auth: input.auth,
+          endpoint: body.endpoint,
+          p256dh: body.keys.p256dh,
+          auth: body.keys.auth,
           last_seen_at: timestamp,
           updated_at: timestamp
         },
@@ -104,7 +63,7 @@ export async function POST(request: Request) {
     void reopenNoSubscriberAdminPushDispatches(10)
       .then(() => processAdminPushDispatchQueue({ limit: 5 }))
       .catch((queueError) => {
-      console.error("admin_push_dispatch_after_subscription_failed", queueError);
+        console.error("admin_push_dispatch_after_subscription_failed", queueError);
       });
 
     return NextResponse.json({
@@ -114,6 +73,10 @@ export async function POST(request: Request) {
       lastSeenAt: data.last_seen_at
     });
   } catch (error) {
+    if (error instanceof RequestValidationError) {
+      return NextResponse.json({ message: error.message, issues: error.issues }, { status: 400 });
+    }
+
     const message = error instanceof Error ? error.message : "Unable to save admin push subscription.";
     const status = error instanceof AdminAuthorizationError ? error.status : 500;
     return NextResponse.json({ message }, { status });

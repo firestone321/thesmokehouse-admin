@@ -13,7 +13,8 @@
     "next": "^16.1.6",
     "react": "19.0.0",
     "react-dom": "19.0.0",
-    "web-push": "^3.6.7"
+    "web-push": "^3.6.7",
+    "zod": "^4.4.1"
   },
   "overrides": {
     "postcss": "8.5.10"
