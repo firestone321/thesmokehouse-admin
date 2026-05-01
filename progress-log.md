@@ -2166,6 +2166,14 @@ Status: implemented locally
 - Kept the older `WEB_PUSH_*` names as fallbacks so any still-live environment using the old contract keeps working
 - Updated the admin push queue config check and public enrollment key lookup to prefer the shorter names
 
+## 2026-05-01: Phone PWA Push Subscription Recovery
+
+Status: implemented locally in `thesmokehouse-admin` and `thesmokehouse`
+
+- Kept admin staff push enrollment automatic and invisible in the dashboard shell
+- Updated admin staff alerts to replace stale browser push subscriptions when the stored subscription was created with an older VAPID public key
+- Updated storefront Ready alerts to do the same replacement before linking the browser subscription to the current order
+
 ## 2026-05-01: Storefront Order Tracking Polling Boundaries
 
 Status: implemented locally in `thesmokehouse`, pending browser/dev verification

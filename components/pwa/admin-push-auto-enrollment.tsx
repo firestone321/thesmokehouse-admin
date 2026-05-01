@@ -8,6 +8,20 @@ import {
   supportsPushNotifications
 } from "@/lib/pwa/service-worker";
 
+function encodeVapidPublicKey(value: ArrayBuffer | null) {
+  if (!value) {
+    return "";
+  }
+
+  const binary = String.fromCharCode(...new Uint8Array(value));
+  return window.btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function subscriptionMatchesVapidKey(subscription: PushSubscription, publicKey: string) {
+  const subscriptionKey = encodeVapidPublicKey(subscription.options.applicationServerKey);
+  return subscriptionKey === publicKey;
+}
+
 async function saveAdminPushSubscription(subscription: PushSubscription) {
   const serialized = subscription.toJSON();
   const p256dh = serialized.keys?.p256dh;
@@ -40,6 +54,23 @@ async function saveAdminPushSubscription(subscription: PushSubscription) {
 }
 
 export function AdminPushAutoEnrollment() {
+  async function createOrRefreshSubscription(registration: ServiceWorkerRegistration) {
+    const existingSubscription = await registration.pushManager.getSubscription();
+
+    if (existingSubscription && subscriptionMatchesVapidKey(existingSubscription, publicEnv.webPushVapidPublicKey)) {
+      return existingSubscription;
+    }
+
+    if (existingSubscription) {
+      await existingSubscription.unsubscribe();
+    }
+
+    return registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: decodeVapidPublicKey(publicEnv.webPushVapidPublicKey)
+    });
+  }
+
   useEffect(() => {
     let cancelled = false;
 
@@ -67,13 +98,7 @@ export function AdminPushAutoEnrollment() {
           return;
         }
 
-        const existingSubscription = await registration.pushManager.getSubscription();
-        const subscription =
-          existingSubscription ??
-          (await registration.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: decodeVapidPublicKey(publicEnv.webPushVapidPublicKey)
-          }));
+        const subscription = await createOrRefreshSubscription(registration);
 
         if (!cancelled) {
           await saveAdminPushSubscription(subscription);
