@@ -26,6 +26,8 @@ import {
   SupplierSupplyHistoryRecord,
   OrderDetailRecord,
   OrderItemRecord,
+  OrderHistoryBatchRecord,
+  OrderHistoryPageData,
   OrderListItem,
   OrderStatus,
   OrderStatusEventRecord,
@@ -545,14 +547,20 @@ export function getAllowedNextStatuses(status: OrderStatus) {
 }
 
 export async function getOrdersPageData(options?: {
-  status?: string | null;
+  status?: string | string[] | null;
   search?: string | null;
   limit?: number | null;
 }) {
   noStore();
 
   const supabase = await createOperationsReadClient();
-  const status = options?.status?.trim() || "all";
+  const rawStatus = options?.status ?? "all";
+  const statusValues = Array.isArray(rawStatus)
+    ? rawStatus.map((value) => value.trim()).filter((value) => value.length > 0 && value !== "all")
+    : rawStatus.trim().length > 0 && rawStatus.trim() !== "all"
+      ? [rawStatus.trim()]
+      : [];
+  const status = statusValues.length > 0 ? statusValues.join(",") : "all";
   const search = options?.search?.trim() || "";
   const limit = normalizeOrderListLimit(options?.limit);
 
@@ -562,8 +570,10 @@ export async function getOrdersPageData(options?: {
     .order("created_at", { ascending: false })
     .limit(limit);
 
-  if (status !== "all") {
-    query = query.eq("status", status);
+  if (statusValues.length === 1) {
+    query = query.eq("status", statusValues[0]);
+  } else if (statusValues.length > 1) {
+    query = query.in("status", statusValues);
   }
 
   if (search.length > 0) {
@@ -579,6 +589,93 @@ export async function getOrdersPageData(options?: {
     search,
     limit,
     orders: (data ?? []).map(mapOrderListItem)
+  };
+}
+
+function mapOrderHistoryBatch(row: any): OrderHistoryBatchRecord {
+  const receipt = row.procurement_receipts ?? {};
+  const portion = row.portion_types ?? {};
+  const receivedAt = receipt.delivery_date ?? receipt.created_at ?? row.created_at;
+
+  return {
+    id: normalizeNumber(row.id),
+    procurementReceiptId: normalizeNumber(row.procurement_receipt_id),
+    receiptItemName: receipt.item_name ?? "Receipt",
+    receiptBatchNumber: receipt.batch_number ?? null,
+    receiptSupplierName: receipt.supplier_name ?? "Unknown supplier",
+    portionCode: portion.code ?? "",
+    portionName: portion.portion_label ? `${portion.name} (${portion.portion_label})` : portion.name ?? "Portion",
+    quantityProduced: normalizeNumber(row.quantity_produced),
+    yieldPercent: row.yield_percent === null ? null : normalizeNumber(row.yield_percent),
+    receivedAt,
+    createdAt: row.created_at,
+    note: row.note
+  };
+}
+
+export async function getOrderHistoryPageData(options?: {
+  search?: string | null;
+  orderLimit?: number | null;
+  batchLimit?: number | null;
+}): Promise<OrderHistoryPageData> {
+  noStore();
+
+  const supabase = await createOperationsReadClient();
+  const search = options?.search?.trim() || "";
+  const orderLimit = normalizeOrderListLimit(options?.orderLimit);
+  const batchLimit = Math.max(1, Math.min(24, Math.trunc(options?.batchLimit ?? 12)));
+
+  let ordersQuery = supabase
+    .from("orders")
+    .select(orderListSelection)
+    .in("status", ["completed", "cancelled"])
+    .order("created_at", { ascending: false })
+    .limit(orderLimit);
+
+  if (search.length > 0) {
+    const sanitized = search.replace(/,/g, " ");
+    ordersQuery = ordersQuery.or(`order_number.ilike.%${sanitized}%,customer_name.ilike.%${sanitized}%,customer_phone.ilike.%${sanitized}%`);
+  }
+
+  const batchesQuery = supabase
+    .from("processing_batches")
+    .select(
+      `
+      id,
+      procurement_receipt_id,
+      portion_type_id,
+      quantity_produced,
+      yield_percent,
+      note,
+      created_at,
+      portion_types (
+        code,
+        name,
+        portion_label
+      ),
+      procurement_receipts (
+        item_name,
+        batch_number,
+        supplier_name,
+        delivery_date,
+        created_at
+      )
+    `
+    )
+    .order("created_at", { ascending: false })
+    .limit(batchLimit);
+
+  const [ordersResponse, batchesResponse] = await Promise.all([ordersQuery, batchesQuery]);
+
+  ensureNoError(ordersResponse.error, "Unable to load archived orders");
+  ensureNoError(batchesResponse.error, "Unable to load order history batches", procurementMigrationFiles);
+
+  return {
+    search,
+    orders: (ordersResponse.data ?? []).map(mapOrderListItem),
+    batches: (batchesResponse.data ?? []).map(mapOrderHistoryBatch),
+    orderLimit,
+    batchLimit
   };
 }
 

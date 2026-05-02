@@ -324,6 +324,29 @@ export interface OrderDetailRecord {
   events: OrderStatusEventRecord[];
 }
 
+export interface OrderHistoryBatchRecord {
+  id: number;
+  procurementReceiptId: number;
+  receiptItemName: string;
+  receiptBatchNumber: string | null;
+  receiptSupplierName: string;
+  portionCode: string;
+  portionName: string;
+  quantityProduced: number;
+  yieldPercent: number | null;
+  receivedAt: string;
+  createdAt: string;
+  note: string | null;
+}
+
+export interface OrderHistoryPageData {
+  search: string;
+  orders: OrderListItem[];
+  batches: OrderHistoryBatchRecord[];
+  orderLimit: number;
+  batchLimit: number;
+}
+
 export interface DashboardIssueRecord {
   id: string;
   title: string;

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { SchemaSetupNotice } from "@/components/admin/schema-setup-notice";
 import { PushQueueHealthCard } from "@/components/orders/push-queue-health-card";
 import { LiveOrdersPanel } from "@/components/orders/live-orders-panel";
@@ -57,42 +58,51 @@ export default async function OrdersPage({
             </p>
           </div>
 
-          <form className="grid gap-3 sm:grid-cols-[180px_minmax(0,1fr)_auto]">
-            <label className="space-y-2 text-sm text-[#6B7280]">
-              <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Status</span>
-              <select
-                name="status"
-                defaultValue={status}
-                className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
-              >
-                <option value="all">All statuses</option>
-                <option value="new">New</option>
-                <option value="confirmed">Confirmed</option>
-                <option value="in_prep">In prep</option>
-                <option value="ready">Ready</option>
-                <option value="completed">Completed</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
-            </label>
-
-            <label className="space-y-2 text-sm text-[#6B7280]">
-              <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Search</span>
-              <input
-                type="search"
-                name="search"
-                defaultValue={search}
-                placeholder="Order number, customer, phone"
-                className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
-              />
-            </label>
-
-            <button
-              type="submit"
-              className="self-end rounded-2xl bg-[#111418] px-4 py-2.5 text-sm font-semibold text-white"
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end xl:min-w-[760px]">
+            <Link
+              href="/orders/history"
+              className="rounded-2xl border border-[#D7DDE4] bg-white px-4 py-2.5 text-sm font-semibold text-[#111418]"
             >
-              Apply
-            </button>
-          </form>
+              Order history
+            </Link>
+
+            <form className="grid flex-1 gap-3 sm:grid-cols-[180px_minmax(0,1fr)_auto]">
+              <label className="space-y-2 text-sm text-[#6B7280]">
+                <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Status</span>
+                <select
+                  name="status"
+                  defaultValue={status}
+                  className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
+                >
+                  <option value="all">All statuses</option>
+                  <option value="new">New</option>
+                  <option value="confirmed">Confirmed</option>
+                  <option value="in_prep">In prep</option>
+                  <option value="ready">Ready</option>
+                  <option value="completed">Completed</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </label>
+
+              <label className="space-y-2 text-sm text-[#6B7280]">
+                <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Search</span>
+                <input
+                  type="search"
+                  name="search"
+                  defaultValue={search}
+                  placeholder="Order number, customer, phone"
+                  className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
+                />
+              </label>
+
+              <button
+                type="submit"
+                className="self-end rounded-2xl bg-[#111418] px-4 py-2.5 text-sm font-semibold text-white"
+              >
+                Apply
+              </button>
+            </form>
+          </div>
         </div>
       </section>
 
