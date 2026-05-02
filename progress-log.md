@@ -2221,3 +2221,21 @@ Status: implemented locally in `thesmokehouse-admin`
 - Converted the admin paid-order internal push processor, admin push subscription route, admin orders route, and order detail route params to schema-driven validation
 - Replaced the highest-risk manual FormData coercion in `lib/ops/actions.ts` with zod-backed parsing for order, menu, inventory, procurement, supplier, portion, and queue actions
 - Verified `npx.cmd tsc --noEmit`, `npm run build`, and `git diff --check`
+
+## 2026-05-01: Dashboard Revenue Analytics Drill-In
+
+Status: implemented locally in `thesmokehouse-admin`
+
+- Moved `Revenue Today` off the old pending-order sum and onto successfully completed orders only
+- Added a clickable revenue analytics card with 7 day, 30 day, 180 day, this year, and custom-period drill-downs
+- Mirrored the bakery analytics pattern in a Smokehouse-friendly dashboard component
+- Verified `npx.cmd tsc --noEmit`, `npm run build`, and `git diff --check`
+
+## 2026-05-02: Order Status Note Validation Fix
+
+Status: implemented locally in `thesmokehouse-admin`
+
+- Fixed the `updateOrderStatusAction` form contract so `note` is optional again
+- Kept the RPC call passing `null` when no note is submitted, which matches the database function default
+- Hardened the shared Zod 4 preprocessed optional/nullable helpers so missing form/query keys are accepted consistently
+- This removes the localhost `RequestValidationError` triggered when the status buttons submit only `order_id` and `next_status`

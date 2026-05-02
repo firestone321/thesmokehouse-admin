@@ -49,24 +49,24 @@ function parseBoolean(value: unknown) {
 }
 
 function nullableText(maxLength = maxTextLength) {
-  return z.preprocess(blankToNull, z.string().trim().max(maxLength).nullable());
+  return z.preprocess(blankToNull, z.string().trim().max(maxLength).nullable()).default(null);
 }
 
 function optionalText(maxLength = maxTextLength) {
-  return z.preprocess(blankToUndefined, z.string().trim().max(maxLength).optional());
+  return z.preprocess(blankToUndefined, z.string().trim().max(maxLength).optional()).optional();
 }
 
 function nullableNumber(min: number, max: number) {
-  return z.preprocess(blankToNull, z.coerce.number().min(min).max(max).nullable());
+  return z.preprocess(blankToNull, z.coerce.number().min(min).max(max).nullable()).default(null);
 }
 
 function optionalNumber(min: number, max: number) {
-  return z.preprocess(blankToUndefined, z.coerce.number().min(min).max(max).optional());
+  return z.preprocess(blankToUndefined, z.coerce.number().min(min).max(max).optional()).optional();
 }
 
 export const idSchema = z.coerce.number().int().positive();
 
-export const optionalIdSchema = z.preprocess(blankToNull, idSchema.nullable());
+export const optionalIdSchema = z.preprocess(blankToNull, idSchema.nullable()).default(null);
 
 export const shortTextSchema = z.string().trim().min(1).max(maxShortTextLength);
 
@@ -83,9 +83,12 @@ export const signedQuantitySchema = z.coerce.number().min(-maxNumericValue).max(
 export const returnToSchema = z.preprocess(
   blankToUndefined,
   z.string().trim().startsWith("/").max(maxReferenceLength).default("/orders")
-);
+).default("/orders");
 
-export const optionalReturnToSchema = z.preprocess(blankToUndefined, z.string().trim().startsWith("/").max(maxReferenceLength).optional());
+export const optionalReturnToSchema = z.preprocess(
+  blankToUndefined,
+  z.string().trim().startsWith("/").max(maxReferenceLength).optional()
+).optional();
 
 export const checkboxSchema = z.preprocess(parseBoolean, z.boolean());
 
@@ -105,7 +108,7 @@ export const adminPushSubscriptionSchema = z.object({
 export const adminOrdersQuerySchema = z.object({
   status: optionalText(maxStatusLength),
   search: optionalText(maxSearchLength),
-  limit: z.preprocess(blankToUndefined, z.coerce.number().int().min(1).max(100).default(50))
+  limit: z.preprocess(blankToUndefined, z.coerce.number().int().min(1).max(100).default(50)).default(50)
 });
 
 export const orderRouteParamsSchema = z.object({
@@ -118,7 +121,7 @@ export const queueActionSchema = z.object({
 
 export const menuCategoryActionSchema = z.object({
   name: shortTextSchema,
-  sort_order: z.preprocess(blankToUndefined, z.coerce.number().int().min(0).max(999).default(1))
+  sort_order: z.preprocess(blankToUndefined, z.coerce.number().int().min(0).max(999).default(1)).default(1)
 });
 
 export const menuItemActionSchema = z.object({
@@ -129,7 +132,7 @@ export const menuItemActionSchema = z.object({
   prep_type: z.enum(prepTypes),
   menu_category_id: idSchema,
   portion_type_id: idSchema,
-  sort_order: z.preprocess(blankToUndefined, z.coerce.number().int().min(0).max(999).default(1)),
+  sort_order: z.preprocess(blankToUndefined, z.coerce.number().int().min(0).max(999).default(1)).default(1),
   is_active: checkboxSchema,
   is_available_today: checkboxSchema
 });
@@ -230,7 +233,7 @@ export const processProcurementReceiptToFinishedStockActionSchema = z.object({
   birds_allocated_to_halves: z.coerce.number().int().min(0).max(maxNumericValue).default(0),
   birds_allocated_to_quarters: z.coerce.number().int().min(0).max(maxNumericValue).default(0),
   portion_type_id: optionalIdSchema,
-  quantity_produced: z.preprocess(blankToNull, z.coerce.number().int().min(0).max(maxNumericValue).nullable()),
+  quantity_produced: z.preprocess(blankToNull, z.coerce.number().int().min(0).max(maxNumericValue).nullable()).default(null),
   post_roast_packed_weight_kg: nullableNumber(0, maxNumericValue),
   note: longTextSchema
 });
@@ -238,7 +241,7 @@ export const processProcurementReceiptToFinishedStockActionSchema = z.object({
 export const updateOrderStatusActionSchema = z.object({
   order_id: idSchema,
   next_status: z.enum(orderStatuses),
-  note: longTextSchema
+  note: optionalText(maxLongTextLength)
 });
 
 export const completeOrderWithPickupCodeActionSchema = z.object({
@@ -254,3 +257,32 @@ export const addOrderNoteActionSchema = z.object({
   order_id: idSchema,
   note: z.string().trim().min(1).max(maxLongTextLength)
 });
+
+export const analyticsMetricSchema = z.enum(["revenue", "orders"]);
+
+export const analyticsTimeframeSchema = z.enum(["today", "7d", "30d", "180d", "12m", "custom"]);
+
+export const adminAnalyticsQuerySchema = z
+  .object({
+    metric: analyticsMetricSchema,
+    timeframe: analyticsTimeframeSchema,
+    from: z.preprocess(blankToUndefined, dateSchema.optional()).optional(),
+    to: z.preprocess(blankToUndefined, dateSchema.optional()).optional()
+  })
+  .superRefine((value, ctx) => {
+    if (value.timeframe === "custom" && (!value.from || !value.to)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["from"],
+        message: "Custom analytics ranges require both from and to dates."
+      });
+    }
+
+    if (value.from && value.to && value.from > value.to) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["to"],
+        message: "The analytics range must start on or before the end date."
+      });
+    }
+  });

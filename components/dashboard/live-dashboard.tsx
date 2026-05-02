@@ -2,8 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { RevenueAnalyticsCard } from "@/components/dashboard/revenue-analytics-card";
 import { useOrdersRealtime } from "@/components/ops/use-orders-realtime";
 import type { OrdersRealtimeEvent } from "@/lib/ops/orders-realtime";
+import type { AnalyticsSeries } from "@/lib/analytics/types";
 import type { DashboardIssueRecord, DashboardSnapshot, OrderListItem } from "@/lib/ops/types";
 import { formatCurrency, formatDateTime, formatServiceDate } from "@/lib/ops/utils";
 
@@ -247,7 +249,13 @@ function OrderPanel({
   );
 }
 
-export function LiveDashboard({ snapshot }: { snapshot: DashboardSnapshot }) {
+export function LiveDashboard({
+  snapshot,
+  initialRevenueSeries
+}: {
+  snapshot: DashboardSnapshot;
+  initialRevenueSeries: AnalyticsSeries;
+}) {
   const [localSnapshot, setLocalSnapshot] = useState<DashboardSnapshot>(snapshot);
   const reconcileTimeoutsRef = useRef<Map<string, number>>(new Map());
 
@@ -376,10 +384,11 @@ export function LiveDashboard({ snapshot }: { snapshot: DashboardSnapshot }) {
           value={localSnapshot.metrics.lowStockPressure.toString()}
           supportingText="Daily sellable stock rows currently below the low threshold."
         />
-        <MetricCard
-          label="Revenue today"
-          value={formatCurrency(localSnapshot.metrics.revenueToday)}
-          supportingText="Sum of live order totals created during the current Uganda service day."
+        <RevenueAnalyticsCard
+          serviceDate={localSnapshot.serviceDate}
+          currentRevenue={localSnapshot.metrics.revenueToday}
+          initialSeries={initialRevenueSeries}
+          refreshKey={localSnapshot.generatedAt}
         />
         <MetricCard
           label="Issues needing attention"

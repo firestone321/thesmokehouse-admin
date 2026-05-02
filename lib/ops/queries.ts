@@ -2,6 +2,7 @@ import "server-only";
 import { unstable_noStore as noStore } from "next/cache";
 import { createAdminSupabaseClient, createServerSupabaseClient } from "@/lib/supabase/server";
 import { isLocalAuthBypassEnabled } from "@/lib/auth/local-bypass";
+import { getRevenueTodayTotal } from "@/lib/analytics/queries";
 import {
   DailyStockRow,
   DashboardIssueRecord,
@@ -1544,7 +1545,7 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   const supabase = await createOperationsReadClient();
   const { serviceDate, startIso, endIso } = getUgandaDayRange();
 
-  const [activeOrdersResponse, todaysOrdersResponse, dailyStockResponse, incidentsResponse] = await Promise.all([
+  const [activeOrdersResponse, todaysOrdersResponse, dailyStockResponse, incidentsResponse, revenueToday] = await Promise.all([
     supabase
       .from("orders")
       .select(orderListSelection)
@@ -1564,7 +1565,8 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
       .select("id, title, detail, severity, owner, created_at")
       .eq("status", "open")
       .order("created_at", { ascending: false })
-      .limit(5)
+      .limit(5),
+    getRevenueTodayTotal()
   ]);
 
   ensureNoError(activeOrdersResponse.error, "Unable to load dashboard active orders");
@@ -1576,10 +1578,6 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   const todaysOrders = (todaysOrdersResponse.data ?? []).map(mapOrderListItem);
   const dailyStock = (dailyStockResponse.data ?? []).map(mapDailyStockRow);
   const lowStockItems = dailyStock.filter((item: DailyStockRow) => item.isInitialized && item.isLowStock).slice(0, 5);
-
-  const revenueToday = todaysOrders
-    .filter((order) => order.paymentStatus === "paid" && order.status !== "cancelled")
-    .reduce((sum, order) => sum + order.totalAmount, 0);
 
   const inPrepOrders = activeOrders.filter((order) => order.status === "in_prep");
   const readyOrders = activeOrders.filter((order) => order.status === "ready");
