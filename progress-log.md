@@ -2239,3 +2239,10 @@ Status: implemented locally in `thesmokehouse-admin`
 - Kept the RPC call passing `null` when no note is submitted, which matches the database function default
 - Hardened the shared Zod 4 preprocessed optional/nullable helpers so missing form/query keys are accepted consistently
 - This removes the localhost `RequestValidationError` triggered when the status buttons submit only `order_id` and `next_status`
+
+## 2026-05-02: Storefront Landing Footer Restoration
+
+Status: implemented locally in `thesmokehouse`
+
+- Restored the shared `SiteFooter` on the storefront landing page
+- Kept the footer off the app drawer and header, so the change only affects the home route composition
