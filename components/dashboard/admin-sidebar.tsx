@@ -1,9 +1,10 @@
 "use client";
 
-import { ReactNode, useState } from "react";
+import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { LogoutButton } from "@/components/auth/logout-button";
 import { adminNavItems } from "@/lib/admin/nav";
 
 const quickAccessLabels = new Set(["Dashboard", "Orders", "Menu", "Resupplies", "Suppliers", "Inventory", "Kitchen Queue"]);
@@ -53,10 +54,10 @@ function SidebarNav({
 
 export function AdminSidebar({
   userEmail,
-  logoutSlot
+  showLogout
 }: {
   userEmail?: string | null;
-  logoutSlot?: ReactNode;
+  showLogout?: boolean;
 }) {
   const pathname = usePathname();
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -139,7 +140,7 @@ export function AdminSidebar({
 
         <div className="shrink-0 border-t border-white/10 pt-4">
           <SidebarNav items={secondaryNavItems} />
-          {logoutSlot ? <div className="pt-4">{logoutSlot}</div> : null}
+          {showLogout ? <div className="pt-4"><LogoutButton /></div> : null}
         </div>
       </aside>
 
@@ -179,7 +180,7 @@ export function AdminSidebar({
 
             <div className="shrink-0 border-t border-white/10 pt-4">
               <SidebarNav items={secondaryNavItems} compact onNavigate={() => setIsDrawerOpen(false)} />
-              {logoutSlot ? <div className="pt-4">{logoutSlot}</div> : null}
+              {showLogout ? <div className="pt-4"><LogoutButton /></div> : null}
             </div>
           </div>
         </div>
