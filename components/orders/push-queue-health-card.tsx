@@ -1,5 +1,3 @@
-"use client";
-
 import Link from "next/link";
 import { CollapsibleCard } from "@/components/procurement/collapsible-card";
 import { processAdminPushQueueAction, processStorefrontReadyQueueAction } from "@/lib/ops/actions";
