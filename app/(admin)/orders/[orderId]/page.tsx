@@ -118,8 +118,8 @@ export default async function OrderDetailPage({
       {paymentReverified ? (
         <section className="rounded-[24px] border border-[#CDE7D4] bg-[#F4FBF6] px-5 py-4 text-sm leading-6 text-[#176B35]">
           {paymentReverified === "paid"
-            ? "Pesapal reverify returned paid. The order has been restored to the paid workflow."
-            : `Pesapal reverify completed. Latest non-paid status: ${paymentReverified}.`}
+            ? "Storefront payment verification returned paid. The order has been restored to the paid workflow."
+            : `Storefront payment verification completed. Latest non-paid status: ${paymentReverified}.`}
         </section>
       ) : null}
 
@@ -290,14 +290,14 @@ export default async function OrderDetailPage({
                 <input type="hidden" name="order_id" value={order.id} />
                 <p className="text-sm font-semibold text-[#111418]">Manual payment reverify</p>
                 <p className="mt-1 text-sm leading-6 text-[#6B7280]">
-                  Ask Pesapal for the latest state on this tracked payment. Paid results restore the order to the paid
-                  workflow; non-paid results will not revive a locally cancelled payment.
+                  Ask the storefront to refresh this tracked payment with its payment authority. Paid results restore the order
+                  to the paid workflow; non-paid results will not revive a locally cancelled payment.
                 </p>
                 {order.paymentLastVerifiedAt ? (
                   <p className="mt-2 text-xs text-[#6B7280]">Last checked {formatDateTime(order.paymentLastVerifiedAt)}</p>
                 ) : null}
                 <button type="submit" className="mt-3 w-full rounded-2xl bg-[#111418] px-4 py-2.5 text-sm font-semibold text-white">
-                  Check Pesapal now
+                  Ask storefront now
                 </button>
               </form>
             ) : null}
