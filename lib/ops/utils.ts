@@ -11,10 +11,13 @@ export function formatCurrency(value: number) {
 export function formatDateTime(value?: string | null) {
   if (!value) return "Not set";
 
-  return new Intl.DateTimeFormat("en-UG", {
+  const formatted = new Intl.DateTimeFormat("en-UG", {
+    timeZone: "Africa/Kampala",
     dateStyle: "medium",
     timeStyle: "short"
   }).format(new Date(value));
+
+  return `${formatted} EAT`;
 }
 
 export function formatServiceDate(value: string) {
