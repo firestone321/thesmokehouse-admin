@@ -415,6 +415,7 @@ create table if not exists public.orders (
   order_number text not null unique,
   customer_name text,
   customer_phone text,
+  device_id text,
   status text not null default 'new',
   notes text,
   total_amount integer not null default 0,
@@ -433,6 +434,13 @@ create index if not exists orders_status_created_idx
 
 create index if not exists orders_created_idx
   on public.orders (created_at desc);
+
+create index if not exists orders_device_id_idx
+  on public.orders (device_id)
+  where device_id is not null;
+
+comment on column public.orders.device_id is
+  'Customer device/browser identifier used to route Ready push notifications to the device that placed the order.';
 
 create table if not exists public.order_items (
   id bigint generated always as identity primary key,
