@@ -1,12 +1,8 @@
 import { notFound } from "next/navigation";
 import { SchemaSetupNotice } from "@/components/admin/schema-setup-notice";
-import {
-  addOrderNoteAction,
-  completeOrderWithPickupCodeAction,
-  reverifyOrderPaymentAction,
-  updateOrderStatusAction
-} from "@/lib/ops/actions";
+import { addOrderNoteAction, completeOrderWithPickupCodeAction, updateOrderStatusAction } from "@/lib/ops/actions";
 import { OperationsSchemaMissingError } from "@/lib/ops/errors";
+import { reverifyOrderPaymentAction } from "@/lib/ops/payment-reverify";
 import { getAllowedNextStatuses, getOrderDetail } from "@/lib/ops/queries";
 import { formatCurrency, formatDateTime } from "@/lib/ops/utils";
 
