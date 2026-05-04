@@ -643,7 +643,7 @@ async function savePortionTypeRecord(formData: FormData) {
   }
 
   const nextSortOrder = Number(latestPortionType?.sort_order ?? 0) + 1;
-  const portionLabel = `${input.grams}g`;
+  const portionLabel = `${input.quantity}${input.unit}`;
 
   const { data, error } = await supabase
     .from("portion_types")

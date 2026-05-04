@@ -225,7 +225,8 @@ export const supplierActionSchema = z.object({
 
 export const portionTypeActionSchema = z.object({
   name: shortTextSchema,
-  grams: z.coerce.number().int().min(1).max(maxNumericValue)
+  quantity: z.coerce.number().int().min(1).max(maxNumericValue),
+  unit: z.enum(["g", "ml"])
 });
 
 export const processProcurementReceiptToFinishedStockActionSchema = z.object({
