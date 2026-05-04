@@ -268,12 +268,32 @@ as $$
     pt.portion_label,
     pr.name as protein_name,
     pkg.name as packaging_type_name,
-    coalesce(ds.starting_quantity, 0) as starting_quantity,
-    coalesce(ds.reserved_quantity, 0) as reserved_quantity,
-    coalesce(ds.sold_quantity, 0) as sold_quantity,
-    coalesce(ds.waste_quantity, 0) as waste_quantity,
-    coalesce(ds.remaining_quantity, 0) as remaining_quantity,
-    ds.portion_type_id is not null as is_initialized
+    case
+      when pt.stock_source_portion_type_id is not null
+      then floor(coalesce(src_ds.starting_quantity, 0)::numeric / pt.stock_source_units_per_serving)::integer
+      else coalesce(ds.starting_quantity, 0)
+    end as starting_quantity,
+    case
+      when pt.stock_source_portion_type_id is not null then 0
+      else coalesce(ds.reserved_quantity, 0)
+    end as reserved_quantity,
+    case
+      when pt.stock_source_portion_type_id is not null then 0
+      else coalesce(ds.sold_quantity, 0)
+    end as sold_quantity,
+    case
+      when pt.stock_source_portion_type_id is not null then 0
+      else coalesce(ds.waste_quantity, 0)
+    end as waste_quantity,
+    case
+      when pt.stock_source_portion_type_id is not null
+      then floor(coalesce(src_ds.remaining_quantity, 0)::numeric / pt.stock_source_units_per_serving)::integer
+      else coalesce(ds.remaining_quantity, 0)
+    end as remaining_quantity,
+    case
+      when pt.stock_source_portion_type_id is not null then (src_ds.portion_type_id is not null)
+      else (ds.portion_type_id is not null)
+    end as is_initialized
   from public.portion_types pt
   left join public.proteins pr
     on pr.id = pt.protein_id
@@ -282,6 +302,9 @@ as $$
   left join public.daily_stock ds
     on ds.portion_type_id = pt.id
    and ds.stock_date = p_stock_date
+  left join public.daily_stock src_ds
+    on src_ds.portion_type_id = pt.stock_source_portion_type_id
+   and src_ds.stock_date = p_stock_date
   where pt.is_active = true
   order by pt.sort_order, pt.id;
 $$;
@@ -3382,6 +3405,10 @@ grant execute on function public.claim_admin_push_dispatches(integer, bigint) to
 -- Phase 30: paid stock consumption.
 -- Keep the compatibility function name but consume finished_stock exactly once after payment confirmation.
 
+-- ---------------------------------------------------------------------------
+-- Phase 35: Shared fries inventory (source-aware stock functions)
+-- ---------------------------------------------------------------------------
+
 create or replace function public.reserve_paid_order_stock(
   p_order_id bigint
 )
@@ -3413,46 +3440,53 @@ begin
     return v_order;
   end if;
 
-  for v_item in
-    select
-      mi.portion_type_id,
-      sum(oi.quantity)::integer as quantity_required
+  if exists (
+    select 1
     from public.order_items oi
     join public.menu_items mi on mi.id = oi.menu_item_id
     where oi.order_id = p_order_id
-    group by mi.portion_type_id
-    order by mi.portion_type_id
-  loop
-    if v_item.portion_type_id is null then
-      raise exception 'Order % contains a menu item without a sellable portion type', p_order_id;
-    end if;
+      and mi.portion_type_id is null
+  ) then
+    raise exception 'Order % contains a menu item without a sellable portion type', p_order_id;
+  end if;
 
+  for v_item in
+    select
+      coalesce(pt.stock_source_portion_type_id, mi.portion_type_id) as effective_portion_type_id,
+      sum(oi.quantity * coalesce(pt.stock_source_units_per_serving, 1))::integer as quantity_required
+    from public.order_items oi
+    join public.menu_items mi on mi.id = oi.menu_item_id
+    join public.portion_types pt on pt.id = mi.portion_type_id
+    where oi.order_id = p_order_id
+    group by coalesce(pt.stock_source_portion_type_id, mi.portion_type_id)
+    order by coalesce(pt.stock_source_portion_type_id, mi.portion_type_id)
+  loop
     select *
     into v_finished_stock
     from public.finished_stock
-    where portion_type_id = v_item.portion_type_id
+    where portion_type_id = v_item.effective_portion_type_id
     for update;
 
     if not found or v_finished_stock.current_quantity < v_item.quantity_required then
-      raise exception 'Insufficient finished stock for portion % on paid order %', v_item.portion_type_id, p_order_id;
+      raise exception 'Insufficient finished stock for portion % on paid order %', v_item.effective_portion_type_id, p_order_id;
     end if;
 
     select *
     into v_existing_daily_stock
     from public.daily_stock
     where stock_date = v_order.service_date
-      and portion_type_id = v_item.portion_type_id
+      and portion_type_id = v_item.effective_portion_type_id
     for update;
 
     if found then
       if v_existing_daily_stock.remaining_quantity < v_item.quantity_required then
-        raise exception 'Insufficient service-day stock for portion % on %', v_item.portion_type_id, v_order.service_date;
+        raise exception 'Insufficient service-day stock for portion % on %', v_item.effective_portion_type_id, v_order.service_date;
       end if;
 
       update public.daily_stock
       set reserved_quantity = reserved_quantity + v_item.quantity_required
       where stock_date = v_order.service_date
-        and portion_type_id = v_item.portion_type_id;
+        and portion_type_id = v_item.effective_portion_type_id;
     else
       insert into public.daily_stock (
         stock_date,
@@ -3462,7 +3496,7 @@ begin
       )
       values (
         v_order.service_date,
-        v_item.portion_type_id,
+        v_item.effective_portion_type_id,
         v_finished_stock.current_quantity,
         v_item.quantity_required
       );
@@ -3470,7 +3504,7 @@ begin
 
     update public.finished_stock
     set current_quantity = current_quantity - v_item.quantity_required
-    where portion_type_id = v_item.portion_type_id
+    where portion_type_id = v_item.effective_portion_type_id
     returning *
     into v_finished_stock;
 
@@ -3483,7 +3517,7 @@ begin
       note
     )
     values (
-      v_item.portion_type_id,
+      v_item.effective_portion_type_id,
       'sale',
       -v_item.quantity_required,
       v_finished_stock.current_quantity,
@@ -3542,18 +3576,20 @@ begin
 
   for v_item in
     select
-      mi.portion_type_id,
-      sum(oi.quantity)::integer as quantity_required
+      coalesce(pt.stock_source_portion_type_id, mi.portion_type_id) as effective_portion_type_id,
+      sum(oi.quantity * coalesce(pt.stock_source_units_per_serving, 1))::integer as quantity_required
     from public.order_items oi
     join public.menu_items mi on mi.id = oi.menu_item_id
+    join public.portion_types pt on pt.id = mi.portion_type_id
     where oi.order_id = p_order_id
-    group by mi.portion_type_id
-    order by mi.portion_type_id
+      and mi.portion_type_id is not null
+    group by coalesce(pt.stock_source_portion_type_id, mi.portion_type_id)
+    order by coalesce(pt.stock_source_portion_type_id, mi.portion_type_id)
   loop
     update public.daily_stock
     set reserved_quantity = greatest(reserved_quantity - v_item.quantity_required, 0)
     where stock_date = v_order.service_date
-      and portion_type_id = v_item.portion_type_id;
+      and portion_type_id = v_item.effective_portion_type_id;
   end loop;
 
   update public.orders
@@ -3594,20 +3630,22 @@ begin
 
   for v_item in
     select
-      mi.portion_type_id,
-      sum(oi.quantity)::integer as quantity_required
+      coalesce(pt.stock_source_portion_type_id, mi.portion_type_id) as effective_portion_type_id,
+      sum(oi.quantity * coalesce(pt.stock_source_units_per_serving, 1))::integer as quantity_required
     from public.order_items oi
     join public.menu_items mi on mi.id = oi.menu_item_id
+    join public.portion_types pt on pt.id = mi.portion_type_id
     where oi.order_id = p_order_id
-    group by mi.portion_type_id
-    order by mi.portion_type_id
+      and mi.portion_type_id is not null
+    group by coalesce(pt.stock_source_portion_type_id, mi.portion_type_id)
+    order by coalesce(pt.stock_source_portion_type_id, mi.portion_type_id)
   loop
     update public.daily_stock
     set
       reserved_quantity = greatest(reserved_quantity - v_item.quantity_required, 0),
       sold_quantity = sold_quantity + v_item.quantity_required
     where stock_date = v_order.service_date
-      and portion_type_id = v_item.portion_type_id;
+      and portion_type_id = v_item.effective_portion_type_id;
   end loop;
 
   update public.orders
