@@ -6,6 +6,7 @@ import { createPortionTypeInlineAction, saveMenuItemDetailsAction, uploadMenuIte
 import { MenuItemRecord, PortionTypeOption, MenuCategoryRecord } from "@/lib/ops/types";
 
 type SavePhase = "idle" | "creating" | "saving" | "uploading" | "finishing";
+const maxMenuImageBytes = 5 * 1024 * 1024;
 
 function getStatusLabel(phase: SavePhase, isEditing: boolean) {
   switch (phase) {
@@ -38,12 +39,17 @@ export function MenuItemForm({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [portionOptions, setPortionOptions] = useState(portionTypes);
   const [portionTypeId, setPortionTypeId] = useState<string>(selectedMenuItem?.portionTypeId ? String(selectedMenuItem.portionTypeId) : "");
+  const [menuCategoryId, setMenuCategoryId] = useState<string>(selectedMenuItem?.categoryId ? String(selectedMenuItem.categoryId) : "");
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(portionTypes.length === 0);
   const [isCreatingPortionType, setIsCreatingPortionType] = useState(false);
   const [quickAddError, setQuickAddError] = useState<string | null>(null);
   const [quickAddSuccess, setQuickAddSuccess] = useState<string | null>(null);
   const isEditing = Boolean(selectedMenuItem);
   const isPending = phase !== "idle";
+  const selectedCategory = categories.find((category) => String(category.id) === menuCategoryId);
+  const isDrinkCategory = selectedCategory?.code === "drinks" || selectedCategory?.name?.toLowerCase() === "drinks";
+  const portionUnit = isDrinkCategory ? "ml" : "g";
+  const portionUnitLabel = isDrinkCategory ? "Milliliters" : "Grams";
 
   useEffect(() => {
     setPhase("idle");
@@ -117,6 +123,22 @@ export function MenuItemForm({
         return;
       }
 
+      if (hasImage && imageValue instanceof File && imageValue.size > maxMenuImageBytes) {
+        const error = "Menu image must be 5MB or smaller.";
+
+        setPhase("finishing");
+        router.refresh();
+
+        if (!isEditing || selectedMenuItem?.id !== saveResult.menuItemId) {
+          router.push(`/menu?edit=${saveResult.menuItemId}&error=${encodeURIComponent(error)}`);
+          return;
+        }
+
+        setErrorMessage(error);
+        setPhase("idle");
+        return;
+      }
+
       if (hasImage && imageValue instanceof File) {
         setPhase("uploading");
         const imageFormData = new FormData();
@@ -162,7 +184,8 @@ export function MenuItemForm({
         />
         <select
           name="menu_category_id"
-          defaultValue={selectedMenuItem?.categoryId}
+          value={menuCategoryId}
+          onChange={(event) => setMenuCategoryId(event.target.value)}
           required
           className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
         >
@@ -201,7 +224,9 @@ export function MenuItemForm({
           >
             {isQuickAddOpen ? "Close add portion" : "Add portion"}
           </button>
-          <p className="text-xs leading-5 text-[#6B7280]">Portion code is generated from the name, and grams are saved as the size label.</p>
+          <p className="text-xs leading-5 text-[#6B7280]">
+            Portion code is generated from the name, and the size label follows the selected category.
+          </p>
         </label>
 
         {isQuickAddOpen ? (
@@ -216,14 +241,20 @@ export function MenuItemForm({
                 className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
               />
               <input
-                id="menu-quick-add-portion-grams"
+                type="hidden"
+                form="menu-quick-add-portion-form"
+                name="unit"
+                value={portionUnit}
+              />
+              <input
+                id="menu-quick-add-portion-quantity"
                 form="menu-quick-add-portion-form"
                 type="number"
                 min="1"
                 step="1"
-                name="grams"
+                name="quantity"
                 required
-                placeholder="Grams, e.g. 250"
+                placeholder={`${portionUnitLabel}, e.g. ${isDrinkCategory ? "500" : "250"}`}
                 className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
               />
             </div>
