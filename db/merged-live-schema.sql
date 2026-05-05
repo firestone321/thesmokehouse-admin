@@ -260,6 +260,36 @@ returns table (
 language sql
 stable
 as $$
+  with order_item_totals as (
+    select
+      mi.portion_type_id,
+      sum(
+        case
+          when o.payment_status = 'paid'
+           and o.status <> 'completed'
+           and o.status <> 'cancelled'
+           and o.stock_reserved_at is not null
+          then oi.quantity
+          else 0
+        end
+      )::integer as reserved_quantity,
+      sum(
+        case
+          when o.payment_status = 'paid'
+           and o.status = 'completed'
+          then oi.quantity
+          else 0
+        end
+      )::integer as sold_quantity
+    from public.order_items oi
+    join public.orders o on o.id = oi.order_id
+    join public.menu_items mi on mi.id = oi.menu_item_id
+    where o.service_date = p_stock_date
+      and o.payment_status = 'paid'
+      and o.status <> 'cancelled'
+      and mi.portion_type_id is not null
+    group by mi.portion_type_id
+  )
   select
     p_stock_date as stock_date,
     pt.id as portion_type_id,
@@ -274,11 +304,11 @@ as $$
       else coalesce(ds.starting_quantity, 0)
     end as starting_quantity,
     case
-      when pt.stock_source_portion_type_id is not null then 0
+      when pt.stock_source_portion_type_id is not null then coalesce(ot.reserved_quantity, 0)
       else coalesce(ds.reserved_quantity, 0)
     end as reserved_quantity,
     case
-      when pt.stock_source_portion_type_id is not null then 0
+      when pt.stock_source_portion_type_id is not null then coalesce(ot.sold_quantity, 0)
       else coalesce(ds.sold_quantity, 0)
     end as sold_quantity,
     case
@@ -305,6 +335,8 @@ as $$
   left join public.daily_stock src_ds
     on src_ds.portion_type_id = pt.stock_source_portion_type_id
    and src_ds.stock_date = p_stock_date
+  left join order_item_totals ot
+    on ot.portion_type_id = pt.id
   where pt.is_active = true
   order by pt.sort_order, pt.id;
 $$;
