@@ -36,7 +36,7 @@ import {
 } from "@/lib/ops/types";
 import { toOperationsError } from "@/lib/ops/errors";
 import { isStorefrontReadyNotificationKickoffConfigured } from "@/lib/ops/storefront-ready-notifications";
-import { getUgandaDayRange, getUgandaServiceDate, isDailyStockLow } from "@/lib/ops/utils";
+import { getDailyStockWarningLevel, getUgandaDayRange, getUgandaServiceDate, isDailyStockLow } from "@/lib/ops/utils";
 
 const procurementMigrationFiles = [
   "db/phase-01-reference-tables.sql",
@@ -58,7 +58,9 @@ const procurementMigrationFiles = [
   "db/phase-30-paid-stock-consumption.sql",
   "db/phase-31-public-api-rate-limits.sql",
   "db/phase-24-drinks-direct-sellable.sql",
-  "db/phase-25-processing-posts-daily-stock.sql"
+  "db/phase-25-processing-posts-daily-stock.sql",
+  "db/phase-35-shared-fries-inventory.sql",
+  "db/phase-38-menu-stock-finished-stock-fallback.sql"
 ];
 
 const DEFAULT_ORDER_LIST_LIMIT = 50;
@@ -341,6 +343,7 @@ function mapOrderListItem(row: any): OrderListItem {
 function mapDailyStockRow(row: any): DailyStockRow {
   const startingQuantity = normalizeNumber(row.starting_quantity);
   const remainingQuantity = normalizeNumber(row.remaining_quantity);
+  const stockWarningLevel = getDailyStockWarningLevel(remainingQuantity);
 
   return {
     stockDate: row.stock_date,
@@ -356,7 +359,8 @@ function mapDailyStockRow(row: any): DailyStockRow {
     wasteQuantity: normalizeNumber(row.waste_quantity),
     remainingQuantity,
     isInitialized: Boolean(row.is_initialized),
-    isLowStock: isDailyStockLow(startingQuantity, remainingQuantity)
+    isLowStock: isDailyStockLow(startingQuantity, remainingQuantity),
+    stockWarningLevel
   };
 }
 
@@ -528,6 +532,19 @@ function getFulfillmentReviewIssues(orders: OrderListItem[]): DashboardIssueReco
       severity: "critical",
       owner: "Orders",
       createdAt: order.createdAt
+    }));
+}
+
+function getLowStockIssues(items: DailyStockRow[]): DashboardIssueRecord[] {
+  return items
+    .filter((item) => item.isInitialized && item.isLowStock)
+    .slice(0, 3)
+    .map((item) => ({
+      id: `low-stock-${item.portionTypeId}`,
+      title: `${item.portionName}${item.portionLabel ? ` (${item.portionLabel})` : ""} stock is tight`,
+      detail: `${item.remainingQuantity} sellable units left today`,
+      severity: item.stockWarningLevel === "critical" || item.stockWarningLevel === "empty" ? "critical" : "warning",
+      owner: "Inventory"
     }));
 }
 
@@ -758,143 +775,58 @@ function mapStorefrontPushDispatchPreview(row: StorefrontPushDispatchSummaryRow)
   };
 }
 
+type AdminPushQueueSnapshotRow = {
+  subscription_count: number;
+  open_count: number;
+  due_now_count: number;
+  stalled_count: number;
+  retrying_count: number;
+  failed_count: number;
+  no_subscribers_count: number;
+  oldest_open_created_at: string | null;
+  next_open_attempt_at: string | null;
+  recent_dispatches: AdminPushDispatchSummaryRow[];
+};
+
+type StorefrontPushQueueSnapshotRow = {
+  subscription_count: number;
+  open_count: number;
+  due_now_count: number;
+  stalled_count: number;
+  retrying_count: number;
+  failed_count: number;
+  oldest_open_created_at: string | null;
+  next_open_attempt_at: string | null;
+  recent_dispatches: StorefrontPushDispatchSummaryRow[];
+};
+
 export async function getPushQueueSnapshots(): Promise<PushQueueSnapshot[]> {
   noStore();
 
   const supabase = createAdminSupabaseClient();
-  const nowIso = new Date().toISOString();
-  const staleIso = new Date(Date.now() - PUSH_PROCESSING_STALE_MS).toISOString();
+  const now = new Date();
+  const staleDate = new Date(now.getTime() - PUSH_PROCESSING_STALE_MS);
 
-  const [
-    adminSubscriptionCountResponse,
-    adminPendingCountResponse,
-    adminProcessingCountResponse,
-    adminDueCountResponse,
-    adminStalledCountResponse,
-    adminRetryingCountResponse,
-    adminFailedCountResponse,
-    adminNoSubscribersCountResponse,
-    adminOldestOpenResponse,
-    adminNextAttemptResponse,
-    adminPreviewResponse,
-    storefrontSubscriptionCountResponse,
-    storefrontOpenCountResponse,
-    storefrontDueCountResponse,
-    storefrontStalledCountResponse,
-    storefrontRetryingCountResponse,
-    storefrontFailedCountResponse,
-    storefrontOldestOpenResponse,
-    storefrontNextAttemptResponse,
-    storefrontPreviewResponse
-  ] = await Promise.all([
-    supabase.from("admin_push_subscriptions").select("*", { count: "exact", head: true }),
-    supabase.from("admin_push_dispatches").select("*", { count: "exact", head: true }).in("status", ["pending", "no_subscribers"]),
-    supabase.from("admin_push_dispatches").select("*", { count: "exact", head: true }).eq("status", "processing"),
-    supabase.from("admin_push_dispatches").select("*", { count: "exact", head: true }).in("status", ["pending", "no_subscribers"]).lte("next_attempt_at", nowIso),
-    supabase.from("admin_push_dispatches").select("*", { count: "exact", head: true }).eq("status", "processing").lte("last_attempt_at", staleIso),
-    supabase.from("admin_push_dispatches").select("*", { count: "exact", head: true }).eq("status", "pending").gt("attempt_count", 0),
-    supabase.from("admin_push_dispatches").select("*", { count: "exact", head: true }).eq("status", "failed"),
-    supabase.from("admin_push_dispatches").select("*", { count: "exact", head: true }).eq("status", "no_subscribers"),
-    supabase
-      .from("admin_push_dispatches")
-      .select("created_at")
-      .in("status", ["pending", "processing", "no_subscribers"])
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle(),
-    supabase
-      .from("admin_push_dispatches")
-      .select("next_attempt_at")
-      .in("status", ["pending", "processing", "no_subscribers"])
-      .order("next_attempt_at", { ascending: true })
-      .limit(1)
-      .maybeSingle(),
-    supabase
-      .from("admin_push_dispatches")
-      .select("id,order_id,status,attempt_count,created_at,next_attempt_at,last_attempt_at,completed_at,last_error")
-      .in("status", ["pending", "processing", "failed", "no_subscribers"])
-      .order("created_at", { ascending: false })
-      .limit(5),
-    supabase.from("push_subscriptions").select("*", { count: "exact", head: true }),
-    supabase.from("push_notification_dispatches").select("*", { count: "exact", head: true }).is("completed_at", null),
-    supabase.from("push_notification_dispatches").select("*", { count: "exact", head: true }).is("completed_at", null).lte("next_attempt_at", nowIso),
-    supabase
-      .from("push_notification_dispatches")
-      .select("*", { count: "exact", head: true })
-      .is("completed_at", null)
-      .not("processing_started_at", "is", null)
-      .lte("processing_started_at", staleIso),
-    supabase.from("push_notification_dispatches").select("*", { count: "exact", head: true }).is("completed_at", null).gt("attempt_count", 0),
-    supabase.from("push_notification_dispatches").select("*", { count: "exact", head: true }).not("completed_at", "is", null).not("last_error", "is", null),
-    supabase
-      .from("push_notification_dispatches")
-      .select("created_at")
-      .is("completed_at", null)
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle(),
-    supabase
-      .from("push_notification_dispatches")
-      .select("next_attempt_at")
-      .is("completed_at", null)
-      .order("next_attempt_at", { ascending: true })
-      .limit(1)
-      .maybeSingle(),
-    supabase
-      .from("push_notification_dispatches")
-      .select("idempotency_key,order_id,attempt_count,created_at,next_attempt_at,last_attempt_at,processing_started_at,completed_at,last_error")
-      .or("completed_at.is.null,last_error.not.is.null")
-      .order("created_at", { ascending: false })
-      .limit(5)
+  const [adminResponse, storefrontResponse] = await Promise.all([
+    supabase.rpc("get_admin_push_queue_snapshot", {
+      p_now: now.toISOString(),
+      p_stale_before: staleDate.toISOString()
+    }),
+    supabase.rpc("get_storefront_push_queue_snapshot", {
+      p_now: now.toISOString(),
+      p_stale_before: staleDate.toISOString()
+    })
   ]);
 
-  [
-    adminSubscriptionCountResponse,
-    adminPendingCountResponse,
-    adminProcessingCountResponse,
-    adminDueCountResponse,
-    adminStalledCountResponse,
-    adminRetryingCountResponse,
-    adminFailedCountResponse,
-    adminNoSubscribersCountResponse,
-    adminOldestOpenResponse,
-    adminNextAttemptResponse,
-    adminPreviewResponse,
-    storefrontSubscriptionCountResponse,
-    storefrontOpenCountResponse,
-    storefrontDueCountResponse,
-    storefrontStalledCountResponse,
-    storefrontRetryingCountResponse,
-    storefrontFailedCountResponse,
-    storefrontOldestOpenResponse,
-    storefrontNextAttemptResponse,
-    storefrontPreviewResponse
-  ].forEach((response, index) => {
-    const context = [
-      "admin push subscription count",
-      "admin push pending count",
-      "admin push processing count",
-      "admin push due count",
-      "admin push stalled count",
-      "admin push retrying count",
-      "admin push failed count",
-      "admin push no subscribers count",
-      "admin push oldest open",
-      "admin push next attempt",
-      "admin push preview",
-      "storefront push subscription count",
-      "storefront push open count",
-      "storefront push due count",
-      "storefront push stalled count",
-      "storefront push retrying count",
-      "storefront push failed count",
-      "storefront push oldest open",
-      "storefront push next attempt",
-      "storefront push preview"
-    ][index];
+  ensureNoError(adminResponse.error, "Unable to load admin push queue snapshot");
+  ensureNoError(storefrontResponse.error, "Unable to load storefront push queue snapshot");
 
-    ensureNoError(response.error, `Unable to load ${context}`);
-  });
+  const adminRow = (adminResponse.data as unknown as AdminPushQueueSnapshotRow[] | null)?.[0];
+  const storefrontRow = (storefrontResponse.data as unknown as StorefrontPushQueueSnapshotRow[] | null)?.[0];
+
+  if (!adminRow || !storefrontRow) {
+    throw new Error("Push queue snapshot RPCs returned no data. Ensure Phase 41 is applied to Supabase.");
+  }
 
   const adminQueue: PushQueueSnapshot = {
     key: "admin_paid_order",
@@ -905,16 +837,16 @@ export async function getPushQueueSnapshots(): Promise<PushQueueSnapshot[]> {
       && (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim() || process.env.NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY?.trim())
       && (process.env.VAPID_PRIVATE_KEY?.trim() || process.env.WEB_PUSH_VAPID_PRIVATE_KEY?.trim())
     ),
-    activeSubscriptionCount: normalizeCount(adminSubscriptionCountResponse.count),
-    openCount: normalizeCount(adminPendingCountResponse.count) + normalizeCount(adminProcessingCountResponse.count),
-    dueNowCount: normalizeCount(adminDueCountResponse.count),
-    stalledCount: normalizeCount(adminStalledCountResponse.count),
-    retryingCount: normalizeCount(adminRetryingCountResponse.count),
-    failedCount: normalizeCount(adminFailedCountResponse.count),
-    noSubscribersCount: normalizeCount(adminNoSubscribersCountResponse.count),
-    oldestOpenCreatedAt: adminOldestOpenResponse.data?.created_at ?? null,
-    nextAttemptAt: adminNextAttemptResponse.data?.next_attempt_at ?? null,
-    recentDispatches: ((adminPreviewResponse.data ?? []) as AdminPushDispatchSummaryRow[]).map(mapAdminPushDispatchPreview)
+    activeSubscriptionCount: normalizeCount(adminRow.subscription_count),
+    openCount: normalizeCount(adminRow.open_count),
+    dueNowCount: normalizeCount(adminRow.due_now_count),
+    stalledCount: normalizeCount(adminRow.stalled_count),
+    retryingCount: normalizeCount(adminRow.retrying_count),
+    failedCount: normalizeCount(adminRow.failed_count),
+    noSubscribersCount: normalizeCount(adminRow.no_subscribers_count),
+    oldestOpenCreatedAt: adminRow.oldest_open_created_at ?? null,
+    nextAttemptAt: adminRow.next_open_attempt_at ?? null,
+    recentDispatches: (adminRow.recent_dispatches ?? []).map(mapAdminPushDispatchPreview)
   };
 
   const storefrontQueue: PushQueueSnapshot = {
@@ -922,16 +854,16 @@ export async function getPushQueueSnapshots(): Promise<PushQueueSnapshot[]> {
     title: "Customer Ready push queue",
     description: "Ready-for-pickup notifications waiting to reach customer devices.",
     configured: isStorefrontReadyNotificationKickoffConfigured(),
-    activeSubscriptionCount: normalizeCount(storefrontSubscriptionCountResponse.count),
-    openCount: normalizeCount(storefrontOpenCountResponse.count),
-    dueNowCount: normalizeCount(storefrontDueCountResponse.count),
-    stalledCount: normalizeCount(storefrontStalledCountResponse.count),
-    retryingCount: normalizeCount(storefrontRetryingCountResponse.count),
-    failedCount: normalizeCount(storefrontFailedCountResponse.count),
+    activeSubscriptionCount: normalizeCount(storefrontRow.subscription_count),
+    openCount: normalizeCount(storefrontRow.open_count),
+    dueNowCount: normalizeCount(storefrontRow.due_now_count),
+    stalledCount: normalizeCount(storefrontRow.stalled_count),
+    retryingCount: normalizeCount(storefrontRow.retrying_count),
+    failedCount: normalizeCount(storefrontRow.failed_count),
     noSubscribersCount: 0,
-    oldestOpenCreatedAt: storefrontOldestOpenResponse.data?.created_at ?? null,
-    nextAttemptAt: storefrontNextAttemptResponse.data?.next_attempt_at ?? null,
-    recentDispatches: ((storefrontPreviewResponse.data ?? []) as StorefrontPushDispatchSummaryRow[]).map(mapStorefrontPushDispatchPreview)
+    oldestOpenCreatedAt: storefrontRow.oldest_open_created_at ?? null,
+    nextAttemptAt: storefrontRow.next_open_attempt_at ?? null,
+    recentDispatches: (storefrontRow.recent_dispatches ?? []).map(mapStorefrontPushDispatchPreview)
   };
 
   return [adminQueue, storefrontQueue];
@@ -952,6 +884,33 @@ export async function getOrderListItemById(orderId: number | string): Promise<Or
   ensureNoError(error, "Unable to load order");
 
   return data ? mapOrderListItem(data) : null;
+}
+
+export async function getOrderListItemsByIds(orderIds: Array<number | string>): Promise<OrderListItem[]> {
+  noStore();
+
+  const normalizedIds = Array.from(
+    new Set(
+      orderIds
+        .map((orderId) => normalizeNumber(orderId))
+        .filter((orderId) => Number.isInteger(orderId) && orderId > 0)
+    )
+  ).slice(0, 50);
+
+  if (normalizedIds.length === 0) {
+    return [];
+  }
+
+  const supabase = await createOperationsReadClient();
+  const { data, error } = await supabase
+    .from("orders")
+    .select(orderListSelection)
+    .in("id", normalizedIds)
+    .limit(normalizedIds.length);
+
+  ensureNoError(error, "Unable to load reconciled orders");
+
+  return (data ?? []).map(mapOrderListItem);
 }
 
 export async function getOrderDetail(orderId: number | string): Promise<OrderDetailRecord | null> {
@@ -1674,7 +1633,15 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   const activeOrders = (activeOrdersResponse.data ?? []).map(mapOrderListItem);
   const todaysOrders = (todaysOrdersResponse.data ?? []).map(mapOrderListItem);
   const dailyStock = (dailyStockResponse.data ?? []).map(mapDailyStockRow);
-  const lowStockItems = dailyStock.filter((item: DailyStockRow) => item.isInitialized && item.isLowStock).slice(0, 5);
+  const warningRank = { empty: 0, critical: 1, elevated: 2, low: 3, healthy: 4 } as const;
+  const lowStockItems = dailyStock
+    .filter((item: DailyStockRow) => item.isLowStock && (item.isInitialized || item.remainingQuantity > 0))
+    .sort(
+      (left: DailyStockRow, right: DailyStockRow) =>
+        warningRank[left.stockWarningLevel] - warningRank[right.stockWarningLevel] ||
+        left.remainingQuantity - right.remainingQuantity
+    )
+    .slice(0, 5);
 
   const inPrepOrders = activeOrders.filter((order) => order.status === "in_prep");
   const readyOrders = activeOrders.filter((order) => order.status === "ready");
@@ -1693,7 +1660,12 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
     createdAt: incident.created_at
   }));
 
-  const issues = [...getFulfillmentReviewIssues(activeOrders), ...incidents, ...getOverdueOrderIssues(activeOrders)].slice(0, 6);
+  const issues = [
+    ...getFulfillmentReviewIssues(activeOrders),
+    ...getLowStockIssues(lowStockItems),
+    ...incidents,
+    ...getOverdueOrderIssues(activeOrders)
+  ].slice(0, 6);
 
   return {
     serviceDate,

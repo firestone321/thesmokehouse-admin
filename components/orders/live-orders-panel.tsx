@@ -8,6 +8,7 @@ import type { OrderListItem } from "@/lib/ops/types";
 import { formatCurrency, formatDateTime } from "@/lib/ops/utils";
 
 const RECONCILE_DEBOUNCE_MS = 150;
+const RECONCILE_BATCH_LIMIT = 50;
 
 type OrdersPayload =
   | {
@@ -19,11 +20,11 @@ type OrdersPayload =
     }
   | null;
 
-type OrderPayload =
+type ReconcilePayload =
   | {
       ok?: boolean;
       data?: {
-        order?: OrderListItem;
+        orders?: OrderListItem[];
       };
       message?: string;
     }
@@ -99,23 +100,20 @@ async function fetchOrdersSnapshot(status: string, search: string, limit: number
   return payload.data?.orders ?? [];
 }
 
-async function fetchOrderSnapshot(orderId: string) {
-  const response = await fetch(`/api/admin/orders/${encodeURIComponent(orderId)}`, {
-    method: "GET",
-    headers: { Accept: "application/json" },
+async function fetchOrdersReconcile(orderIds: string[]) {
+  const response = await fetch("/api/admin/orders/reconcile", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ orderIds }),
     cache: "no-store"
   });
-  const payload = (await response.json().catch(() => null)) as OrderPayload;
-
-  if (response.status === 404) {
-    return null;
-  }
+  const payload = (await response.json().catch(() => null)) as ReconcilePayload;
 
   if (!response.ok || !payload?.ok) {
-    throw new Error(payload?.message ?? "Unable to load order.");
+    throw new Error(payload?.message ?? "Unable to reconcile orders.");
   }
 
-  return payload.data?.order ?? null;
+  return payload.data?.orders ?? [];
 }
 
 export function LiveOrdersPanel({
@@ -130,7 +128,8 @@ export function LiveOrdersPanel({
   limit: number;
 }) {
   const [localOrders, setLocalOrders] = useState<OrderListItem[]>(orders);
-  const reconcileTimeoutsRef = useRef<Map<string, number>>(new Map());
+  const pendingReconcileIdsRef = useRef<Set<string>>(new Set());
+  const reconcileBatchTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     setLocalOrders(orders);
@@ -138,11 +137,12 @@ export function LiveOrdersPanel({
 
   useEffect(() => {
     return () => {
-      for (const timeoutId of reconcileTimeoutsRef.current.values()) {
-        window.clearTimeout(timeoutId);
+      if (reconcileBatchTimeoutRef.current !== null) {
+        window.clearTimeout(reconcileBatchTimeoutRef.current);
       }
 
-      reconcileTimeoutsRef.current.clear();
+      pendingReconcileIdsRef.current.clear();
+      reconcileBatchTimeoutRef.current = null;
     };
   }, []);
 
@@ -150,30 +150,56 @@ export function LiveOrdersPanel({
     setLocalOrders((current) => current.filter((order) => String(order.id) !== orderId));
   };
 
-  const upsertOrder = (order: OrderListItem) => {
-    setLocalOrders((current) => {
-      const next = orderMatchesFilters(order, status, search)
-        ? [order, ...current.filter((candidate) => candidate.id !== order.id)]
-        : current.filter((candidate) => candidate.id !== order.id);
-
-      return sortOrders(next).slice(0, limit);
-    });
-  };
-
   const refreshOrders = async () => {
     const nextOrders = await fetchOrdersSnapshot(status, search, limit);
     setLocalOrders(nextOrders);
   };
 
-  const reconcileOrder = async (orderId: string) => {
-    const order = await fetchOrderSnapshot(orderId);
+  const flushReconcileBatch = async () => {
+    const ids = Array.from(pendingReconcileIdsRef.current);
+    pendingReconcileIdsRef.current.clear();
+    reconcileBatchTimeoutRef.current = null;
 
-    if (!order) {
-      removeOrder(orderId);
+    if (ids.length === 0) {
       return;
     }
 
-    upsertOrder(order);
+    const reconciledOrders = await fetchOrdersReconcile(ids);
+    const reconciledIds = new Set(reconciledOrders.map((order) => String(order.id)));
+
+    setLocalOrders((current) => {
+      let next = current.filter((order) => !ids.includes(String(order.id)) || reconciledIds.has(String(order.id)));
+
+      for (const order of reconciledOrders) {
+        next = orderMatchesFilters(order, status, search)
+          ? [order, ...next.filter((candidate) => candidate.id !== order.id)]
+          : next.filter((candidate) => candidate.id !== order.id);
+      }
+
+      return sortOrders(next).slice(0, limit);
+    });
+  };
+
+  const scheduleBatchReconcile = (orderId: string) => {
+    pendingReconcileIdsRef.current.add(orderId);
+
+    if (pendingReconcileIdsRef.current.size > RECONCILE_BATCH_LIMIT) {
+      pendingReconcileIdsRef.current.clear();
+      if (reconcileBatchTimeoutRef.current !== null) {
+        window.clearTimeout(reconcileBatchTimeoutRef.current);
+        reconcileBatchTimeoutRef.current = null;
+      }
+      void refreshOrders();
+      return;
+    }
+
+    if (reconcileBatchTimeoutRef.current !== null) {
+      return;
+    }
+
+    reconcileBatchTimeoutRef.current = window.setTimeout(() => {
+      void flushReconcileBatch();
+    }, RECONCILE_DEBOUNCE_MS);
   };
 
   const scheduleReconcile = (event: OrdersRealtimeEvent) => {
@@ -187,16 +213,7 @@ export function LiveOrdersPanel({
       return;
     }
 
-    if (reconcileTimeoutsRef.current.has(event.orderId)) {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      reconcileTimeoutsRef.current.delete(event.orderId!);
-      void reconcileOrder(event.orderId!);
-    }, RECONCILE_DEBOUNCE_MS);
-
-    reconcileTimeoutsRef.current.set(event.orderId, timeoutId);
+    scheduleBatchReconcile(event.orderId);
   };
 
   useOrdersRealtime({

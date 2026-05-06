@@ -4,6 +4,7 @@ import { PushQueueHealthCard } from "@/components/orders/push-queue-health-card"
 import { LiveOrdersPanel } from "@/components/orders/live-orders-panel";
 import { OperationsSchemaMissingError } from "@/lib/ops/errors";
 import { getOrdersPageData, getPushQueueSnapshots } from "@/lib/ops/queries";
+import { processPendingPaymentRecoveriesAction } from "@/lib/ops/payment-recovery-actions";
 
 function getFirstValue(value?: string | string[]) {
   return Array.isArray(value) ? value[0] : value;
@@ -65,6 +66,16 @@ export default async function OrdersPage({
             >
               Order history
             </Link>
+
+            <form action={processPendingPaymentRecoveriesAction}>
+              <input type="hidden" name="returnTo" value={returnTo} />
+              <button
+                type="submit"
+                className="rounded-2xl border border-[#D7DDE4] bg-white px-4 py-2.5 text-sm font-semibold text-[#111418]"
+              >
+                Recover payments
+              </button>
+            </form>
 
             <form className="grid flex-1 gap-3 sm:grid-cols-[180px_minmax(0,1fr)_auto]">
               <label className="space-y-2 text-sm text-[#6B7280]">

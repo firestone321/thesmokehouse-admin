@@ -9,6 +9,9 @@ const MAX_DISPATCH_BATCH_SIZE = 25;
 const MAX_DISPATCH_ATTEMPTS = 6;
 const NO_SUBSCRIBER_RETRY_DELAY_MS = 5 * 60_000;
 const RETRY_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000, 30 * 60_000, 60 * 60_000, 2 * 60 * 60_000];
+const MAX_ACTIVE_SUBSCRIPTIONS = 10;
+const SEND_CONCURRENCY = 5;
+const DISPATCH_CONCURRENCY = 3;
 
 type AdminPushSubscriptionRow = {
   id: string;
@@ -40,6 +43,24 @@ type PushSendOutcome =
   | { status: "invalid" }
   | { status: "retryable"; error: string };
 
+type ProcessDispatchResult = Pick<
+  AdminPushQueueStats,
+  | "succeeded"
+  | "retried"
+  | "failed"
+  | "noSubscribers"
+  | "subscriptionsDelivered"
+  | "subscriptionsExpired"
+  | "subscriptionFailures"
+>;
+
+type SubscriptionDeliveryResult = {
+  delivered: number;
+  expired: number;
+  retryableFailures: number;
+  lastRetryableError: string | null;
+};
+
 export type AdminPushQueueStats = {
   claimed: number;
   succeeded: number;
@@ -59,6 +80,55 @@ function isMissingClaimDispatchesRpcError(message: string) {
 
 function getRetryDelayMs(attemptCount: number) {
   return RETRY_DELAYS_MS[Math.min(Math.max(attemptCount - 1, 0), RETRY_DELAYS_MS.length - 1)];
+}
+
+function createEmptyProcessDispatchResult(): ProcessDispatchResult {
+  return {
+    succeeded: 0,
+    retried: 0,
+    failed: 0,
+    noSubscribers: 0,
+    subscriptionsDelivered: 0,
+    subscriptionsExpired: 0,
+    subscriptionFailures: 0
+  };
+}
+
+function getLastRetryableError(results: SubscriptionDeliveryResult[]) {
+  for (let index = results.length - 1; index >= 0; index -= 1) {
+    const error = results[index].lastRetryableError;
+    if (error !== null) {
+      return error;
+    }
+  }
+
+  return null;
+}
+
+async function runLimited<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  if (items.length === 0) {
+    return [];
+  }
+
+  const limit = Math.max(1, Math.min(Math.trunc(concurrency), items.length));
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  await Promise.all(
+    Array.from({ length: limit }, async () => {
+      while (nextIndex < items.length) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        results[currentIndex] = await worker(items[currentIndex], currentIndex);
+      }
+    })
+  );
+
+  return results;
 }
 
 function getOrderActorLabel(order: AdminPushOrderSummary) {
@@ -110,7 +180,10 @@ async function listAdminPushSubscriptions() {
   const { data, error } = await supabaseAdmin
     .from("admin_push_subscriptions")
     .select("id,endpoint,p256dh,auth")
-    .order("created_at", { ascending: true });
+    .order("last_seen_at", { ascending: false })
+    .order("updated_at", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(MAX_ACTIVE_SUBSCRIPTIONS);
 
   if (error) {
     throw new Error(`Unable to load admin push subscriptions: ${error.message}`);
@@ -241,7 +314,7 @@ async function processDispatch(dispatch: AdminPushDispatchRow) {
       last_error: "order_not_found"
     });
 
-    return { succeeded: 0, retried: 0, failed: 1, noSubscribers: 0, subscriptionsDelivered: 0, subscriptionsExpired: 0, subscriptionFailures: 0 };
+    return { ...createEmptyProcessDispatchResult(), failed: 1 };
   }
 
   const subscriptions = await listAdminPushSubscriptions();
@@ -257,7 +330,7 @@ async function processDispatch(dispatch: AdminPushDispatchRow) {
       last_error: "no_active_subscriptions"
     });
 
-    return { succeeded: 0, retried: 0, failed: 0, noSubscribers: 1, subscriptionsDelivered: 0, subscriptionsExpired: 0, subscriptionFailures: 0 };
+    return { ...createEmptyProcessDispatchResult(), noSubscribers: 1 };
   }
 
   if (pendingSubscriptions.length === 0) {
@@ -267,39 +340,53 @@ async function processDispatch(dispatch: AdminPushDispatchRow) {
       last_error: null
     });
 
-    return { succeeded: 1, retried: 0, failed: 0, noSubscribers: 0, subscriptionsDelivered: 0, subscriptionsExpired: 0, subscriptionFailures: 0 };
+    return { ...createEmptyProcessDispatchResult(), succeeded: 1 };
   }
 
   const payload = buildAdminPaidOrderNotificationPayload(order);
-  let deliveredCount = 0;
-  let expiredCount = 0;
-  let retryableFailureCount = 0;
-  let lastRetryableError: string | null = null;
+  const deliveryResults = await runLimited(
+    pendingSubscriptions,
+    SEND_CONCURRENCY,
+    async (subscription): Promise<SubscriptionDeliveryResult> => {
+      try {
+        const result = await sendPushNotification(subscription, payload);
 
-  for (const subscription of pendingSubscriptions) {
-    const result = await sendPushNotification(subscription, payload);
+        if (result.status === "sent") {
+          await recordDispatchReceipt(dispatch.id, subscription.id);
+          return { delivered: 1, expired: 0, retryableFailures: 0, lastRetryableError: null };
+        }
 
-    if (result.status === "sent") {
-      await recordDispatchReceipt(dispatch.id, subscription.id);
-      deliveredCount += 1;
-      continue;
+        if (result.status === "invalid") {
+          await deleteExpiredSubscription(subscription.id);
+          return { delivered: 0, expired: 1, retryableFailures: 0, lastRetryableError: null };
+        }
+
+        console.error("admin_paid_order_push_send_failed", {
+          dispatchId: dispatch.id,
+          orderId: dispatch.order_id,
+          subscriptionId: subscription.id,
+          error: result.error
+        });
+
+        return { delivered: 0, expired: 0, retryableFailures: 1, lastRetryableError: result.error };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "unknown_error";
+        console.error("admin_paid_order_push_delivery_record_failed", {
+          dispatchId: dispatch.id,
+          orderId: dispatch.order_id,
+          subscriptionId: subscription.id,
+          error: errorMessage
+        });
+
+        return { delivered: 0, expired: 0, retryableFailures: 1, lastRetryableError: errorMessage };
+      }
     }
+  );
 
-    if (result.status === "invalid") {
-      expiredCount += 1;
-      await deleteExpiredSubscription(subscription.id);
-      continue;
-    }
-
-    retryableFailureCount += 1;
-    lastRetryableError = result.error;
-    console.error("admin_paid_order_push_send_failed", {
-      dispatchId: dispatch.id,
-      orderId: dispatch.order_id,
-      subscriptionId: subscription.id,
-      error: result.error
-    });
-  }
+  const deliveredCount = deliveryResults.reduce((total, result) => total + result.delivered, 0);
+  const expiredCount = deliveryResults.reduce((total, result) => total + result.expired, 0);
+  const retryableFailureCount = deliveryResults.reduce((total, result) => total + result.retryableFailures, 0);
+  const lastRetryableError = getLastRetryableError(deliveryResults);
 
   if (retryableFailureCount > 0) {
     if (dispatch.attempt_count >= MAX_DISPATCH_ATTEMPTS) {
@@ -309,7 +396,13 @@ async function processDispatch(dispatch: AdminPushDispatchRow) {
         last_error: lastRetryableError ?? "push_delivery_failed"
       });
 
-      return { succeeded: 0, retried: 0, failed: 1, noSubscribers: 0, subscriptionsDelivered: deliveredCount, subscriptionsExpired: expiredCount, subscriptionFailures: retryableFailureCount };
+      return {
+        ...createEmptyProcessDispatchResult(),
+        failed: 1,
+        subscriptionsDelivered: deliveredCount,
+        subscriptionsExpired: expiredCount,
+        subscriptionFailures: retryableFailureCount
+      };
     }
 
     await updateDispatchState(dispatch.id, {
@@ -319,7 +412,13 @@ async function processDispatch(dispatch: AdminPushDispatchRow) {
       last_error: lastRetryableError ?? "push_delivery_failed"
     });
 
-    return { succeeded: 0, retried: 1, failed: 0, noSubscribers: 0, subscriptionsDelivered: deliveredCount, subscriptionsExpired: expiredCount, subscriptionFailures: retryableFailureCount };
+    return {
+      ...createEmptyProcessDispatchResult(),
+      retried: 1,
+      subscriptionsDelivered: deliveredCount,
+      subscriptionsExpired: expiredCount,
+      subscriptionFailures: retryableFailureCount
+    };
   }
 
   await updateDispatchState(dispatch.id, {
@@ -328,7 +427,12 @@ async function processDispatch(dispatch: AdminPushDispatchRow) {
     last_error: null
   });
 
-  return { succeeded: 1, retried: 0, failed: 0, noSubscribers: 0, subscriptionsDelivered: deliveredCount, subscriptionsExpired: expiredCount, subscriptionFailures: 0 };
+  return {
+    ...createEmptyProcessDispatchResult(),
+    succeeded: 1,
+    subscriptionsDelivered: deliveredCount,
+    subscriptionsExpired: expiredCount
+  };
 }
 
 export async function processAdminPushDispatchQueue(options?: { limit?: number; orderId?: number }): Promise<AdminPushQueueStats> {
@@ -345,8 +449,9 @@ export async function processAdminPushDispatchQueue(options?: { limit?: number; 
     claimedDispatchIds: claimedDispatches.map((dispatch) => dispatch.id)
   };
 
-  for (const dispatch of claimedDispatches) {
-    const result = await processDispatch(dispatch);
+  const results = await runLimited(claimedDispatches, DISPATCH_CONCURRENCY, processDispatch);
+
+  for (const result of results) {
     stats.succeeded += result.succeeded;
     stats.retried += result.retried;
     stats.failed += result.failed;

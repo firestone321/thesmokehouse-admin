@@ -300,8 +300,8 @@ as $$
     pkg.name as packaging_type_name,
     case
       when pt.stock_source_portion_type_id is not null
-      then floor(coalesce(src_ds.starting_quantity, 0)::numeric / pt.stock_source_units_per_serving)::integer
-      else coalesce(ds.starting_quantity, 0)
+      then floor(coalesce(src_ds.starting_quantity, src_fs.current_quantity, 0)::numeric / pt.stock_source_units_per_serving)::integer
+      else coalesce(ds.starting_quantity, fs.current_quantity, 0)
     end as starting_quantity,
     case
       when pt.stock_source_portion_type_id is not null then coalesce(ot.reserved_quantity, 0)
@@ -317,8 +317,8 @@ as $$
     end as waste_quantity,
     case
       when pt.stock_source_portion_type_id is not null
-      then floor(coalesce(src_ds.remaining_quantity, 0)::numeric / pt.stock_source_units_per_serving)::integer
-      else coalesce(ds.remaining_quantity, 0)
+      then floor(coalesce(src_ds.remaining_quantity, src_fs.current_quantity, 0)::numeric / pt.stock_source_units_per_serving)::integer
+      else coalesce(ds.remaining_quantity, fs.current_quantity, 0)
     end as remaining_quantity,
     case
       when pt.stock_source_portion_type_id is not null then (src_ds.portion_type_id is not null)
@@ -335,6 +335,10 @@ as $$
   left join public.daily_stock src_ds
     on src_ds.portion_type_id = pt.stock_source_portion_type_id
    and src_ds.stock_date = p_stock_date
+  left join public.finished_stock fs
+    on fs.portion_type_id = pt.id
+  left join public.finished_stock src_fs
+    on src_fs.portion_type_id = pt.stock_source_portion_type_id
   left join order_item_totals ot
     on ot.portion_type_id = pt.id
   where pt.is_active = true
@@ -342,7 +346,73 @@ as $$
 $$;
 
 comment on function public.get_daily_menu_stock(date) is
-  'Returns all active menu portions for a service day, including uninitialized stock rows, for dashboard use.';
+  'Returns active menu portions for a service day; falls back to durable finished_stock when day stock has not been initialized.';
+
+-- Phase 39: collapsed storefront menu read model.
+
+create or replace function public.get_storefront_menu(p_service_date date)
+returns table (
+  id                   bigint,
+  name                 text,
+  description          text,
+  base_price           integer,
+  image_url            text,
+  prep_type            text,
+  portion_label        text,
+  category_code        text,
+  category_name        text,
+  is_active            boolean,
+  is_available_today   boolean,
+  available_quantity   integer
+)
+language sql
+stable
+as $$
+  select
+    mi.id,
+    mi.name,
+    mi.description,
+    mi.base_price,
+    mi.image_url,
+    mi.prep_type,
+    pt.portion_label,
+    mc.code  as category_code,
+    mc.name  as category_name,
+    mi.is_active,
+    mi.is_available_today,
+    case
+      when pt.id is null
+        then 0
+      when pt.stock_source_portion_type_id is not null
+        then floor(
+          coalesce(src_ds.remaining_quantity, src_fs.current_quantity, 0)::numeric
+          / greatest(pt.stock_source_units_per_serving, 1)
+        )::integer
+      else
+        coalesce(ds.remaining_quantity, fs.current_quantity, 0)
+    end as available_quantity
+  from public.menu_items mi
+  join public.menu_categories mc
+    on mc.id = mi.menu_category_id
+  left join public.portion_types pt
+    on pt.id = mi.portion_type_id
+  left join public.daily_stock ds
+    on ds.portion_type_id = pt.id
+   and ds.stock_date = p_service_date
+  left join public.finished_stock fs
+    on fs.portion_type_id = pt.id
+  left join public.daily_stock src_ds
+    on src_ds.portion_type_id = pt.stock_source_portion_type_id
+   and src_ds.stock_date = p_service_date
+  left join public.finished_stock src_fs
+    on src_fs.portion_type_id = pt.stock_source_portion_type_id
+  where mi.is_active = true
+    and mi.is_available_today = true
+  order by mi.sort_order, mi.name;
+$$;
+
+comment on function public.get_storefront_menu(date) is
+  'Returns active, available-today menu items with computed available_quantity in one DB round trip. Handles Phase 35 source-backed portions and Phase 38 finished_stock fallback for uninitialized service days.';
 
 alter table public.daily_stock enable row level security;
 
@@ -2158,6 +2228,48 @@ execute function public.set_updated_at();
 alter table public.orders
   add column if not exists active_payment_attempt_id bigint references public.payment_attempts(id) on update cascade on delete set null;
 
+create table if not exists public.pending_payment_recoveries (
+  id bigint generated always as identity primary key,
+  order_id bigint not null references public.orders(id) on update cascade on delete cascade,
+  provider text not null default 'pesapal',
+  order_tracking_id text not null,
+  status text not null default 'pending',
+  next_attempt_at timestamptz not null default now(),
+  attempt_count integer not null default 0,
+  max_attempts integer not null default 500,
+  locked_at timestamptz,
+  locked_by text,
+  last_verified_at timestamptz,
+  last_error text,
+  completed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint pending_payment_recoveries_status_chk
+    check (status in ('pending', 'processing', 'retrying', 'completed', 'failed')),
+  constraint pending_payment_recoveries_attempt_count_chk
+    check (attempt_count >= 0),
+  constraint pending_payment_recoveries_max_attempts_chk
+    check (max_attempts > 0)
+);
+
+create unique index if not exists pending_payment_recoveries_provider_tracking_uidx
+  on public.pending_payment_recoveries(provider, order_tracking_id);
+
+create index if not exists pending_payment_recoveries_due_idx
+  on public.pending_payment_recoveries(status, next_attempt_at, created_at)
+  where status in ('pending', 'retrying', 'processing');
+
+create index if not exists pending_payment_recoveries_order_idx
+  on public.pending_payment_recoveries(order_id, created_at desc);
+
+alter table public.pending_payment_recoveries enable row level security;
+
+drop trigger if exists pending_payment_recoveries_set_updated_at on public.pending_payment_recoveries;
+create trigger pending_payment_recoveries_set_updated_at
+before update on public.pending_payment_recoveries
+for each row
+execute function public.set_updated_at();
+
 create or replace function public.reserve_paid_order_stock(
   p_order_id bigint
 )
@@ -3434,6 +3546,137 @@ revoke all on function public.claim_admin_push_dispatches(integer, bigint) from 
 revoke all on function public.claim_admin_push_dispatches(integer, bigint) from authenticated;
 grant execute on function public.claim_admin_push_dispatches(integer, bigint) to service_role;
 
+create or replace function public.enqueue_pending_payment_recovery(
+  p_order_id bigint,
+  p_order_tracking_id text,
+  p_provider text default 'pesapal',
+  p_reason text default null
+)
+returns public.pending_payment_recoveries
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_provider text := coalesce(nullif(btrim(coalesce(p_provider, '')), ''), 'pesapal');
+  v_tracking text := nullif(btrim(coalesce(p_order_tracking_id, '')), '');
+  v_recovery public.pending_payment_recoveries%rowtype;
+begin
+  if p_order_id is null then
+    raise exception 'order_id is required';
+  end if;
+
+  if v_tracking is null then
+    raise exception 'order_tracking_id is required';
+  end if;
+
+  insert into public.pending_payment_recoveries (
+    order_id,
+    provider,
+    order_tracking_id,
+    status,
+    next_attempt_at,
+    last_error
+  )
+  values (
+    p_order_id,
+    v_provider,
+    v_tracking,
+    'pending',
+    now(),
+    nullif(btrim(coalesce(p_reason, '')), '')
+  )
+  on conflict (provider, order_tracking_id)
+  do update
+  set
+    order_id = excluded.order_id,
+    status = case
+      when pending_payment_recoveries.status = 'completed' then pending_payment_recoveries.status
+      when pending_payment_recoveries.status = 'processing' then 'retrying'
+      when pending_payment_recoveries.status = 'failed'
+        and pending_payment_recoveries.attempt_count < pending_payment_recoveries.max_attempts then 'retrying'
+      else pending_payment_recoveries.status
+    end,
+    next_attempt_at = case
+      when pending_payment_recoveries.status = 'completed' then pending_payment_recoveries.next_attempt_at
+      else least(pending_payment_recoveries.next_attempt_at, now())
+    end,
+    completed_at = case
+      when pending_payment_recoveries.status = 'completed' then pending_payment_recoveries.completed_at
+      else null
+    end,
+    last_error = case
+      when pending_payment_recoveries.status = 'completed' then pending_payment_recoveries.last_error
+      else coalesce(nullif(btrim(coalesce(p_reason, '')), ''), pending_payment_recoveries.last_error)
+    end,
+    updated_at = now()
+  returning *
+  into v_recovery;
+
+  return v_recovery;
+end;
+$$;
+
+create or replace function public.claim_pending_payment_recoveries(
+  p_limit integer default 5,
+  p_worker_id text default null,
+  p_order_id bigint default null
+)
+returns setof public.pending_payment_recoveries
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  normalized_limit integer := greatest(1, least(coalesce(p_limit, 5), 25));
+  normalized_worker text := coalesce(nullif(btrim(coalesce(p_worker_id, '')), ''), 'unknown');
+begin
+  return query
+  with candidates as (
+    select r.id
+    from public.pending_payment_recoveries r
+    where (
+      (
+        r.status in ('pending', 'retrying')
+        and r.next_attempt_at <= now()
+        and r.attempt_count < r.max_attempts
+      )
+      or (
+        r.status = 'processing'
+        and r.locked_at is not null
+        and r.locked_at <= now() - interval '5 minutes'
+        and r.attempt_count < r.max_attempts
+      )
+    )
+    and (p_order_id is null or r.order_id = p_order_id)
+    order by r.next_attempt_at asc, r.created_at asc
+    limit normalized_limit
+    for update skip locked
+  )
+  update public.pending_payment_recoveries as r
+  set
+    status = 'processing',
+    attempt_count = r.attempt_count + 1,
+    locked_at = now(),
+    locked_by = normalized_worker,
+    last_error = null,
+    updated_at = now()
+  from candidates
+  where r.id = candidates.id
+  returning r.*;
+end;
+$$;
+
+revoke all on function public.enqueue_pending_payment_recovery(bigint, text, text, text) from public;
+revoke all on function public.enqueue_pending_payment_recovery(bigint, text, text, text) from anon;
+revoke all on function public.enqueue_pending_payment_recovery(bigint, text, text, text) from authenticated;
+grant execute on function public.enqueue_pending_payment_recovery(bigint, text, text, text) to service_role;
+
+revoke all on function public.claim_pending_payment_recoveries(integer, text, bigint) from public;
+revoke all on function public.claim_pending_payment_recoveries(integer, text, bigint) from anon;
+revoke all on function public.claim_pending_payment_recoveries(integer, text, bigint) from authenticated;
+grant execute on function public.claim_pending_payment_recoveries(integer, text, bigint) to service_role;
+
 -- Phase 30: paid stock consumption.
 -- Keep the compatibility function name but consume finished_stock exactly once after payment confirmation.
 
@@ -3832,5 +4075,286 @@ revoke all on function public.finalize_reserved_order_sale(bigint) from public;
 revoke all on function public.finalize_reserved_order_sale(bigint) from anon;
 revoke all on function public.finalize_reserved_order_sale(bigint) from authenticated;
 grant execute on function public.finalize_reserved_order_sale(bigint) to service_role;
+
+-- Phase 39: storefront menu RPC privileges.
+
+revoke execute on function public.get_storefront_menu(date) from public, anon, authenticated;
+grant execute on function public.get_storefront_menu(date) to service_role;
+
+-- Phase 40: checkout idempotency.
+
+create table if not exists public.checkout_reservations (
+  idempotency_key  text        primary key,
+  status           text        not null default 'processing'
+                               check (status in ('processing', 'complete', 'failed')),
+  result_json      jsonb,
+  created_at       timestamptz not null default now(),
+  expires_at       timestamptz not null default (now() + interval '5 minutes'),
+  constraint checkout_reservations_expires_at_chk
+    check (expires_at <= created_at + interval '7 minutes')
+);
+
+create index if not exists checkout_reservations_expires_at_idx
+  on public.checkout_reservations (expires_at);
+
+alter table public.checkout_reservations enable row level security;
+
+revoke all on public.checkout_reservations from anon, authenticated;
+grant all on public.checkout_reservations to service_role;
+
+create or replace function public.create_storefront_order(
+  p_public_token    text,
+  p_pickup_code     text,
+  p_device_id       text,
+  p_customer_name   text,
+  p_customer_phone  text,
+  p_notes           text,
+  p_service_date    date,
+  p_promised_at     timestamptz,
+  p_total_amount    integer,
+  p_items           jsonb
+)
+returns table (
+  id           bigint,
+  order_number text,
+  public_token text,
+  pickup_code  text
+)
+language plpgsql
+as $$
+declare
+  v_order_id     bigint;
+  v_order_number text;
+begin
+  insert into public.orders (
+    public_token, pickup_code, device_id, customer_name, customer_phone,
+    notes, status, payment_status, payment_provider, service_date, promised_at, total_amount
+  ) values (
+    p_public_token, p_pickup_code, p_device_id, p_customer_name, p_customer_phone,
+    p_notes, 'new', 'pending', 'pesapal', p_service_date, p_promised_at, p_total_amount
+  )
+  returning orders.id, orders.order_number into v_order_id, v_order_number;
+
+  insert into public.order_items (order_id, menu_item_id, menu_item_name, quantity, unit_price)
+  select
+    v_order_id,
+    (item ->> 'menu_item_id')::bigint,
+    item ->> 'menu_item_name',
+    (item ->> 'quantity')::integer,
+    (item ->> 'unit_price')::integer
+  from jsonb_array_elements(p_items) as item;
+
+  return query select v_order_id, v_order_number, p_public_token, p_pickup_code;
+end;
+$$;
+
+revoke execute
+  on function public.create_storefront_order(text, text, text, text, text, text, date, timestamptz, integer, jsonb)
+  from public, anon, authenticated;
+grant execute
+  on function public.create_storefront_order(text, text, text, text, text, text, date, timestamptz, integer, jsonb)
+  to service_role;
+
+-- Phase 41: Push queue snapshot RPCs.
+-- Replaces 20 parallel count + preview queries with 2 single-round-trip RPC calls.
+
+create or replace function public.get_admin_push_queue_snapshot(
+  p_now          timestamptz,
+  p_stale_before timestamptz
+)
+returns table (
+  subscription_count     bigint,
+  open_count             bigint,
+  due_now_count          bigint,
+  stalled_count          bigint,
+  retrying_count         bigint,
+  failed_count           bigint,
+  no_subscribers_count   bigint,
+  oldest_open_created_at timestamptz,
+  next_open_attempt_at   timestamptz,
+  recent_dispatches      jsonb
+)
+language sql stable as $$
+  select
+    (select count(*)::bigint from public.admin_push_subscriptions),
+    (select count(*)::bigint from public.admin_push_dispatches
+       where status in ('pending', 'processing', 'no_subscribers')),
+    (select count(*)::bigint from public.admin_push_dispatches
+       where status in ('pending', 'no_subscribers') and next_attempt_at <= p_now),
+    (select count(*)::bigint from public.admin_push_dispatches
+       where status = 'processing' and last_attempt_at <= p_stale_before),
+    (select count(*)::bigint from public.admin_push_dispatches
+       where status = 'pending' and attempt_count > 0),
+    (select count(*)::bigint from public.admin_push_dispatches
+       where status = 'failed'),
+    (select count(*)::bigint from public.admin_push_dispatches
+       where status = 'no_subscribers'),
+    (select min(created_at) from public.admin_push_dispatches
+       where status in ('pending', 'processing', 'no_subscribers')),
+    (select min(next_attempt_at) from public.admin_push_dispatches
+       where status in ('pending', 'processing', 'no_subscribers')),
+    coalesce(
+      (select jsonb_agg(t) from (
+         select id, order_id, status, attempt_count, created_at,
+                next_attempt_at, last_attempt_at, completed_at, last_error
+         from public.admin_push_dispatches
+         where status in ('pending', 'processing', 'failed', 'no_subscribers')
+         order by created_at desc
+         limit 5
+       ) t),
+      '[]'::jsonb
+    )
+$$;
+
+revoke execute on function public.get_admin_push_queue_snapshot(timestamptz, timestamptz)
+  from public, anon, authenticated;
+grant execute on function public.get_admin_push_queue_snapshot(timestamptz, timestamptz)
+  to service_role;
+
+create or replace function public.get_storefront_push_queue_snapshot(
+  p_now          timestamptz,
+  p_stale_before timestamptz
+)
+returns table (
+  subscription_count     bigint,
+  open_count             bigint,
+  due_now_count          bigint,
+  stalled_count          bigint,
+  retrying_count         bigint,
+  failed_count           bigint,
+  oldest_open_created_at timestamptz,
+  next_open_attempt_at   timestamptz,
+  recent_dispatches      jsonb
+)
+language sql stable as $$
+  select
+    (select count(*)::bigint from public.push_subscriptions),
+    (select count(*)::bigint from public.push_notification_dispatches
+       where completed_at is null),
+    (select count(*)::bigint from public.push_notification_dispatches
+       where completed_at is null and next_attempt_at <= p_now),
+    (select count(*)::bigint from public.push_notification_dispatches
+       where completed_at is null
+         and processing_started_at is not null
+         and processing_started_at <= p_stale_before),
+    (select count(*)::bigint from public.push_notification_dispatches
+       where completed_at is null and attempt_count > 0),
+    (select count(*)::bigint from public.push_notification_dispatches
+       where completed_at is not null and last_error is not null),
+    (select min(created_at) from public.push_notification_dispatches
+       where completed_at is null),
+    (select min(next_attempt_at) from public.push_notification_dispatches
+       where completed_at is null),
+    coalesce(
+      (select jsonb_agg(t) from (
+         select idempotency_key, order_id, attempt_count, created_at,
+                next_attempt_at, last_attempt_at, processing_started_at,
+                completed_at, last_error
+         from public.push_notification_dispatches
+         where completed_at is null or last_error is not null
+         order by created_at desc
+         limit 5
+       ) t),
+      '[]'::jsonb
+    )
+$$;
+
+revoke execute on function public.get_storefront_push_queue_snapshot(timestamptz, timestamptz)
+  from public, anon, authenticated;
+grant execute on function public.get_storefront_push_queue_snapshot(timestamptz, timestamptz)
+  to service_role;
+
+-- Phase 42: durable checkout idempotency binding.
+
+alter table public.checkout_reservations
+  add column if not exists request_hash text,
+  add column if not exists order_id bigint references public.orders(id),
+  add column if not exists public_token text,
+  add column if not exists order_number text,
+  add column if not exists pickup_code text,
+  add column if not exists last_error text;
+
+create index if not exists checkout_reservations_order_id_idx
+  on public.checkout_reservations (order_id)
+  where order_id is not null;
+
+create or replace function public.create_storefront_order_for_checkout(
+  p_idempotency_key text,
+  p_request_hash    text,
+  p_public_token    text,
+  p_pickup_code     text,
+  p_device_id       text,
+  p_customer_name   text,
+  p_customer_phone  text,
+  p_notes           text,
+  p_service_date    date,
+  p_promised_at     timestamptz,
+  p_total_amount    integer,
+  p_items           jsonb
+)
+returns table (
+  id           bigint,
+  order_number text,
+  public_token text,
+  pickup_code  text
+)
+language plpgsql
+as $$
+declare
+  v_order_id bigint;
+  v_order_number text;
+  v_updated_count integer;
+begin
+  if p_idempotency_key is null or btrim(p_idempotency_key) = '' then
+    raise exception 'idempotency_key_required';
+  end if;
+
+  insert into public.orders (
+    public_token, pickup_code, device_id, customer_name, customer_phone,
+    notes, status, payment_status, payment_provider, service_date, promised_at, total_amount
+  ) values (
+    p_public_token, p_pickup_code, p_device_id, p_customer_name, p_customer_phone,
+    p_notes, 'new', 'pending', 'pesapal', p_service_date, p_promised_at, p_total_amount
+  )
+  returning orders.id, orders.order_number into v_order_id, v_order_number;
+
+  insert into public.order_items (order_id, menu_item_id, menu_item_name, quantity, unit_price)
+  select
+    v_order_id,
+    (item ->> 'menu_item_id')::bigint,
+    item ->> 'menu_item_name',
+    (item ->> 'quantity')::integer,
+    (item ->> 'unit_price')::integer
+  from jsonb_array_elements(p_items) as item;
+
+  update public.checkout_reservations
+  set
+    request_hash = coalesce(request_hash, p_request_hash),
+    order_id = v_order_id,
+    public_token = p_public_token,
+    order_number = v_order_number,
+    pickup_code = p_pickup_code,
+    last_error = null
+  where idempotency_key = p_idempotency_key
+    and status = 'processing'
+    and order_id is null
+    and (request_hash is null or request_hash = p_request_hash);
+
+  get diagnostics v_updated_count = row_count;
+
+  if v_updated_count <> 1 then
+    raise exception 'checkout_reservation_claim_missing_or_mismatched';
+  end if;
+
+  return query select v_order_id, v_order_number, p_public_token, p_pickup_code;
+end;
+$$;
+
+revoke execute
+  on function public.create_storefront_order_for_checkout(text, text, text, text, text, text, text, text, date, timestamptz, integer, jsonb)
+  from public, anon, authenticated;
+grant execute
+  on function public.create_storefront_order_for_checkout(text, text, text, text, text, text, text, text, date, timestamptz, integer, jsonb)
+  to service_role;
 
 commit;

@@ -5,7 +5,7 @@ import { adjustInventoryItemAction, saveInventoryItemAction } from "@/lib/ops/ac
 import { OperationsSchemaMissingError } from "@/lib/ops/errors";
 import { getInventoryPageData } from "@/lib/ops/queries";
 import { DailyStockRow, ProcessingBatchRecord } from "@/lib/ops/types";
-import { formatDateTime, formatServiceDate } from "@/lib/ops/utils";
+import { formatDateTime, formatServiceDate, getDailyStockWarningLevel } from "@/lib/ops/utils";
 
 function getFirstValue(value?: string | string[]) {
   return Array.isArray(value) ? value[0] : value;
@@ -120,17 +120,41 @@ export default async function InventoryPage({
         </div>
         <div className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
           {dailyStock.map((row: DailyStockRow) => {
-            const fallbackFinishedQuantity = row.isInitialized ? 0 : finishedStockByPortionCode.get(row.portionCode) ?? 0;
+            const fallbackFinishedQuantity = row.isInitialized
+              ? 0
+              : Math.max(row.remainingQuantity, finishedStockByPortionCode.get(row.portionCode) ?? 0);
             const displayStarting = row.isInitialized ? row.startingQuantity : fallbackFinishedQuantity;
             const displayRemaining = row.isInitialized ? row.remainingQuantity : fallbackFinishedQuantity;
-            const badgeLabel = row.isInitialized ? (row.isLowStock ? "low" : "healthy") : fallbackFinishedQuantity > 0 ? "frozen stock" : "not set";
-            const badgeClasses = row.isInitialized
-              ? row.isLowStock
-                ? "bg-[#FDECEC] text-[#D32F2F]"
-                : "bg-[#ECFDF3] text-[#15803D]"
+            const warningLevel = row.isInitialized ? row.stockWarningLevel : getDailyStockWarningLevel(displayRemaining);
+            const badgeLabel = row.isInitialized
+              ? warningLevel === "empty"
+                ? "sold out"
+                : warningLevel === "critical"
+                  ? "critical"
+                : warningLevel === "elevated"
+                  ? "act now"
+                  : warningLevel === "low"
+                    ? "priority"
+                    : "healthy"
               : fallbackFinishedQuantity > 0
-                ? "bg-[#FFF7ED] text-[#C2410C]"
-                : "bg-[#F3F4F6] text-[#6B7280]";
+                ? warningLevel === "critical"
+                  ? "critical"
+                  : warningLevel === "elevated"
+                  ? "act now"
+                  : warningLevel === "low"
+                    ? "priority"
+                    : "frozen stock"
+                : "not set";
+            const badgeClasses =
+              warningLevel === "empty" || warningLevel === "critical"
+                ? "bg-[#FDECEC] text-[#D32F2F]"
+                : warningLevel === "elevated" || warningLevel === "low"
+                  ? "bg-[#FFF7ED] text-[#C2410C]"
+                  : row.isInitialized
+                    ? "bg-[#ECFDF3] text-[#15803D]"
+                    : fallbackFinishedQuantity > 0
+                      ? "bg-[#EEF2F6] text-[#4B5563]"
+                      : "bg-[#F3F4F6] text-[#6B7280]";
 
             return (
               <article key={row.portionTypeId} className="rounded-[24px] border border-[#E4E7EB] bg-white px-4 py-4">

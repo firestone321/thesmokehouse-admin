@@ -10,6 +10,7 @@ import type { DashboardIssueRecord, DashboardSnapshot, OrderListItem } from "@/l
 import { formatCurrency, formatDateTime, formatServiceDate } from "@/lib/ops/utils";
 
 const RECONCILE_DEBOUNCE_MS = 150;
+const RECONCILE_BATCH_LIMIT = 50;
 const DASHBOARD_ACTIVE_ORDERS_LIMIT = 100;
 const DASHBOARD_TODAY_ORDERS_LIMIT = 100;
 const activeOrderStatuses = new Set(["new", "confirmed", "in_prep", "ready"]);
@@ -24,11 +25,11 @@ type DashboardPayload =
     }
   | null;
 
-type OrderPayload =
+type ReconcilePayload =
   | {
       ok?: boolean;
       data?: {
-        order?: OrderListItem;
+        orders?: OrderListItem[];
       };
       message?: string;
     }
@@ -174,23 +175,20 @@ async function fetchDashboardSnapshot() {
   return payload.data.snapshot;
 }
 
-async function fetchOrderSnapshot(orderId: string) {
-  const response = await fetch(`/api/admin/orders/${encodeURIComponent(orderId)}`, {
-    method: "GET",
-    headers: { Accept: "application/json" },
+async function fetchOrdersReconcile(orderIds: string[]) {
+  const response = await fetch("/api/admin/orders/reconcile", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ orderIds }),
     cache: "no-store"
   });
-  const payload = (await response.json().catch(() => null)) as OrderPayload;
-
-  if (response.status === 404) {
-    return null;
-  }
+  const payload = (await response.json().catch(() => null)) as ReconcilePayload;
 
   if (!response.ok || !payload?.ok) {
-    throw new Error(payload?.message ?? "Unable to load order.");
+    throw new Error(payload?.message ?? "Unable to reconcile orders.");
   }
 
-  return payload.data?.order ?? null;
+  return payload.data?.orders ?? [];
 }
 
 function OrderPanel({
@@ -257,7 +255,8 @@ export function LiveDashboard({
   initialRevenueSeries: AnalyticsSeries;
 }) {
   const [localSnapshot, setLocalSnapshot] = useState<DashboardSnapshot>(snapshot);
-  const reconcileTimeoutsRef = useRef<Map<string, number>>(new Map());
+  const pendingReconcileIdsRef = useRef<Set<string>>(new Set());
+  const reconcileBatchTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     setLocalSnapshot(snapshot);
@@ -265,11 +264,12 @@ export function LiveDashboard({
 
   useEffect(() => {
     return () => {
-      for (const timeoutId of reconcileTimeoutsRef.current.values()) {
-        window.clearTimeout(timeoutId);
+      if (reconcileBatchTimeoutRef.current !== null) {
+        window.clearTimeout(reconcileBatchTimeoutRef.current);
       }
 
-      reconcileTimeoutsRef.current.clear();
+      pendingReconcileIdsRef.current.clear();
+      reconcileBatchTimeoutRef.current = null;
     };
   }, []);
 
@@ -277,24 +277,66 @@ export function LiveDashboard({
     setLocalSnapshot(await fetchDashboardSnapshot());
   };
 
-  const reconcileOrder = async (orderId: string) => {
-    const order = await fetchOrderSnapshot(orderId);
-
+  const applyReconciledOrders = (ids: string[], orders: OrderListItem[]) => {
+    const reconciledById = new Map(orders.map((order) => [String(order.id), order]));
     setLocalSnapshot((current) => {
-      if (!order) {
-        return rebuildDashboardSnapshot(current, removeOrder(current.activeOrders, orderId), removeOrder(current.todaysOrders, orderId));
-      }
+      let activeOrders = current.activeOrders;
+      let todaysOrders = current.todaysOrders;
 
-      const activeOrders = activeOrderStatuses.has(order.status)
-        ? upsertCappedOrder(current.activeOrders, order, DASHBOARD_ACTIVE_ORDERS_LIMIT)
-        : removeOrder(current.activeOrders, orderId);
-      const todaysOrders =
-        getUgandaServiceDateFromTimestamp(order.createdAt) === current.serviceDate
-          ? upsertCappedOrder(current.todaysOrders, order, DASHBOARD_TODAY_ORDERS_LIMIT)
-          : removeOrder(current.todaysOrders, orderId);
+      for (const orderId of ids) {
+        const order = reconciledById.get(orderId);
+        if (!order) {
+          activeOrders = removeOrder(activeOrders, orderId);
+          todaysOrders = removeOrder(todaysOrders, orderId);
+          continue;
+        }
+
+        activeOrders = activeOrderStatuses.has(order.status)
+          ? upsertCappedOrder(activeOrders, order, DASHBOARD_ACTIVE_ORDERS_LIMIT)
+          : removeOrder(activeOrders, orderId);
+        todaysOrders =
+          getUgandaServiceDateFromTimestamp(order.createdAt) === current.serviceDate
+            ? upsertCappedOrder(todaysOrders, order, DASHBOARD_TODAY_ORDERS_LIMIT)
+            : removeOrder(todaysOrders, orderId);
+      }
 
       return rebuildDashboardSnapshot(current, activeOrders, todaysOrders);
     });
+  };
+
+  const flushReconcileBatch = async () => {
+    const ids = Array.from(pendingReconcileIdsRef.current);
+    pendingReconcileIdsRef.current.clear();
+    reconcileBatchTimeoutRef.current = null;
+
+    if (ids.length === 0) {
+      return;
+    }
+
+    const orders = await fetchOrdersReconcile(ids);
+    applyReconciledOrders(ids, orders);
+  };
+
+  const scheduleBatchReconcile = (orderId: string) => {
+    pendingReconcileIdsRef.current.add(orderId);
+
+    if (pendingReconcileIdsRef.current.size > RECONCILE_BATCH_LIMIT) {
+      pendingReconcileIdsRef.current.clear();
+      if (reconcileBatchTimeoutRef.current !== null) {
+        window.clearTimeout(reconcileBatchTimeoutRef.current);
+        reconcileBatchTimeoutRef.current = null;
+      }
+      void refreshDashboard();
+      return;
+    }
+
+    if (reconcileBatchTimeoutRef.current !== null) {
+      return;
+    }
+
+    reconcileBatchTimeoutRef.current = window.setTimeout(() => {
+      void flushReconcileBatch();
+    }, RECONCILE_DEBOUNCE_MS);
   };
 
   const scheduleReconcile = (event: OrdersRealtimeEvent) => {
@@ -310,16 +352,7 @@ export function LiveDashboard({
       return;
     }
 
-    if (reconcileTimeoutsRef.current.has(event.orderId)) {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      reconcileTimeoutsRef.current.delete(event.orderId!);
-      void reconcileOrder(event.orderId!);
-    }, RECONCILE_DEBOUNCE_MS);
-
-    reconcileTimeoutsRef.current.set(event.orderId, timeoutId);
+    scheduleBatchReconcile(event.orderId);
   };
 
   useOrdersRealtime({
@@ -419,23 +452,38 @@ export function LiveDashboard({
             </div>
             <div className="mt-4 space-y-3">
               {localSnapshot.lowStockItems.length > 0 ? (
-                localSnapshot.lowStockItems.map((item) => (
-                  <article key={item.portionTypeId} className="rounded-[22px] bg-[#F8FAFB] px-4 py-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <h3 className="text-base font-semibold text-[#111418]">
-                          {item.portionName}{item.portionLabel ? ` (${item.portionLabel})` : ""}
-                        </h3>
-                        <p className="text-sm text-[#6B7280]">
-                          Remaining {item.remainingQuantity} of {item.startingQuantity}
-                        </p>
+                localSnapshot.lowStockItems.map((item) => {
+                  const badgeLabel =
+                    item.stockWarningLevel === "empty"
+                      ? "empty"
+                      : item.stockWarningLevel === "critical"
+                        ? "critical"
+                      : item.stockWarningLevel === "elevated"
+                        ? "act now"
+                        : "priority";
+                  const badgeClasses =
+                    item.stockWarningLevel === "low"
+                      ? "bg-[#FFF7ED] text-[#C2410C]"
+                      : "bg-[#FDECEC] text-[#D32F2F]";
+
+                  return (
+                    <article key={item.portionTypeId} className="rounded-[22px] bg-[#F8FAFB] px-4 py-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <h3 className="text-base font-semibold text-[#111418]">
+                            {item.portionName}{item.portionLabel ? ` (${item.portionLabel})` : ""}
+                          </h3>
+                          <p className="text-sm text-[#6B7280]">
+                            Remaining {item.remainingQuantity} of {item.startingQuantity}
+                          </p>
+                        </div>
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${badgeClasses}`}>
+                          {badgeLabel}
+                        </span>
                       </div>
-                      <span className="rounded-full bg-[#FDECEC] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#D32F2F]">
-                        low
-                      </span>
-                    </div>
-                  </article>
-                ))
+                    </article>
+                  );
+                })
               ) : (
                 <div className="rounded-[22px] bg-[#F8FAFB] px-4 py-4 text-sm leading-6 text-[#6B7280]">
                   No low-stock portion rows are currently flagged for today.

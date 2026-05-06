@@ -6,6 +6,7 @@ import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
 const ORDERS_REALTIME_CHANNEL_NAME = "ops-orders-realtime-v1";
 const FALLBACK_POLL_INTERVAL_MS = 10_000;
 const SUBSCRIPTION_TIMEOUT_MS = 5_000;
+const BATCH_FLUSH_MS = 400;
 
 export type OrdersRealtimeEvent = {
   type: "INSERT" | "UPDATE" | "DELETE";
@@ -48,6 +49,14 @@ class OrdersRealtimeManager {
   private pollingIntervalId: number | null = null;
   private subscriptionTimeoutId: number | null = null;
 
+  // Batch state — events accumulate here until the flush timer fires.
+  private batchTimerId: number | null = null;
+  private pendingRefreshIds = new Set<string>();
+  private pendingInsertIds = new Set<string>();
+  private pendingFullRefresh = false;
+  private pageHidden = false;
+  private visibilityHandler: (() => void) | null = null;
+
   subscribe(options: OrdersRealtimeSubscription) {
     const consumer: OrdersRealtimeConsumer = {
       id: `orders-realtime-consumer-${++consumerSequence}`,
@@ -80,60 +89,125 @@ class OrdersRealtimeManager {
     }
 
     this.channelCloseExpected = false;
+    this.setupVisibility();
+
     const handleOrdersInsert = (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
-      this.notifyInsert(this.toRealtimeEvent("orders", "INSERT", payload));
+      const event = this.toRealtimeEvent("orders", "INSERT", payload);
+      if (event.orderId) {
+        this.pendingInsertIds.add(event.orderId);
+        this.armBatchTimer();
+      }
     };
-    const handleOrdersRefresh = (
-      type: Exclude<OrdersRealtimeEvent["type"], "INSERT">,
-      payload: RealtimePostgresChangesPayload<Record<string, unknown>>
-    ) => {
-      this.notifyRefresh(this.toRealtimeEvent("orders", type, payload));
+
+    const handleOrdersUpdate = (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
+      const event = this.toRealtimeEvent("orders", "UPDATE", payload);
+      if (event.orderId) {
+        this.pendingRefreshIds.add(event.orderId);
+      } else {
+        this.pendingFullRefresh = true;
+      }
+      this.armBatchTimer();
     };
-    const handleOrderItemsRefresh = (
+
+    const handleOrdersDelete = (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
+      // Pass through immediately — consumer removes from local state with no DB fetch.
+      this.notifyRefresh(this.toRealtimeEvent("orders", "DELETE", payload));
+    };
+
+    const handleOrderItemsChange = (
       type: OrdersRealtimeEvent["type"],
       payload: RealtimePostgresChangesPayload<Record<string, unknown>>
     ) => {
-      this.notifyRefresh(this.toRealtimeEvent("order_items", type, payload));
+      const event = this.toRealtimeEvent("order_items", type, payload);
+      if (event.orderId) {
+        this.pendingRefreshIds.add(event.orderId);
+      } else {
+        this.pendingFullRefresh = true;
+      }
+      this.armBatchTimer();
     };
 
     this.channel = this.supabase
       .channel(ORDERS_REALTIME_CHANNEL_NAME)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "orders" }, handleOrdersInsert)
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "orders" },
-        (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) =>
-        handleOrdersRefresh("UPDATE", payload)
-      )
-      .on(
-        "postgres_changes",
-        { event: "DELETE", schema: "public", table: "orders" },
-        (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) =>
-        handleOrdersRefresh("DELETE", payload)
-      )
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "orders" }, handleOrdersUpdate)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "orders" }, handleOrdersDelete)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "order_items" },
-        (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) =>
-        handleOrderItemsRefresh("INSERT", payload)
+        (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => handleOrderItemsChange("INSERT", payload)
       )
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "order_items" },
-        (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) =>
-        handleOrderItemsRefresh("UPDATE", payload)
+        (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => handleOrderItemsChange("UPDATE", payload)
       )
       .on(
         "postgres_changes",
         { event: "DELETE", schema: "public", table: "order_items" },
-        (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) =>
-        handleOrderItemsRefresh("DELETE", payload)
+        (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => handleOrderItemsChange("DELETE", payload)
       )
       .subscribe((status: OrdersRealtimeStatus) => {
         this.handleStatus(status);
       });
 
     this.armSubscriptionTimeout();
+  }
+
+  private setupVisibility() {
+    if (this.visibilityHandler || typeof document === "undefined") return;
+    this.pageHidden = document.visibilityState === "hidden";
+    this.visibilityHandler = () => {
+      const nowHidden = document.visibilityState === "hidden";
+      if (this.pageHidden && !nowHidden) {
+        this.pageHidden = false;
+        // Tab became visible — flush any work that built up while hidden.
+        if (this.pendingRefreshIds.size > 0 || this.pendingInsertIds.size > 0 || this.pendingFullRefresh) {
+          this.flushBatch();
+        }
+      } else {
+        this.pageHidden = nowHidden;
+      }
+    };
+    document.addEventListener("visibilitychange", this.visibilityHandler);
+  }
+
+  private teardownVisibility() {
+    if (this.visibilityHandler && typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", this.visibilityHandler);
+      this.visibilityHandler = null;
+    }
+    this.pageHidden = false;
+  }
+
+  private armBatchTimer() {
+    if (this.pageHidden) return; // Accumulate silently; flush on visibility restore.
+    if (this.batchTimerId !== null) return; // Timer already running.
+    this.batchTimerId = window.setTimeout(() => {
+      this.batchTimerId = null;
+      this.flushBatch();
+    }, BATCH_FLUSH_MS);
+  }
+
+  private flushBatch() {
+    if (this.batchTimerId !== null) {
+      window.clearTimeout(this.batchTimerId);
+      this.batchTimerId = null;
+    }
+
+    for (const orderId of this.pendingInsertIds) {
+      this.notifyInsert({ type: "INSERT", table: "orders", orderId });
+    }
+    for (const orderId of this.pendingRefreshIds) {
+      this.notifyRefresh({ type: "UPDATE", table: "orders", orderId });
+    }
+    if (this.pendingFullRefresh) {
+      this.notifyRefresh({ type: "UPDATE", table: "orders", orderId: null });
+    }
+
+    this.pendingInsertIds.clear();
+    this.pendingRefreshIds.clear();
+    this.pendingFullRefresh = false;
   }
 
   private handleStatus(status: OrdersRealtimeStatus) {
@@ -177,11 +251,10 @@ class OrdersRealtimeManager {
     this.fallbackReason = reason;
     this.notifyFallbackStart(reason);
     this.pollingIntervalId = window.setInterval(() => {
-      this.notifyRefresh({
-        type: "UPDATE",
-        table: "orders",
-        orderId: null
-      });
+      // Skip while hidden — resume on next visibility restore.
+      if (!this.pageHidden) {
+        this.notifyRefresh({ type: "UPDATE", table: "orders", orderId: null });
+      }
     }, FALLBACK_POLL_INTERVAL_MS);
   }
 
@@ -199,6 +272,15 @@ class OrdersRealtimeManager {
   private teardownChannel() {
     this.clearSubscriptionTimeout();
     this.stopPolling();
+    this.teardownVisibility();
+
+    if (this.batchTimerId !== null) {
+      window.clearTimeout(this.batchTimerId);
+      this.batchTimerId = null;
+    }
+    this.pendingInsertIds.clear();
+    this.pendingRefreshIds.clear();
+    this.pendingFullRefresh = false;
 
     if (!this.channel) {
       return;

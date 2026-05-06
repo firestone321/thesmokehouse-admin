@@ -86,9 +86,20 @@ export function toOptionalText(value: FormDataEntryValue | null) {
   return normalized.length > 0 ? normalized : null;
 }
 
-export function isDailyStockLow(startingQuantity: number, remainingQuantity: number) {
-  if (startingQuantity <= 0) return false;
+export const DAILY_STOCK_LOW_THRESHOLD = 30;
+export const DAILY_STOCK_ELEVATED_THRESHOLD = 20;
+export const DAILY_STOCK_CRITICAL_THRESHOLD = 15;
 
-  const threshold = Math.max(1, Math.floor(startingQuantity * 0.25));
-  return remainingQuantity <= threshold;
+export type DailyStockWarningLevel = "healthy" | "low" | "elevated" | "critical" | "empty";
+
+export function getDailyStockWarningLevel(remainingQuantity: number): DailyStockWarningLevel {
+  if (remainingQuantity <= 0) return "empty";
+  if (remainingQuantity <= DAILY_STOCK_CRITICAL_THRESHOLD) return "critical";
+  if (remainingQuantity <= DAILY_STOCK_ELEVATED_THRESHOLD) return "elevated";
+  if (remainingQuantity <= DAILY_STOCK_LOW_THRESHOLD) return "low";
+  return "healthy";
+}
+
+export function isDailyStockLow(_startingQuantity: number, remainingQuantity: number) {
+  return getDailyStockWarningLevel(remainingQuantity) !== "healthy";
 }

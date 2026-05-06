@@ -222,6 +222,7 @@ export interface DailyStockRow {
   remainingQuantity: number;
   isInitialized: boolean;
   isLowStock: boolean;
+  stockWarningLevel: "healthy" | "low" | "elevated" | "critical" | "empty";
 }
 
 export interface MenuCategoryRecord {
