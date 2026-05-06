@@ -31,6 +31,8 @@ import {
   OrderListItem,
   OrderStatus,
   OrderStatusEventRecord,
+  BusinessTruthHealthSection,
+  BusinessTruthHealthSnapshot,
   PushQueueDispatchPreview,
   PushQueueSnapshot
 } from "@/lib/ops/types";
@@ -231,8 +233,8 @@ function normalizeNumber(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function normalizeCount(value: number | null) {
-  return typeof value === "number" ? value : 0;
+function normalizeCount(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 function normalizeOrderListLimit(value: unknown) {
@@ -800,6 +802,37 @@ type StorefrontPushQueueSnapshotRow = {
   recent_dispatches: StorefrontPushDispatchSummaryRow[];
 };
 
+type BusinessTruthHealthSnapshotRow = {
+  generated_at: string;
+  critical_count: number;
+  warning_count: number;
+  sections: unknown;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeHealthSections(value: unknown): BusinessTruthHealthSection[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter(isRecord)
+    .map((section) => ({
+      key: typeof section.key === "string" ? section.key : "unknown",
+      title: typeof section.title === "string" ? section.title : "Unknown issue",
+      severity:
+        section.severity === "critical" || section.severity === "warning" || section.severity === "info"
+          ? section.severity
+          : "info",
+      count: normalizeCount(section.count),
+      description: typeof section.description === "string" ? section.description : "",
+      items: Array.isArray(section.items) ? section.items.filter(isRecord) : []
+    }));
+}
+
 export async function getPushQueueSnapshots(): Promise<PushQueueSnapshot[]> {
   noStore();
 
@@ -867,6 +900,33 @@ export async function getPushQueueSnapshots(): Promise<PushQueueSnapshot[]> {
   };
 
   return [adminQueue, storefrontQueue];
+}
+
+export async function getBusinessTruthHealthSnapshot(): Promise<BusinessTruthHealthSnapshot> {
+  noStore();
+
+  const supabase = createAdminSupabaseClient();
+  const now = new Date();
+  const serviceDate = getUgandaServiceDate();
+
+  const { data, error } = await supabase.rpc("get_business_truth_health_snapshot", {
+    p_now: now.toISOString(),
+    p_service_date: serviceDate
+  });
+
+  ensureNoError(error, "Unable to load business truth health snapshot");
+
+  const row = (data as unknown as BusinessTruthHealthSnapshotRow[] | null)?.[0];
+  if (!row) {
+    throw new Error("Business truth health RPC returned no data. Ensure Phase 44 is applied to Supabase.");
+  }
+
+  return {
+    generatedAt: row.generated_at,
+    criticalCount: normalizeCount(row.critical_count),
+    warningCount: normalizeCount(row.warning_count),
+    sections: normalizeHealthSections(row.sections)
+  };
 }
 
 export async function getOrderListItemById(orderId: number | string): Promise<OrderListItem | null> {

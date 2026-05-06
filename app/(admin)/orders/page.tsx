@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { SchemaSetupNotice } from "@/components/admin/schema-setup-notice";
+import { BusinessTruthHealthCard } from "@/components/orders/business-truth-health-card";
 import { PushQueueHealthCard } from "@/components/orders/push-queue-health-card";
 import { LiveOrdersPanel } from "@/components/orders/live-orders-panel";
+import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import { OperationsSchemaMissingError } from "@/lib/ops/errors";
-import { getOrdersPageData, getPushQueueSnapshots } from "@/lib/ops/queries";
+import { getBusinessTruthHealthSnapshot, getOrdersPageData, getPushQueueSnapshots } from "@/lib/ops/queries";
 import { processPendingPaymentRecoveriesAction } from "@/lib/ops/payment-recovery-actions";
 
 function getFirstValue(value?: string | string[]) {
@@ -20,13 +22,17 @@ export default async function OrdersPage({
   const search = getFirstValue(params.search) ?? "";
   const pushQueueStatus = getFirstValue(params.push_queue_status);
   const pushQueueMessage = getFirstValue(params.push_queue_message);
+  const adminProfile = await requireApprovedAdminRole();
+  const canViewBusinessTruthHealth = adminProfile.role === "admin" || adminProfile.role === "manager";
   let data;
   let pushQueues;
+  let businessTruthHealth = null;
 
   try {
-    [data, pushQueues] = await Promise.all([
+    [data, pushQueues, businessTruthHealth] = await Promise.all([
       getOrdersPageData({ status, search }),
-      getPushQueueSnapshots()
+      getPushQueueSnapshots(),
+      canViewBusinessTruthHealth ? getBusinessTruthHealthSnapshot() : Promise.resolve(null)
     ]);
   } catch (error) {
     if (error instanceof OperationsSchemaMissingError) {
@@ -130,6 +136,7 @@ export default async function OrdersPage({
       ) : null}
 
       <PushQueueHealthCard queues={pushQueues} returnTo={returnTo} />
+      {businessTruthHealth ? <BusinessTruthHealthCard snapshot={businessTruthHealth} /> : null}
       <LiveOrdersPanel orders={orders} status={status} search={search} limit={limit} />
     </div>
   );

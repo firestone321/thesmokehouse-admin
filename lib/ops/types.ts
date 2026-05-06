@@ -407,3 +407,21 @@ export interface PushQueueSnapshot {
   nextAttemptAt: string | null;
   recentDispatches: PushQueueDispatchPreview[];
 }
+
+export type BusinessTruthHealthSeverity = "critical" | "warning" | "info";
+
+export interface BusinessTruthHealthSection {
+  key: string;
+  title: string;
+  severity: BusinessTruthHealthSeverity;
+  count: number;
+  description: string;
+  items: Array<Record<string, unknown>>;
+}
+
+export interface BusinessTruthHealthSnapshot {
+  generatedAt: string;
+  criticalCount: number;
+  warningCount: number;
+  sections: BusinessTruthHealthSection[];
+}
