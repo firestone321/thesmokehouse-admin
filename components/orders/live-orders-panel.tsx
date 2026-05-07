@@ -268,7 +268,7 @@ export function LiveOrdersPanel({
                     {order.customerName ?? "Walk-in"}
                     {order.customerPhone ? ` | ${order.customerPhone}` : ""}
                   </p>
-                  <OrderItemsSummary items={order.items} fallback={order.itemSummary} />
+                  <OrderItemsSummary items={order.items} fallback={order.itemSummary} variant="orders-list" />
                   {order.fulfillmentReviewRequired ? (
                     <p className="max-w-2xl rounded-[18px] border border-[#F7D2B1] bg-[#FFF9F2] px-3 py-2 text-sm font-semibold leading-6 text-[#8A3F16]">
                       {order.fulfillmentReviewReason ?? order.stockReservationError ?? "Payment is paid, but stock reservation needs staff review."}

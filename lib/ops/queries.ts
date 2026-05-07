@@ -97,7 +97,12 @@ const orderListSelection = `
     line_total,
     cart_group_id,
     cart_item_role,
-    cart_sort_order
+    cart_sort_order,
+    menu_items (
+      menu_categories (
+        name
+      )
+    )
   )
 `;
 
@@ -327,6 +332,7 @@ function mapOrderItemRecord(item: any): OrderItemRecord {
     quantity,
     unitPrice,
     lineTotal: normalizeNumber(item.line_total ?? quantity * unitPrice),
+    menuCategoryName: item.menu_items?.menu_categories?.name ?? null,
     cartGroupId: item.cart_group_id ?? null,
     cartItemRole: item.cart_item_role === "main" || item.cart_item_role === "addon" ? item.cart_item_role : null,
     cartSortOrder: item.cart_sort_order === null || item.cart_sort_order === undefined ? null : normalizeNumber(item.cart_sort_order)
@@ -1039,7 +1045,12 @@ export async function getOrderDetail(orderId: number | string): Promise<OrderDet
           line_total,
           cart_group_id,
           cart_item_role,
-          cart_sort_order
+          cart_sort_order,
+          menu_items (
+            menu_categories (
+              name
+            )
+          )
         )
       `
       )

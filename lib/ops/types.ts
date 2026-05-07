@@ -293,6 +293,7 @@ export interface OrderItemRecord {
   quantity: number;
   unitPrice: number;
   lineTotal: number;
+  menuCategoryName: string | null;
   cartGroupId: string | null;
   cartItemRole: "main" | "addon" | null;
   cartSortOrder: number | null;
