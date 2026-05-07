@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { RevenueAnalyticsCard } from "@/components/dashboard/revenue-analytics-card";
 import { useOrdersRealtime } from "@/components/ops/use-orders-realtime";
+import { OrderItemsSummary } from "@/components/orders/order-items-display";
 import type { OrdersRealtimeEvent } from "@/lib/ops/orders-realtime";
 import type { AnalyticsSeries } from "@/lib/analytics/types";
 import type { DashboardIssueRecord, DashboardSnapshot, OrderListItem } from "@/lib/ops/types";
@@ -224,7 +225,9 @@ function OrderPanel({
                 </div>
                 <p className="text-sm font-semibold text-[#111418]">{formatCurrency(order.totalAmount)}</p>
               </div>
-              <p className="mt-3 text-sm leading-6 text-[#6B7280]">{order.itemSummary}</p>
+              <div className="mt-3">
+                <OrderItemsSummary items={order.items} fallback={order.itemSummary} />
+              </div>
               <div className="mt-3 flex flex-wrap gap-3 text-sm text-[#6B7280]">
                 <span>{order.status.replace("_", " ")}</span>
                 <span>{formatDateTime(order.promisedAt)}</span>

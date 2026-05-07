@@ -283,6 +283,7 @@ export interface OrderListItem {
   notes: string | null;
   itemSummary: string;
   itemCount: number;
+  items: OrderItemRecord[];
 }
 
 export interface OrderItemRecord {
@@ -292,6 +293,9 @@ export interface OrderItemRecord {
   quantity: number;
   unitPrice: number;
   lineTotal: number;
+  cartGroupId: string | null;
+  cartItemRole: "main" | "addon" | null;
+  cartSortOrder: number | null;
 }
 
 export interface OrderStatusEventRecord {

@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { SchemaSetupNotice } from "@/components/admin/schema-setup-notice";
+import { OrderItemsDetail } from "@/components/orders/order-items-display";
 import { addOrderNoteAction, completeOrderWithPickupCodeAction, updateOrderStatusAction } from "@/lib/ops/actions";
 import { OperationsSchemaMissingError } from "@/lib/ops/errors";
 import { reverifyOrderPaymentAction } from "@/lib/ops/payment-reverify";
@@ -140,22 +141,7 @@ export default async function OrderDetailPage({
               <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Line items</p>
               <h2 className="mt-2 text-xl font-semibold">What this order contains</h2>
             </div>
-            <div className="mt-4 space-y-3">
-              {order.items.map((item) => (
-                <article key={item.id} className="rounded-[22px] bg-[#F8FAFB] px-4 py-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <h3 className="font-semibold text-[#111418]">{item.menuItemName}</h3>
-                      <p className="mt-1 text-sm text-[#6B7280]">Qty {item.quantity}</p>
-                    </div>
-                    <div className="text-right text-sm text-[#6B7280]">
-                      <p>{formatCurrency(item.unitPrice)} each</p>
-                      <p className="mt-1 font-semibold text-[#111418]">{formatCurrency(item.lineTotal)}</p>
-                    </div>
-                  </div>
-                </article>
-              ))}
-            </div>
+            <OrderItemsDetail items={order.items} />
           </section>
 
           <section className="surface-card rounded-[32px] p-5">

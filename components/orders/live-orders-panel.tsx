@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useOrdersRealtime } from "@/components/ops/use-orders-realtime";
+import { OrderItemsSummary } from "@/components/orders/order-items-display";
 import type { OrdersRealtimeEvent } from "@/lib/ops/orders-realtime";
 import type { OrderListItem } from "@/lib/ops/types";
 import { formatCurrency, formatDateTime } from "@/lib/ops/utils";
@@ -267,7 +268,7 @@ export function LiveOrdersPanel({
                     {order.customerName ?? "Walk-in"}
                     {order.customerPhone ? ` | ${order.customerPhone}` : ""}
                   </p>
-                  <p className="text-sm leading-6 text-[#6B7280]">{order.itemSummary}</p>
+                  <OrderItemsSummary items={order.items} fallback={order.itemSummary} />
                   {order.fulfillmentReviewRequired ? (
                     <p className="max-w-2xl rounded-[18px] border border-[#F7D2B1] bg-[#FFF9F2] px-3 py-2 text-sm font-semibold leading-6 text-[#8A3F16]">
                       {order.fulfillmentReviewReason ?? order.stockReservationError ?? "Payment is paid, but stock reservation needs staff review."}

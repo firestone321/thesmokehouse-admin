@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { SchemaSetupNotice } from "@/components/admin/schema-setup-notice";
+import { OrderItemsSummary } from "@/components/orders/order-items-display";
 import { OperationsSchemaMissingError } from "@/lib/ops/errors";
 import { getOrderHistoryPageData } from "@/lib/ops/queries";
 import { formatCurrency, formatDateTime } from "@/lib/ops/utils";
@@ -176,7 +177,7 @@ export default async function OrderHistoryPage({
                         {order.customerPhone ? ` | ${order.customerPhone}` : ""}
                       </p>
 
-                      <p className="text-sm leading-6 text-[#6B7280]">{order.itemSummary}</p>
+                      <OrderItemsSummary items={order.items} fallback={order.itemSummary} />
 
                       {order.notes ? (
                         <p className="max-w-3xl rounded-[18px] border border-[#EEF2F6] bg-[#F8FAFB] px-3 py-2 text-sm leading-6 text-[#6B7280]">

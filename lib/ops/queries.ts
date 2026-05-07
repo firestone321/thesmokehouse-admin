@@ -62,7 +62,8 @@ const procurementMigrationFiles = [
   "db/phase-24-drinks-direct-sellable.sql",
   "db/phase-25-processing-posts-daily-stock.sql",
   "db/phase-35-shared-fries-inventory.sql",
-  "db/phase-38-menu-stock-finished-stock-fallback.sql"
+  "db/phase-38-menu-stock-finished-stock-fallback.sql",
+  "db/phase-45-grouped-order-item-presentation.sql"
 ];
 
 const DEFAULT_ORDER_LIST_LIMIT = 50;
@@ -88,8 +89,15 @@ const orderListSelection = `
   created_at,
   notes,
   order_items (
+    id,
+    menu_item_id,
     quantity,
-    menu_item_name
+    menu_item_name,
+    unit_price,
+    line_total,
+    cart_group_id,
+    cart_item_role,
+    cart_sort_order
   )
 `;
 
@@ -308,19 +316,38 @@ function isWithinLastHour(isoTimestamp: string | null | undefined) {
   return Date.now() - timestamp <= 60 * 60 * 1000;
 }
 
-function mapOrderItems(items: any[] | null | undefined) {
-  const normalized = Array.isArray(items) ? items : [];
-  const itemCount = normalized.reduce((sum, item) => sum + normalizeNumber(item.quantity), 0);
-  const itemSummary = normalized.map((item) => `${item.menu_item_name} x${item.quantity}`).join(", ");
+function mapOrderItemRecord(item: any): OrderItemRecord {
+  const quantity = normalizeNumber(item.quantity);
+  const unitPrice = normalizeNumber(item.unit_price);
 
   return {
+    id: normalizeNumber(item.id),
+    menuItemId: normalizeNumber(item.menu_item_id),
+    menuItemName: item.menu_item_name,
+    quantity,
+    unitPrice,
+    lineTotal: normalizeNumber(item.line_total ?? quantity * unitPrice),
+    cartGroupId: item.cart_group_id ?? null,
+    cartItemRole: item.cart_item_role === "main" || item.cart_item_role === "addon" ? item.cart_item_role : null,
+    cartSortOrder: item.cart_sort_order === null || item.cart_sort_order === undefined ? null : normalizeNumber(item.cart_sort_order)
+  };
+}
+
+function mapOrderItems(items: any[] | null | undefined) {
+  const normalized = Array.isArray(items) ? items : [];
+  const mappedItems = normalized.map(mapOrderItemRecord);
+  const itemCount = mappedItems.reduce((sum, item) => sum + item.quantity, 0);
+  const itemSummary = mappedItems.map((item) => `${item.menuItemName} x${item.quantity}`).join(", ");
+
+  return {
+    items: mappedItems,
     itemCount,
     itemSummary: itemSummary.length > 0 ? itemSummary : "No items"
   };
 }
 
 function mapOrderListItem(row: any): OrderListItem {
-  const { itemCount, itemSummary } = mapOrderItems(row.order_items);
+  const { items, itemCount, itemSummary } = mapOrderItems(row.order_items);
 
   return {
     id: normalizeNumber(row.id),
@@ -338,7 +365,8 @@ function mapOrderListItem(row: any): OrderListItem {
     createdAt: row.created_at,
     notes: row.notes,
     itemSummary,
-    itemCount
+    itemCount,
+    items
   };
 }
 
@@ -1008,7 +1036,10 @@ export async function getOrderDetail(orderId: number | string): Promise<OrderDet
           menu_item_name,
           quantity,
           unit_price,
-          line_total
+          line_total,
+          cart_group_id,
+          cart_item_role,
+          cart_sort_order
         )
       `
       )
@@ -1028,14 +1059,7 @@ export async function getOrderDetail(orderId: number | string): Promise<OrderDet
     return null;
   }
 
-  const items: OrderItemRecord[] = (orderResponse.data.order_items ?? []).map((item: any) => ({
-    id: normalizeNumber(item.id),
-    menuItemId: normalizeNumber(item.menu_item_id),
-    menuItemName: item.menu_item_name,
-    quantity: normalizeNumber(item.quantity),
-    unitPrice: normalizeNumber(item.unit_price),
-    lineTotal: normalizeNumber(item.line_total)
-  }));
+  const items: OrderItemRecord[] = (orderResponse.data.order_items ?? []).map(mapOrderItemRecord);
 
   const events: OrderStatusEventRecord[] = (eventsResponse.data ?? []).map((event: any) => ({
     id: normalizeNumber(event.id),
