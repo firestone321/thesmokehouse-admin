@@ -10,9 +10,10 @@ type AnalyticsOrderRow = {
   total_amount: number | null;
   created_at: string | null;
   completed_at: string | null;
+  paid_at: string | null;
 };
 
-const analyticsSelection = "status,payment_status,total_amount,created_at,completed_at";
+const analyticsSelection = "status,payment_status,total_amount,created_at,completed_at,paid_at";
 const analyticsPageSize = 1_000;
 
 async function createAnalyticsReadClient() {
@@ -24,7 +25,7 @@ async function createAnalyticsReadClient() {
 }
 
 async function fetchAnalyticsRows(input: {
-  timeColumn: "created_at" | "completed_at";
+  timeColumn: "created_at" | "completed_at" | "paid_at";
   startAt: string;
   endAt: string;
   revenueOnly?: boolean;
@@ -46,8 +47,12 @@ async function fetchAnalyticsRows(input: {
       query = query.not("completed_at", "is", null);
     }
 
+    if (input.timeColumn === "paid_at") {
+      query = query.not("paid_at", "is", null);
+    }
+
     if (input.revenueOnly) {
-      query = query.eq("status", "completed").eq("payment_status", "paid");
+      query = query.eq("payment_status", "paid");
     }
 
     const { data, error } = await query;
@@ -187,7 +192,7 @@ export async function getRevenueTodayTotal(reference = new Date()) {
     now: reference
   });
   const rows = await fetchAnalyticsRows({
-    timeColumn: "completed_at",
+    timeColumn: "paid_at",
     startAt: range.startAt,
     endAt: range.endAt,
     revenueOnly: true
