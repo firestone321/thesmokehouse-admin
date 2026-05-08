@@ -144,29 +144,25 @@ export default async function OrderHistoryPage({
             </form>
           </div>
 
-          <div className="mt-4 space-y-3">
+          <div className="mt-2 divide-y divide-[#EEF2F6]">
             {orders.length > 0 ? (
               orders.map((order) => (
                 <Link
                   key={order.id}
                   href={`/orders/${order.id}`}
-                  className="block rounded-[24px] border border-[#E4E7EB] bg-white px-4 py-4 transition hover:border-[#D0D7DE]"
+                  className="block py-4 transition hover:bg-[#F8FAFB] -mx-5 px-5"
                 >
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="space-y-2">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0 space-y-1.5">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-lg font-semibold">{order.orderNumber}</h3>
+                        <h3 className="text-base font-semibold">{order.orderNumber}</h3>
                         <span
-                          className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${getStatusClasses(
-                            order.status
-                          )}`}
+                          className={`rounded-full px-2.5 py-0.5 text-xs font-semibold uppercase tracking-[0.14em] ${getStatusClasses(order.status)}`}
                         >
                           {order.status.replace("_", " ")}
                         </span>
                         <span
-                          className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${getPaymentStatusClasses(
-                            order.paymentStatus
-                          )}`}
+                          className={`rounded-full px-2.5 py-0.5 text-xs font-semibold uppercase tracking-[0.14em] ${getPaymentStatusClasses(order.paymentStatus)}`}
                         >
                           payment {order.paymentStatus}
                         </span>
@@ -177,36 +173,25 @@ export default async function OrderHistoryPage({
                         {order.customerPhone ? ` | ${order.customerPhone}` : ""}
                       </p>
 
-                      <OrderItemsSummary items={order.items} fallback={order.itemSummary} />
+                      <OrderItemsSummary items={order.items} fallback={order.itemSummary} variant="orders-list" />
 
                       {order.notes ? (
-                        <p className="max-w-3xl rounded-[18px] border border-[#EEF2F6] bg-[#F8FAFB] px-3 py-2 text-sm leading-6 text-[#6B7280]">
-                          {order.notes}
-                        </p>
+                        <p className="text-sm italic leading-6 text-[#9CA3AF]">{order.notes}</p>
                       ) : null}
                     </div>
 
-                    <div className="grid gap-3 text-sm text-[#6B7280] sm:grid-cols-3 lg:min-w-[320px] lg:text-right">
-                      <div className="rounded-[18px] bg-[#F8FAFB] px-3 py-3 lg:text-left">
-                        <p className="text-[10px] uppercase tracking-[0.18em] text-[#9CA3AF]">Created</p>
-                        <p className="mt-1 font-semibold text-[#111418]">{formatDateTime(order.createdAt)}</p>
-                      </div>
-                      <div className="rounded-[18px] bg-[#F8FAFB] px-3 py-3 lg:text-left">
-                        <p className="text-[10px] uppercase tracking-[0.18em] text-[#9CA3AF]">Promised</p>
-                        <p className="mt-1 font-semibold text-[#111418]">{formatDateTime(order.promisedAt)}</p>
-                      </div>
-                      <div className="rounded-[18px] bg-[#F8FAFB] px-3 py-3 lg:text-left">
-                        <p className="text-[10px] uppercase tracking-[0.18em] text-[#9CA3AF]">Total</p>
-                        <p className="mt-1 font-semibold text-[#111418]">{formatCurrency(order.totalAmount)}</p>
-                      </div>
+                    <div className="shrink-0 text-sm text-[#6B7280] lg:min-w-[160px] lg:text-right">
+                      <p className="text-[10px] uppercase tracking-[0.14em] text-[#9CA3AF]">Created</p>
+                      <p className="font-semibold text-[#111418]">{formatDateTime(order.createdAt)}</p>
+                      <p className="mt-1.5 text-[10px] uppercase tracking-[0.14em] text-[#9CA3AF]">Pickup</p>
+                      <p className="font-semibold text-[#111418]">{formatDateTime(order.promisedAt)}</p>
+                      <p className="mt-2 text-base font-semibold text-[#111418]">{formatCurrency(order.totalAmount)}</p>
                     </div>
                   </div>
                 </Link>
               ))
             ) : (
-              <div className="rounded-[24px] bg-[#F8FAFB] px-4 py-5 text-sm leading-6 text-[#6B7280]">
-                No archived orders match the current search.
-              </div>
+              <p className="py-4 text-sm text-[#6B7280]">No archived orders match the current search.</p>
             )}
           </div>
         </section>
