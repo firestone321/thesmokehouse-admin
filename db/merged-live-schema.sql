@@ -6,6 +6,8 @@ begin;
 -- 2. Phase 2 daily stock
 -- 3. Phase 3 core operational schema
 
+create extension if not exists pg_trgm with schema extensions;
+
 -- ---------------------------------------------------------------------------
 -- Shared trigger helper
 -- ---------------------------------------------------------------------------
@@ -2430,6 +2432,18 @@ create index if not exists orders_fulfillment_review_required_idx
 
 create index if not exists orders_stock_reservation_status_idx
   on public.orders (stock_reservation_status, created_at desc);
+
+create index if not exists orders_order_number_trgm_idx
+  on public.orders using gin (order_number gin_trgm_ops)
+  where order_number is not null;
+
+create index if not exists orders_customer_name_trgm_idx
+  on public.orders using gin (customer_name gin_trgm_ops)
+  where customer_name is not null;
+
+create index if not exists orders_customer_phone_trgm_idx
+  on public.orders using gin (customer_phone gin_trgm_ops)
+  where customer_phone is not null;
 
 create unique index if not exists orders_order_tracking_id_key
   on public.orders (order_tracking_id)

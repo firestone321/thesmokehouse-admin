@@ -71,6 +71,7 @@ const MAX_ORDER_LIST_LIMIT = 100;
 const DASHBOARD_ACTIVE_ORDERS_LIMIT = 100;
 const DASHBOARD_TODAY_ORDERS_LIMIT = 100;
 const PUSH_PROCESSING_STALE_MS = 5 * 60 * 1000;
+const orderSearchColumns = ["order_number", "customer_name", "customer_phone"] as const;
 
 const orderListSelection = `
   id,
@@ -253,6 +254,75 @@ function normalizeOrderListLimit(value: unknown) {
   }
 
   return Math.max(1, Math.min(MAX_ORDER_LIST_LIMIT, Math.trunc(parsed)));
+}
+
+function escapePostgresLikePattern(value: string) {
+  return value.replace(/[\\%_]/g, "\\$&");
+}
+
+function applyOrderStatusFilter(query: any, statusValues: string[]) {
+  if (statusValues.length === 1) {
+    return query.eq("status", statusValues[0]);
+  }
+
+  if (statusValues.length > 1) {
+    return query.in("status", statusValues);
+  }
+
+  return query;
+}
+
+function sortOrderRowsByCreatedAt(rows: any[]) {
+  return [...rows].sort((left, right) => String(right.created_at ?? "").localeCompare(String(left.created_at ?? "")));
+}
+
+async function fetchOrderListRows(
+  supabase: Awaited<ReturnType<typeof createOperationsReadClient>>,
+  options: {
+    statusValues: string[];
+    search: string;
+    limit: number;
+  }
+) {
+  const buildBaseQuery = () =>
+    applyOrderStatusFilter(
+      supabase
+        .from("orders")
+        .select(orderListSelection)
+        .order("created_at", { ascending: false })
+        .limit(options.limit),
+      options.statusValues
+    );
+
+  if (options.search.length === 0) {
+    return await buildBaseQuery();
+  }
+
+  const likePattern = `%${escapePostgresLikePattern(options.search)}%`;
+  const responses = await Promise.all(
+    orderSearchColumns.map((column) => buildBaseQuery().ilike(column, likePattern))
+  );
+  const firstError = responses.find((response) => response.error)?.error ?? null;
+
+  if (firstError) {
+    return {
+      data: null,
+      error: firstError
+    };
+  }
+
+  const rowsById = new Map<number, any>();
+
+  for (const response of responses) {
+    for (const row of response.data ?? []) {
+      rowsById.set(normalizeNumber(row.id), row);
+    }
+  }
+
+  return {
+    data: sortOrderRowsByCreatedAt(Array.from(rowsById.values())).slice(0, options.limit),
+    error: null
+  };
 }
 
 function normalizeUnitName(unitName: string | null | undefined) {
@@ -612,24 +682,11 @@ export async function getOrdersPageData(options?: {
   const search = options?.search?.trim() || "";
   const limit = normalizeOrderListLimit(options?.limit);
 
-  let query = supabase
-    .from("orders")
-    .select(orderListSelection)
-    .order("created_at", { ascending: false })
-    .limit(limit);
-
-  if (statusValues.length === 1) {
-    query = query.eq("status", statusValues[0]);
-  } else if (statusValues.length > 1) {
-    query = query.in("status", statusValues);
-  }
-
-  if (search.length > 0) {
-    const sanitized = search.replace(/,/g, " ");
-    query = query.or(`order_number.ilike.%${sanitized}%,customer_name.ilike.%${sanitized}%,customer_phone.ilike.%${sanitized}%`);
-  }
-
-  const { data, error } = await query;
+  const { data, error } = await fetchOrderListRows(supabase, {
+    statusValues,
+    search,
+    limit
+  });
   ensureNoError(error, "Unable to load orders");
 
   return {
@@ -673,17 +730,11 @@ export async function getOrderHistoryPageData(options?: {
   const orderLimit = normalizeOrderListLimit(options?.orderLimit);
   const batchLimit = Math.max(1, Math.min(24, Math.trunc(options?.batchLimit ?? 12)));
 
-  let ordersQuery = supabase
-    .from("orders")
-    .select(orderListSelection)
-    .in("status", ["completed", "cancelled"])
-    .order("created_at", { ascending: false })
-    .limit(orderLimit);
-
-  if (search.length > 0) {
-    const sanitized = search.replace(/,/g, " ");
-    ordersQuery = ordersQuery.or(`order_number.ilike.%${sanitized}%,customer_name.ilike.%${sanitized}%,customer_phone.ilike.%${sanitized}%`);
-  }
+  const ordersQuery = fetchOrderListRows(supabase, {
+    statusValues: ["completed", "cancelled"],
+    search,
+    limit: orderLimit
+  });
 
   const batchesQuery = supabase
     .from("processing_batches")

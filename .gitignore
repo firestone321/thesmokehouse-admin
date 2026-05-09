@@ -6,5 +6,6 @@ coverage
 progress-log.md
 smokehouse-paranoid-review.md
 zod-implementation-plan.md
+paranoid-audit-2026-05-09.md
 .env.local
 tsconfig.tsbuildinfo

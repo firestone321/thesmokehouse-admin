@@ -4,13 +4,21 @@ import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { getSupabasePublishableKey, getSupabaseUrl, requireEnv } from "@/lib/supabase/shared";
 
-export function createAdminSupabaseClient() {
+function createFreshAdminSupabaseClient() {
   return createClient(getSupabaseUrl(), requireEnv("SUPABASE_SERVICE_ROLE_KEY"), {
     auth: {
       autoRefreshToken: false,
       persistSession: false
     }
   });
+}
+
+let adminSupabaseClient: ReturnType<typeof createFreshAdminSupabaseClient> | null = null;
+
+export function createAdminSupabaseClient() {
+  adminSupabaseClient ??= createFreshAdminSupabaseClient();
+
+  return adminSupabaseClient;
 }
 
 export async function createServerSupabaseClient() {

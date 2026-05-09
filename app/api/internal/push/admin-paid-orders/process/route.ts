@@ -6,6 +6,7 @@ import {
   verifyInternalRequestToken
 } from "@/lib/internal-auth";
 import { processAdminPushDispatchQueue } from "@/lib/push/admin-paid-order-notifications";
+import { RequestBodyTooLargeError } from "@/lib/request-limits";
 import { adminPaidOrderPushProcessSchema } from "@/lib/schemas/admin";
 import { RequestValidationError, parseJsonBody } from "@/lib/validation/http";
 
@@ -20,18 +21,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: "Unauthorized." }, { status: 401 });
     }
 
-    const body = await parseJsonBody(request, adminPaidOrderPushProcessSchema);
-
-    await verifyInternalRequestToken({
+    const claims = await verifyInternalRequestToken({
       token: providedToken,
       secret: requireInternalRequestSigningSecret("STOREFRONT_INTERNAL_AUTH_TOKEN"),
       issuer: "thesmokehouse-storefront",
       audience: "thesmokehouse-admin",
       purpose: ADMIN_PAID_ORDER_PUSH_PURPOSE,
       method: "POST",
-      path: new URL(request.url).pathname,
-      orderId: String(body.orderId)
+      path: new URL(request.url).pathname
     });
+
+    const body = await parseJsonBody(request, adminPaidOrderPushProcessSchema, { maxBytes: 8 * 1024 });
+    if (claims.orderId !== String(body.orderId)) {
+      throw new InternalRequestAuthError("Internal request token rejected.");
+    }
 
     const stats = await processAdminPushDispatchQueue({
       orderId: body.orderId,
@@ -40,6 +43,10 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true, stats });
   } catch (error) {
+    if (error instanceof RequestBodyTooLargeError) {
+      return NextResponse.json({ message: "Admin paid-order push payload is too large." }, { status: 413 });
+    }
+
     if (error instanceof RequestValidationError) {
       return NextResponse.json({ message: error.message, issues: error.issues }, { status: 400 });
     }
