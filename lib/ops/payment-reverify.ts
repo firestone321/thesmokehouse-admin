@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import { signInternalRequestToken } from "@/lib/internal-auth";
@@ -19,13 +19,12 @@ type PaymentAuthorityResponse =
 const PAYMENT_VERIFY_PURPOSE = "payment_authority_verify";
 const PAYMENT_VERIFY_TIMEOUT_MS = 8_000;
 
-function revalidateOperationalPaths() {
+function revalidateOrderPaths(orderId: number | string) {
   revalidatePath("/dashboard");
-  revalidatePath("/procurement");
-  revalidatePath("/suppliers");
-  revalidatePath("/inventory");
-  revalidatePath("/menu");
   revalidatePath("/orders");
+  revalidatePath("/orders/history");
+  revalidatePath(`/orders/${orderId}`);
+  revalidateTag("business-truth-health-snapshot", "max");
 }
 
 function getStorefrontBaseUrl() {
@@ -104,6 +103,6 @@ export async function reverifyOrderPaymentAction(formData: FormData) {
     redirect(`/orders/${orderId}?error=${encodeURIComponent(message)}`);
   }
 
-  revalidateOperationalPaths();
+  revalidateOrderPaths(orderId);
   redirect(`/orders/${orderId}?payment_reverified=${encodeURIComponent(verificationState)}`);
 }

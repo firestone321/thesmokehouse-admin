@@ -85,10 +85,35 @@ export function SidesIntakeForm({
       setBatchPreviewTime(timeFormatter.format(now).replaceAll(":", ""));
     };
 
-    updatePreviewTime();
-    const timer = window.setInterval(updatePreviewTime, 1000);
+    let timerId: number | null = null;
 
-    return () => window.clearInterval(timer);
+    const start = () => {
+      if (timerId !== null || document.visibilityState === "hidden") return;
+      timerId = window.setInterval(updatePreviewTime, 1000);
+    };
+    const stop = () => {
+      if (timerId === null) return;
+      window.clearInterval(timerId);
+      timerId = null;
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        stop();
+        return;
+      }
+
+      updatePreviewTime();
+      start();
+    };
+
+    updatePreviewTime();
+    start();
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, []);
 
   async function handleQuickAddSupplier(event: React.FormEvent<HTMLFormElement>) {

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { AdminAuthorizationError, requireApprovedAdminRole } from "@/lib/auth/admin-role";
+import { AdminAuthorizationError, assertSameOriginRequest, requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import { getOrderListItemsByIds } from "@/lib/ops/queries";
 
 const reconcileOrdersSchema = z.object({
@@ -9,6 +9,7 @@ const reconcileOrdersSchema = z.object({
 
 export async function POST(request: Request) {
   try {
+    assertSameOriginRequest(request);
     await requireApprovedAdminRole();
 
     const body = await request.json().catch(() => null);

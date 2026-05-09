@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { processAdminPushDispatchQueue } from "@/lib/push/admin-paid-order-notifications";
-import { AdminAuthorizationError, requireApprovedAdminRole } from "@/lib/auth/admin-role";
+import { AdminAuthorizationError, assertSameOriginRequest, requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import { enforceRateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
   try {
+    assertSameOriginRequest(request);
     await requireApprovedAdminRole();
     const rateLimit = await enforceRateLimit(request, "admin-push-process", 8, 60_000);
     if (!rateLimit.allowed) {

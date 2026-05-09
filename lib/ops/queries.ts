@@ -1,5 +1,5 @@
 import "server-only";
-import { unstable_noStore as noStore } from "next/cache";
+import { unstable_cache, unstable_noStore as noStore } from "next/cache";
 import { createAdminSupabaseClient, createServerSupabaseClient } from "@/lib/supabase/server";
 import { isLocalAuthBypassEnabled } from "@/lib/auth/local-bypass";
 import { getRevenueTodayTotal } from "@/lib/analytics/queries";
@@ -97,12 +97,7 @@ const orderListSelection = `
     line_total,
     cart_group_id,
     cart_item_role,
-    cart_sort_order,
-    menu_items (
-      menu_categories (
-        name
-      )
-    )
+    cart_sort_order
   )
 `;
 
@@ -936,24 +931,35 @@ export async function getPushQueueSnapshots(): Promise<PushQueueSnapshot[]> {
   return [adminQueue, storefrontQueue];
 }
 
-export async function getBusinessTruthHealthSnapshot(): Promise<BusinessTruthHealthSnapshot> {
-  noStore();
+const getCachedBusinessTruthHealthSnapshotRow = unstable_cache(
+  async (serviceDate: string): Promise<BusinessTruthHealthSnapshotRow> => {
+    const supabase = createAdminSupabaseClient();
+    const now = new Date();
 
-  const supabase = createAdminSupabaseClient();
-  const now = new Date();
-  const serviceDate = getUgandaServiceDate();
+    const { data, error } = await supabase.rpc("get_business_truth_health_snapshot", {
+      p_now: now.toISOString(),
+      p_service_date: serviceDate
+    });
 
-  const { data, error } = await supabase.rpc("get_business_truth_health_snapshot", {
-    p_now: now.toISOString(),
-    p_service_date: serviceDate
-  });
+    ensureNoError(error, "Unable to load business truth health snapshot");
 
-  ensureNoError(error, "Unable to load business truth health snapshot");
+    const row = (data as unknown as BusinessTruthHealthSnapshotRow[] | null)?.[0];
+    if (!row) {
+      throw new Error("Business truth health RPC returned no data. Ensure Phase 44 is applied to Supabase.");
+    }
 
-  const row = (data as unknown as BusinessTruthHealthSnapshotRow[] | null)?.[0];
-  if (!row) {
-    throw new Error("Business truth health RPC returned no data. Ensure Phase 44 is applied to Supabase.");
+    return row;
+  },
+  ["business-truth-health-snapshot"],
+  {
+    revalidate: 60,
+    tags: ["business-truth-health-snapshot"]
   }
+);
+
+export async function getBusinessTruthHealthSnapshot(): Promise<BusinessTruthHealthSnapshot> {
+  const serviceDate = getUgandaServiceDate();
+  const row = await getCachedBusinessTruthHealthSnapshotRow(serviceDate);
 
   return {
     generatedAt: row.generated_at,

@@ -191,12 +191,15 @@ export async function getRevenueTodayTotal(reference = new Date()) {
     timeframe: "today",
     now: reference
   });
-  const rows = await fetchAnalyticsRows({
-    timeColumn: "paid_at",
-    startAt: range.startAt,
-    endAt: range.endAt,
-    revenueOnly: true
+
+  const { data, error } = await createAdminSupabaseClient().rpc("get_revenue_today_total", {
+    p_start: range.startAt,
+    p_end: range.endAt
   });
 
-  return rows.reduce((sum, row) => sum + Math.max(0, row.total_amount ?? 0), 0);
+  if (error) {
+    throw new Error(`Failed to load today's revenue total: ${error.message}`);
+  }
+
+  return Number(data ?? 0);
 }

@@ -1,7 +1,7 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import {
   didTransitionToReady,
@@ -68,13 +68,43 @@ async function getInventoryItemBatchCode(inventoryItemId: number) {
   return data.code;
 }
 
-function revalidateOperationalPaths() {
-  revalidatePath("/dashboard");
-  revalidatePath("/procurement");
-  revalidatePath("/suppliers");
-  revalidatePath("/inventory");
-  revalidatePath("/menu");
-  revalidatePath("/orders");
+const businessTruthHealthTag = "business-truth-health-snapshot";
+
+function revalidatePaths(paths: string[]) {
+  for (const path of new Set(paths)) {
+    revalidatePath(path);
+  }
+}
+
+function revalidateBusinessTruthHealth() {
+  revalidateTag(businessTruthHealthTag, "max");
+}
+
+function revalidateOrderPaths(orderId?: number | string) {
+  revalidatePaths(["/dashboard", "/orders", "/orders/history", orderId ? `/orders/${orderId}` : ""].filter(Boolean));
+  revalidateBusinessTruthHealth();
+}
+
+function revalidatePushQueuePaths() {
+  revalidatePaths(["/orders"]);
+}
+
+function revalidateInventoryPaths() {
+  revalidatePaths(["/dashboard", "/inventory"]);
+  revalidateBusinessTruthHealth();
+}
+
+function revalidateProcurementPaths() {
+  revalidatePaths(["/dashboard", "/procurement", "/inventory", "/suppliers"]);
+  revalidateBusinessTruthHealth();
+}
+
+function revalidateSupplierPaths() {
+  revalidatePaths(["/procurement", "/suppliers"]);
+}
+
+function revalidateMenuPaths() {
+  revalidatePaths(["/menu"]);
 }
 
 function buildOrdersFlashRedirect(returnTo: string, status: "success" | "error", message: string) {
@@ -218,7 +248,7 @@ async function saveMenuItemRecord(formData: FormData) {
       throw new Error(`Unable to update menu item: ${error.message}`);
     }
 
-    revalidateOperationalPaths();
+    revalidateMenuPaths();
 
     return {
       ok: true as const,
@@ -241,7 +271,7 @@ async function saveMenuItemRecord(formData: FormData) {
     throw new Error(`Unable to create menu item: ${error?.message ?? "Unknown error"}`);
   }
 
-  revalidateOperationalPaths();
+  revalidateMenuPaths();
 
   return {
     ok: true as const,
@@ -274,7 +304,7 @@ export async function saveInventoryItemAction(formData: FormData) {
       throw new Error(`Unable to update inventory item: ${error.message}`);
     }
 
-    revalidateOperationalPaths();
+    revalidateInventoryPaths();
     redirect(`/inventory?item=${inventoryItemId}`);
   }
 
@@ -308,7 +338,7 @@ export async function saveInventoryItemAction(formData: FormData) {
     }
   }
 
-  revalidateOperationalPaths();
+  revalidateInventoryPaths();
   redirect(`/inventory?item=${data.id}`);
 }
 
@@ -317,7 +347,7 @@ export async function processAdminPushQueueAction(formData: FormData) {
   const { return_to: returnTo } = parseFormData(formData, queueActionSchema);
   const stats = await processAdminPushDispatchQueue({ limit: 10 });
 
-  revalidateOperationalPaths();
+  revalidatePushQueuePaths();
   redirect(
     buildOrdersFlashRedirect(
       returnTo,
@@ -332,7 +362,7 @@ export async function processStorefrontReadyQueueAction(formData: FormData) {
   const { return_to: returnTo } = parseFormData(formData, queueActionSchema);
   const result = await triggerStorefrontReadyQueueProcessing(10);
 
-  revalidateOperationalPaths();
+  revalidatePushQueuePaths();
 
   if (!result.configured) {
     redirect(buildOrdersFlashRedirect(returnTo, "error", "Storefront Ready queue kickoff is not configured yet."));
@@ -374,7 +404,8 @@ export async function createInventoryItemInlineAction(formData: FormData) {
     throw new Error(`Unable to create inventory item: ${error?.message ?? "Unknown error"}`);
   }
 
-  revalidateOperationalPaths();
+  revalidateInventoryPaths();
+  revalidateMenuPaths();
 
   return {
     ok: true as const,
@@ -406,7 +437,7 @@ export async function adjustInventoryItemAction(formData: FormData) {
     throw new Error(`Unable to adjust inventory item: ${error.message}`);
   }
 
-  revalidateOperationalPaths();
+  revalidateInventoryPaths();
   redirect(`/inventory?item=${input.inventory_item_id}`);
 }
 
@@ -440,7 +471,7 @@ export async function recordProteinProcurementAction(formData: FormData) {
     throw new Error(`Unable to record protein procurement: ${error.message}`);
   }
 
-  revalidateOperationalPaths();
+  revalidateProcurementPaths();
   redirect("/procurement");
 }
 
@@ -482,7 +513,7 @@ export async function recordSupplyProcurementAction(formData: FormData) {
     throw new Error(`Unable to record supply procurement: ${error.message}`);
   }
 
-  revalidateOperationalPaths();
+  revalidateProcurementPaths();
   redirect(returnTo);
 }
 
@@ -523,7 +554,7 @@ export async function recordIngredientProcurementAction(formData: FormData) {
     throw new Error(`Unable to record side ingredient procurement: ${error.message}`);
   }
 
-  revalidateOperationalPaths();
+  revalidateProcurementPaths();
   redirect("/procurement");
 }
 
@@ -531,7 +562,7 @@ export async function saveSupplierAction(formData: FormData) {
   await requireApprovedAdminRole();
   const result = await saveSupplierRecord(formData);
 
-  revalidateOperationalPaths();
+  revalidateSupplierPaths();
 
   redirect(`/suppliers?supplier=${result.supplier.id}`);
 }
@@ -603,7 +634,7 @@ export async function createSupplierInlineAction(formData: FormData) {
   await requireApprovedAdminRole();
   const result = await saveSupplierRecord(formData);
 
-  revalidateOperationalPaths();
+  revalidateSupplierPaths();
 
   return {
     ok: true as const,
@@ -675,7 +706,7 @@ export async function createPortionTypeInlineAction(formData: FormData) {
   await requireApprovedAdminRole();
   const portionType = await savePortionTypeRecord(formData);
 
-  revalidateOperationalPaths();
+  revalidateMenuPaths();
 
   return {
     ok: true as const,
@@ -714,7 +745,7 @@ export async function processProcurementReceiptToFinishedStockAction(formData: F
       throw new Error(`Unable to process whole chicken receipt allocation: ${error.message}`);
     }
 
-    revalidateOperationalPaths();
+    revalidateProcurementPaths();
     redirect("/procurement");
   }
 
@@ -734,7 +765,7 @@ export async function processProcurementReceiptToFinishedStockAction(formData: F
     throw new Error(`Unable to process procurement receipt into finished stock: ${error.message}`);
   }
 
-  revalidateOperationalPaths();
+  revalidateProcurementPaths();
   redirect("/procurement");
 }
 
@@ -760,7 +791,7 @@ export async function saveMenuCategoryAction(formData: FormData) {
     throw new Error(`Unable to save menu category: ${error.message}`);
   }
 
-  revalidateOperationalPaths();
+  revalidateMenuPaths();
   redirect("/menu");
 }
 
@@ -777,7 +808,7 @@ export async function saveMenuItemAction(formData: FormData) {
     await uploadMenuItemImage(result.menuItemId, imageFile);
   }
 
-  revalidateOperationalPaths();
+  revalidateMenuPaths();
   redirect(`/menu?edit=${result.menuItemId}`);
 }
 
@@ -798,7 +829,7 @@ export async function uploadMenuItemImageAction(formData: FormData) {
   }
 
   await uploadMenuItemImage(menuItemId, imageFile);
-  revalidateOperationalPaths();
+  revalidateMenuPaths();
 
   return {
     ok: true as const
@@ -816,7 +847,7 @@ export async function deleteMenuItemAction(formData: FormData) {
     throw new Error(`Unable to delete menu item: ${error.message}`);
   }
 
-  revalidateOperationalPaths();
+  revalidateMenuPaths();
   redirect("/menu");
 }
 
@@ -831,7 +862,7 @@ export async function toggleMenuItemActiveAction(formData: FormData) {
     throw new Error(`Unable to update menu item status: ${error.message}`);
   }
 
-  revalidateOperationalPaths();
+  revalidateMenuPaths();
   redirect("/menu");
 }
 
@@ -846,7 +877,7 @@ export async function toggleMenuItemAvailabilityAction(formData: FormData) {
     throw new Error(`Unable to update menu item availability: ${error.message}`);
   }
 
-  revalidateOperationalPaths();
+  revalidateMenuPaths();
   redirect(`/menu?edit=${menuItemId}`);
 }
 
@@ -870,7 +901,7 @@ export async function addMenuItemComponentAction(formData: FormData) {
     throw new Error(`Unable to save menu item component: ${error.message}`);
   }
 
-  revalidateOperationalPaths();
+  revalidateMenuPaths();
   redirect(`/menu?edit=${input.menu_item_id}`);
 }
 
@@ -885,7 +916,7 @@ export async function removeMenuItemComponentAction(formData: FormData) {
     throw new Error(`Unable to remove menu item component: ${error.message}`);
   }
 
-  revalidateOperationalPaths();
+  revalidateMenuPaths();
   redirect(`/menu?edit=${input.menu_item_id}`);
 }
 
@@ -932,7 +963,7 @@ export async function updateOrderStatusAction(formData: FormData) {
     }
   }
 
-  revalidateOperationalPaths();
+  revalidateOrderPaths(orderId);
   redirect(`/orders/${orderId}`);
 }
 
@@ -979,7 +1010,7 @@ export async function completeOrderWithPickupCodeAction(formData: FormData) {
     throw new Error(`Unable to complete order: ${error.message}`);
   }
 
-  revalidateOperationalPaths();
+  revalidateOrderPaths(orderId);
   redirect(`/orders/${orderId}`);
 }
 
@@ -999,6 +1030,6 @@ export async function addOrderNoteAction(formData: FormData) {
     throw new Error(`Unable to add order note: ${error.message}`);
   }
 
-  revalidateOperationalPaths();
+  revalidateOrderPaths(orderId);
   redirect(`/orders/${orderId}`);
 }

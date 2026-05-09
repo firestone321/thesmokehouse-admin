@@ -5,7 +5,11 @@ import { getSupabasePublishableKey, getSupabaseUrl } from "@/lib/supabase/shared
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
-  const nextPath = requestUrl.searchParams.get("next") ?? "/dashboard";
+  const rawNext = requestUrl.searchParams.get("next");
+  const nextPath =
+    rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//") && !rawNext.includes(":")
+      ? rawNext
+      : "/dashboard";
   const redirectResponse = NextResponse.redirect(new URL(nextPath, requestUrl.origin));
 
   const supabase = createServerClient(getSupabaseUrl(), getSupabasePublishableKey(), {

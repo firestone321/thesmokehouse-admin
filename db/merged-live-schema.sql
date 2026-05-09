@@ -2179,6 +2179,17 @@ comment on column public.orders.fulfillment_review_reason is
 create index if not exists orders_payment_status_created_idx
   on public.orders (payment_status, created_at desc);
 
+create index if not exists orders_paid_at_idx
+  on public.orders (paid_at)
+  where paid_at is not null;
+
+create index if not exists orders_completed_at_payment_status_idx
+  on public.orders (completed_at, payment_status)
+  where completed_at is not null;
+
+create index if not exists orders_service_date_payment_status_idx
+  on public.orders (service_date, payment_status, status);
+
 create index if not exists orders_fulfillment_review_required_idx
   on public.orders (fulfillment_review_required, created_at desc)
   where fulfillment_review_required = true;
@@ -2189,6 +2200,9 @@ create index if not exists orders_stock_reservation_status_idx
 create unique index if not exists orders_order_tracking_id_key
   on public.orders (order_tracking_id)
   where order_tracking_id is not null;
+
+create index if not exists finished_stock_movements_portion_created_id_idx
+  on public.finished_stock_movements (portion_type_id, created_at desc, id desc);
 
 create table if not exists public.payment_attempts (
   id bigint generated always as identity primary key,
@@ -2787,7 +2801,7 @@ $$;
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   email text not null unique,
-  role public.app_role not null default 'staff',
+  role public.app_role not null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint profiles_email_not_blank_chk check (btrim(email) <> '')
@@ -2796,15 +2810,37 @@ create table if not exists public.profiles (
 create index if not exists profiles_role_idx
   on public.profiles (role);
 
+create table if not exists public.customers (
+  id uuid primary key references auth.users(id) on delete cascade,
+  email text not null unique,
+  full_name text,
+  phone text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint customers_email_not_blank_chk check (btrim(email) <> '')
+);
+
+create index if not exists customers_email_idx
+  on public.customers (email);
+
 comment on table public.profiles is
   'Admin account directory for authenticated dashboard users and their database role.';
 
 comment on column public.profiles.role is
   'App-level role used by RLS policies for admin dashboard access.';
 
+comment on table public.customers is
+  'Storefront customer account directory for public OAuth/email signups.';
+
 drop trigger if exists profiles_set_updated_at on public.profiles;
 create trigger profiles_set_updated_at
 before update on public.profiles
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists customers_set_updated_at on public.customers;
+create trigger customers_set_updated_at
+before update on public.customers
 for each row
 execute function public.set_updated_at();
 
@@ -2816,11 +2852,37 @@ insert into public.profiles (
 select
   u.id,
   coalesce(nullif(btrim(u.email), ''), u.id::text || '@placeholder.local'),
-  'staff'::public.app_role
+  case
+    when lower(coalesce(u.raw_app_meta_data->>'role', '')) in ('admin', 'manager', 'staff')
+      then lower(coalesce(u.raw_app_meta_data->>'role', ''))::public.app_role
+    else 'staff'::public.app_role
+  end
 from auth.users u
+where lower(coalesce(u.raw_app_meta_data->>'provisioned_by_admin', 'false')) in ('true', '1', 'yes')
 on conflict (id) do update
-set email = excluded.email
-where public.profiles.email is distinct from excluded.email;
+set email = excluded.email,
+    role = excluded.role
+where public.profiles.email is distinct from excluded.email
+   or public.profiles.role is distinct from excluded.role;
+
+insert into public.customers (
+  id,
+  email,
+  full_name,
+  phone
+)
+select
+  u.id,
+  coalesce(nullif(btrim(u.email), ''), u.id::text || '@placeholder.local'),
+  nullif(btrim(coalesce(u.raw_user_meta_data->>'full_name', u.raw_user_meta_data->>'name', '')), ''),
+  nullif(btrim(coalesce(u.raw_user_meta_data->>'phone', u.phone, '')), '')
+from auth.users u
+where lower(coalesce(u.raw_app_meta_data->>'provisioned_by_admin', 'false')) not in ('true', '1', 'yes')
+on conflict (id) do update
+set email = excluded.email,
+    full_name = coalesce(excluded.full_name, public.customers.full_name),
+    phone = coalesce(excluded.phone, public.customers.phone),
+    updated_at = now();
 
 create or replace function public.current_profile_role()
 returns public.app_role
@@ -2850,19 +2912,51 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  requested_role text := lower(coalesce(new.raw_app_meta_data->>'role', ''));
+  provisioned_by_admin boolean := lower(coalesce(new.raw_app_meta_data->>'provisioned_by_admin', 'false')) in ('true', '1', 'yes');
+  profile_role public.app_role := 'staff'::public.app_role;
+  full_name_value text := nullif(btrim(coalesce(new.raw_user_meta_data->>'full_name', new.raw_user_meta_data->>'name', '')), '');
+  phone_value text := nullif(btrim(coalesce(new.raw_user_meta_data->>'phone', new.phone, '')), '');
+  email_value text := coalesce(nullif(btrim(new.email), ''), new.id::text || '@placeholder.local');
 begin
-  insert into public.profiles (
-    id,
-    email,
-    role
-  )
-  values (
-    new.id,
-    coalesce(nullif(btrim(new.email), ''), new.id::text || '@placeholder.local'),
-    'staff'
-  )
-  on conflict (id) do update
-  set email = excluded.email;
+  if requested_role in ('admin', 'manager', 'staff') then
+    profile_role := requested_role::public.app_role;
+  end if;
+
+  if provisioned_by_admin then
+    insert into public.profiles (
+      id,
+      email,
+      role
+    )
+    values (
+      new.id,
+      email_value,
+      profile_role
+    )
+    on conflict (id) do update
+    set email = excluded.email,
+        role = excluded.role;
+  else
+    insert into public.customers (
+      id,
+      email,
+      full_name,
+      phone
+    )
+    values (
+      new.id,
+      email_value,
+      full_name_value,
+      phone_value
+    )
+    on conflict (id) do update
+    set email = excluded.email,
+        full_name = coalesce(excluded.full_name, public.customers.full_name),
+        phone = coalesce(excluded.phone, public.customers.phone),
+        updated_at = now();
+  end if;
 
   return new;
 end;
@@ -2875,6 +2969,7 @@ for each row
 execute function public.handle_new_user();
 
 alter table public.profiles enable row level security;
+alter table public.customers enable row level security;
 alter table public.proteins enable row level security;
 alter table public.packaging_types enable row level security;
 alter table public.portion_types enable row level security;
@@ -2919,6 +3014,40 @@ on public.profiles
 for delete
 to authenticated
 using (public.has_role(array['admin'::public.app_role]));
+
+drop policy if exists "customers_select_self_or_admin_manager" on public.customers;
+create policy "customers_select_self_or_admin_manager"
+on public.customers
+for select
+to authenticated
+using (
+  id = auth.uid()
+  or public.has_role(array['admin'::public.app_role, 'manager'::public.app_role])
+);
+
+drop policy if exists "customers_insert_self_or_admin_manager" on public.customers;
+create policy "customers_insert_self_or_admin_manager"
+on public.customers
+for insert
+to authenticated
+with check (
+  id = auth.uid()
+  or public.has_role(array['admin'::public.app_role, 'manager'::public.app_role])
+);
+
+drop policy if exists "customers_update_self_or_admin_manager" on public.customers;
+create policy "customers_update_self_or_admin_manager"
+on public.customers
+for update
+to authenticated
+using (
+  id = auth.uid()
+  or public.has_role(array['admin'::public.app_role, 'manager'::public.app_role])
+)
+with check (
+  id = auth.uid()
+  or public.has_role(array['admin'::public.app_role, 'manager'::public.app_role])
+);
 
 drop policy if exists "proteins_admin_roles_read" on public.proteins;
 create policy "proteins_admin_roles_read"
@@ -4697,5 +4826,25 @@ to service_role;
 
 comment on function public.get_business_truth_health_snapshot(timestamptz, date) is
   'Returns read-only payment/stock/recovery reconciliation counts and previews for elevated admin diagnostics.';
+
+-- Phase 47: DB-side aggregate for dashboard revenue today.
+
+create or replace function public.get_revenue_today_total(
+  p_start timestamptz,
+  p_end   timestamptz
+)
+returns bigint
+language sql
+stable
+as $$
+  select coalesce(sum(total_amount), 0)::bigint
+  from public.orders
+  where payment_status = 'paid'
+    and paid_at >= p_start
+    and paid_at <  p_end
+$$;
+
+revoke execute on function public.get_revenue_today_total(timestamptz, timestamptz) from public, anon, authenticated;
+grant execute on function public.get_revenue_today_total(timestamptz, timestamptz) to service_role;
 
 commit;

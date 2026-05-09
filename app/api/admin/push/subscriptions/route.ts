@@ -3,7 +3,7 @@ import {
   processAdminPushDispatchQueue,
   reopenNoSubscriberAdminPushDispatches
 } from "@/lib/push/admin-paid-order-notifications";
-import { AdminAuthorizationError, requireApprovedAdminRole } from "@/lib/auth/admin-role";
+import { AdminAuthorizationError, assertSameOriginRequest, requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import { isContentLengthTooLarge } from "@/lib/request-limits";
 import { enforceRateLimit } from "@/lib/rate-limit";
 import { adminPushSubscriptionSchema } from "@/lib/schemas/admin";
@@ -12,6 +12,7 @@ import { RequestValidationError, parseJsonBody } from "@/lib/validation/http";
 
 export async function POST(request: Request) {
   try {
+    assertSameOriginRequest(request);
     await requireApprovedAdminRole();
 
     if (isContentLengthTooLarge(request, 16 * 1024)) {

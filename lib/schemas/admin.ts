@@ -80,15 +80,17 @@ export const quantitySchema = z.coerce.number().min(0).max(maxNumericValue);
 
 export const signedQuantitySchema = z.coerce.number().min(-maxNumericValue).max(maxNumericValue);
 
-export const returnToSchema = z.preprocess(
-  blankToUndefined,
-  z.string().trim().startsWith("/").max(maxReferenceLength).default("/orders")
-).default("/orders");
+const safeReturnPath = z
+  .string()
+  .trim()
+  .max(maxReferenceLength)
+  .refine((value) => value.startsWith("/") && !value.startsWith("//") && !value.includes(":"), {
+    message: "Invalid return path."
+  });
 
-export const optionalReturnToSchema = z.preprocess(
-  blankToUndefined,
-  z.string().trim().startsWith("/").max(maxReferenceLength).optional()
-).optional();
+export const returnToSchema = z.preprocess(blankToUndefined, safeReturnPath.default("/orders")).default("/orders");
+
+export const optionalReturnToSchema = z.preprocess(blankToUndefined, safeReturnPath.optional()).optional();
 
 export const checkboxSchema = z.preprocess(parseBoolean, z.boolean());
 
