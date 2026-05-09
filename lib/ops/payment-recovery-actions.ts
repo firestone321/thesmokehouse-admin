@@ -31,7 +31,7 @@ export async function processPendingPaymentRecoveriesAction(formData: FormData) 
       buildOrdersFlashRedirect(
         returnTo,
         "error",
-        "Payment recovery is not configured. Set STOREFRONT_BASE_URL and STOREFRONT_INTERNAL_AUTH_TOKEN."
+        "Payment recovery is not configured. Set STOREFRONT_BASE_URL, EXPECTED_STOREFRONT_HOSTNAMES, and STOREFRONT_INTERNAL_AUTH_TOKEN."
       )
     );
   }

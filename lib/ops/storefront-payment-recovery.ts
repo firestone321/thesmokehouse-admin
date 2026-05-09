@@ -1,6 +1,7 @@
 import "server-only";
 
 import { signInternalRequestToken } from "@/lib/internal-auth";
+import { getStorefrontSigningSecret, getValidatedStorefrontBaseUrl } from "@/lib/ops/storefront-config";
 
 const PAYMENT_RECOVERY_PROCESS_PURPOSE = "storefront_pending_payment_recovery_process_due";
 const STOREFRONT_PAYMENT_RECOVERY_PROCESS_PATH = "/api/internal/payments/recovery/process-due";
@@ -23,16 +24,17 @@ export type StorefrontPendingPaymentRecoveryResult = {
   stats: StorefrontPendingPaymentRecoveryStats | null;
 };
 
-function getStorefrontBaseUrl() {
-  return process.env.STOREFRONT_BASE_URL?.trim().replace(/\/+$/, "") || null;
-}
-
-function getStorefrontSigningSecret() {
-  return process.env.STOREFRONT_INTERNAL_AUTH_TOKEN?.trim() || null;
-}
-
 function buildPaymentRecoveryRequest(limit: number) {
-  const baseUrl = getStorefrontBaseUrl();
+  let baseUrl: string | null = null;
+  try {
+    baseUrl = getValidatedStorefrontBaseUrl();
+  } catch (error) {
+    console.warn("storefront_pending_payment_recovery_invalid_config", {
+      error: error instanceof Error ? error.message : "unknown_error"
+    });
+    return null;
+  }
+
   const secret = getStorefrontSigningSecret();
   if (!baseUrl || !secret) {
     return null;

@@ -1,6 +1,11 @@
 import "server-only";
 
 import { signInternalRequestToken } from "@/lib/internal-auth";
+import {
+  getStorefrontSigningSecret,
+  getValidatedStorefrontBaseUrl,
+  isStorefrontInternalRequestConfigured
+} from "@/lib/ops/storefront-config";
 import { createAdminSupabaseClient } from "@/lib/supabase/server";
 
 type ReadyOrder = {
@@ -41,16 +46,8 @@ function buildIdempotencyKey(order: { id: number; updatedAt: string }) {
   return `order-ready:${order.id}:${order.updatedAt}`;
 }
 
-function getStorefrontBaseUrl() {
-  return process.env.STOREFRONT_BASE_URL?.trim().replace(/\/+$/, "") || null;
-}
-
-function getStorefrontSigningSecret() {
-  return process.env.STOREFRONT_INTERNAL_AUTH_TOKEN?.trim() || null;
-}
-
 export function isStorefrontReadyNotificationKickoffConfigured() {
-  return Boolean(getStorefrontBaseUrl() && getStorefrontSigningSecret());
+  return isStorefrontInternalRequestConfigured();
 }
 
 async function enqueueReadyNotification(order: { id: number; updatedAt: string }) {
@@ -78,7 +75,17 @@ async function enqueueReadyNotification(order: { id: number; updatedAt: string }
 }
 
 function buildKickoffRequest(order: { id: number; updatedAt: string }) {
-  const baseUrl = getStorefrontBaseUrl();
+  let baseUrl: string | null = null;
+  try {
+    baseUrl = getValidatedStorefrontBaseUrl();
+  } catch (error) {
+    console.warn("storefront_ready_notification_invalid_config", {
+      orderId: order.id,
+      error: error instanceof Error ? error.message : "unknown_error"
+    });
+    return null;
+  }
+
   const secret = getStorefrontSigningSecret();
   if (!baseUrl || !secret) {
     return null;
@@ -114,7 +121,17 @@ function buildKickoffRequest(order: { id: number; updatedAt: string }) {
 }
 
 function buildDueProcessRequest(limit: number) {
-  const baseUrl = getStorefrontBaseUrl();
+  let baseUrl: string | null = null;
+  try {
+    baseUrl = getValidatedStorefrontBaseUrl();
+  } catch (error) {
+    console.warn("storefront_ready_due_process_invalid_config", {
+      limit,
+      error: error instanceof Error ? error.message : "unknown_error"
+    });
+    return null;
+  }
+
   const secret = getStorefrontSigningSecret();
   if (!baseUrl || !secret) {
     return null;

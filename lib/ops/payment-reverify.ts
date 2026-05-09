@@ -4,6 +4,7 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import { signInternalRequestToken } from "@/lib/internal-auth";
+import { getStorefrontSigningSecret, getValidatedStorefrontBaseUrl } from "@/lib/ops/storefront-config";
 import { reverifyOrderPaymentActionSchema } from "@/lib/schemas/admin";
 import { createAdminSupabaseClient } from "@/lib/supabase/server";
 import { parseFormData } from "@/lib/validation/form-data";
@@ -27,16 +28,8 @@ function revalidateOrderPaths(orderId: number | string) {
   revalidateTag("business-truth-health-snapshot", "max");
 }
 
-function getStorefrontBaseUrl() {
-  return process.env.STOREFRONT_BASE_URL?.trim().replace(/\/+$/, "") || null;
-}
-
-function getStorefrontSigningSecret() {
-  return process.env.STOREFRONT_INTERNAL_AUTH_TOKEN?.trim() || null;
-}
-
 async function askStorefrontToReverifyPayment(orderId: number) {
-  const baseUrl = getStorefrontBaseUrl();
+  const baseUrl = getValidatedStorefrontBaseUrl();
   const secret = getStorefrontSigningSecret();
   if (!baseUrl || !secret) {
     throw new Error("Storefront payment verification is not configured yet.");
