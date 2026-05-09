@@ -964,6 +964,105 @@ alter table public.orders
   add constraint orders_pickup_code_format_chk
   check (pickup_code is null or pickup_code ~ '^[0-9]{4}$');
 
+alter table public.orders
+  add column if not exists pickup_code_failed_attempts integer not null default 0;
+
+alter table public.orders
+  add column if not exists pickup_code_locked_until timestamptz;
+
+create or replace function public.register_pickup_code_failure(p_order_id bigint)
+returns table (
+  failed_attempts integer,
+  locked_until timestamptz
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_threshold constant integer := 5;
+  v_lockout_minutes constant integer := 15;
+  v_attempts integer;
+  v_locked_until timestamptz;
+begin
+  update public.orders
+  set pickup_code_failed_attempts = pickup_code_failed_attempts + 1
+  where id = p_order_id
+  returning pickup_code_failed_attempts into v_attempts;
+
+  if v_attempts is null then
+    return;
+  end if;
+
+  if v_attempts >= v_threshold then
+    update public.orders
+    set pickup_code_failed_attempts = 0,
+        pickup_code_locked_until = now() + (v_lockout_minutes::text || ' minutes')::interval
+    where id = p_order_id
+    returning pickup_code_locked_until into v_locked_until;
+
+    return query select 0::integer, v_locked_until;
+    return;
+  end if;
+
+  return query select v_attempts, null::timestamptz;
+end;
+$$;
+
+revoke execute on function public.register_pickup_code_failure(bigint) from public, anon, authenticated;
+grant execute on function public.register_pickup_code_failure(bigint) to service_role;
+
+create or replace function public.clear_pickup_code_lock(p_order_id bigint)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update public.orders
+  set pickup_code_failed_attempts = 0,
+      pickup_code_locked_until = null
+  where id = p_order_id;
+$$;
+
+revoke execute on function public.clear_pickup_code_lock(bigint) from public, anon, authenticated;
+grant execute on function public.clear_pickup_code_lock(bigint) to service_role;
+
+-- Phase 50: single-use jti replay defense for internal HMAC request tokens.
+
+create table if not exists public.internal_token_replay (
+  jti text primary key,
+  exp timestamptz not null
+);
+
+create index if not exists internal_token_replay_exp_idx
+  on public.internal_token_replay (exp);
+
+alter table public.internal_token_replay enable row level security;
+
+create or replace function public.consume_internal_token_jti(p_jti text, p_exp timestamptz)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_inserted_count integer;
+begin
+  delete from public.internal_token_replay
+  where exp < now() - interval '5 minutes';
+
+  insert into public.internal_token_replay (jti, exp)
+  values (p_jti, p_exp)
+  on conflict (jti) do nothing;
+
+  get diagnostics v_inserted_count = ROW_COUNT;
+  return v_inserted_count > 0;
+end;
+$$;
+
+revoke execute on function public.consume_internal_token_jti(text, timestamptz) from public, anon, authenticated;
+grant execute on function public.consume_internal_token_jti(text, timestamptz) to service_role;
+
 -- ---------------------------------------------------------------------------
 -- Phase 16: chicken processing allocation
 -- ---------------------------------------------------------------------------

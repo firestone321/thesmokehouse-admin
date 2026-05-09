@@ -22,7 +22,7 @@ export async function POST(request: Request) {
 
     const body = await parseJsonBody(request, adminPaidOrderPushProcessSchema);
 
-    verifyInternalRequestToken({
+    await verifyInternalRequestToken({
       token: providedToken,
       secret: requireInternalRequestSigningSecret("STOREFRONT_INTERNAL_AUTH_TOKEN"),
       issuer: "thesmokehouse-storefront",

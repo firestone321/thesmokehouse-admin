@@ -1,6 +1,6 @@
 "use server";
 
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import {
@@ -967,6 +967,24 @@ export async function updateOrderStatusAction(formData: FormData) {
   redirect(`/orders/${orderId}`);
 }
 
+function pickupCodesMatch(stored: string, submitted: string): boolean {
+  const storedBuf = Buffer.from(stored, "utf8");
+  const submittedBuf = Buffer.from(submitted, "utf8");
+  if (storedBuf.length !== submittedBuf.length) {
+    timingSafeEqual(storedBuf, storedBuf);
+    return false;
+  }
+  return timingSafeEqual(storedBuf, submittedBuf);
+}
+
+function formatPickupLockoutTime(value: string): string {
+  return new Date(value).toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Africa/Kampala"
+  });
+}
+
 export async function completeOrderWithPickupCodeAction(formData: FormData) {
   await requireApprovedAdminRole();
   const input = parseFormData(formData, completeOrderWithPickupCodeActionSchema);
@@ -976,7 +994,7 @@ export async function completeOrderWithPickupCodeAction(formData: FormData) {
 
   const { data: order, error: orderError } = await supabase
     .from("orders")
-    .select("id, status, pickup_code")
+    .select("id, status, pickup_code, pickup_code_locked_until")
     .eq("id", orderId)
     .maybeSingle();
 
@@ -996,8 +1014,35 @@ export async function completeOrderWithPickupCodeAction(formData: FormData) {
     redirect(`/orders/${orderId}?error=${encodeURIComponent("This order does not have a pickup code yet.")}`);
   }
 
-  if (order.pickup_code !== pickupCode) {
-    redirect(`/orders/${orderId}?error=${encodeURIComponent("Pickup code did not match. Ask the customer to show the code in their app again.")}`);
+  if (order.pickup_code_locked_until && new Date(order.pickup_code_locked_until).getTime() > Date.now()) {
+    const unlockTime = formatPickupLockoutTime(order.pickup_code_locked_until);
+    redirect(`/orders/${orderId}?error=${encodeURIComponent(`Too many failed pickup code attempts. Locked until ${unlockTime}.`)}`);
+  }
+
+  if (!pickupCodesMatch(order.pickup_code, pickupCode)) {
+    const { data: lockResult, error: lockError } = await supabase
+      .rpc("register_pickup_code_failure", { p_order_id: orderId })
+      .maybeSingle<{ failed_attempts: number; locked_until: string | null }>();
+
+    if (lockError) {
+      console.error("pickup_code_failure_register_failed", {
+        orderId,
+        error: lockError.message
+      });
+    }
+
+    const lockedUntil = lockResult?.locked_until ?? null;
+    const message = lockedUntil
+      ? `Too many failed pickup code attempts. Locked until ${formatPickupLockoutTime(lockedUntil)}.`
+      : "Pickup code did not match. Ask the customer to show the code in their app again.";
+    redirect(`/orders/${orderId}?error=${encodeURIComponent(message)}`);
+  }
+
+  const { error: clearError } = await supabase.rpc("clear_pickup_code_lock", {
+    p_order_id: orderId
+  });
+  if (clearError) {
+    console.error("pickup_code_clear_failed", { orderId, error: clearError.message });
   }
 
   const { error } = await supabase.rpc("transition_order_status", {

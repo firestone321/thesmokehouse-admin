@@ -1,6 +1,7 @@
 import "server-only";
 
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { createAdminSupabaseClient } from "@/lib/supabase/server";
 
 const CLOCK_SKEW_SECONDS = 30;
 const DEFAULT_EXPIRY_SECONDS = 60;
@@ -30,6 +31,7 @@ type InternalRequestTokenClaims = {
   path: string;
   iat: number;
   exp: number;
+  jti: string;
   idempotencyKey?: string;
   orderId?: string;
 };
@@ -92,6 +94,8 @@ function isValidClaimsShape(value: InternalRequestTokenClaims) {
     && typeof value.path === "string"
     && typeof value.iat === "number"
     && typeof value.exp === "number"
+    && typeof value.jti === "string"
+    && value.jti.length > 0
     && (value.idempotencyKey === undefined || typeof value.idempotencyKey === "string")
     && (value.orderId === undefined || typeof value.orderId === "string")
   );
@@ -130,6 +134,7 @@ export function signInternalRequestToken(input: SignInternalRequestTokenInput) {
     path: input.path,
     iat: now,
     exp: now + (input.expiresInSeconds ?? DEFAULT_EXPIRY_SECONDS),
+    jti: randomUUID(),
     ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
     ...(input.orderId ? { orderId: input.orderId } : {})
   };
@@ -140,7 +145,9 @@ export function signInternalRequestToken(input: SignInternalRequestTokenInput) {
   return `${encodedHeader}.${encodedClaims}.${signature}`;
 }
 
-export function verifyInternalRequestToken(input: VerifyInternalRequestTokenInput) {
+export async function verifyInternalRequestToken(
+  input: VerifyInternalRequestTokenInput
+): Promise<InternalRequestTokenClaims> {
   const segments = input.token.split(".");
   if (segments.length !== 3) {
     throw new InternalRequestAuthError("Invalid internal request token.");
@@ -184,6 +191,21 @@ export function verifyInternalRequestToken(input: VerifyInternalRequestTokenInpu
 
   if (input.orderId !== undefined && claims.orderId !== input.orderId) {
     throw new InternalRequestAuthError("Internal request token rejected.");
+  }
+
+  const supabase = createAdminSupabaseClient();
+  const expIso = new Date(claims.exp * 1000).toISOString();
+  const { data, error } = await supabase.rpc("consume_internal_token_jti", {
+    p_jti: claims.jti,
+    p_exp: expIso
+  });
+
+  if (error) {
+    throw new InternalRequestAuthError("Internal request token rejected.");
+  }
+
+  if (data !== true) {
+    throw new InternalRequestAuthError("Internal request token already consumed.");
   }
 
   return claims;
