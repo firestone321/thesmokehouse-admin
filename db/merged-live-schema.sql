@@ -1063,6 +1063,141 @@ $$;
 revoke execute on function public.consume_internal_token_jti(text, timestamptz) from public, anon, authenticated;
 grant execute on function public.consume_internal_token_jti(text, timestamptz) to service_role;
 
+-- Phase 51: TTL-bounded singleton mutex for admin paid-order push drains.
+
+create table if not exists public.admin_push_drain_lock (
+  id integer primary key default 1,
+  holder text not null,
+  expires_at timestamptz not null,
+  constraint admin_push_drain_lock_singleton check (id = 1)
+);
+
+alter table public.admin_push_drain_lock enable row level security;
+
+create or replace function public.try_acquire_admin_push_drain_lock(
+  p_holder text,
+  p_ttl_seconds integer
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_inserted_count integer;
+begin
+  insert into public.admin_push_drain_lock (id, holder, expires_at)
+  values (1, p_holder, now() + make_interval(secs => p_ttl_seconds))
+  on conflict (id) do update
+  set holder = excluded.holder,
+      expires_at = excluded.expires_at
+  where public.admin_push_drain_lock.expires_at < now();
+
+  get diagnostics v_inserted_count = ROW_COUNT;
+  return v_inserted_count > 0;
+end;
+$$;
+
+revoke execute on function public.try_acquire_admin_push_drain_lock(text, integer) from public, anon, authenticated;
+grant execute on function public.try_acquire_admin_push_drain_lock(text, integer) to service_role;
+
+create or replace function public.release_admin_push_drain_lock(p_holder text)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  delete from public.admin_push_drain_lock
+  where id = 1 and holder = p_holder;
+$$;
+
+revoke execute on function public.release_admin_push_drain_lock(text) from public, anon, authenticated;
+grant execute on function public.release_admin_push_drain_lock(text) to service_role;
+
+-- Phase 52: DB-side analytics aggregation RPCs.
+
+create or replace function public.get_analytics_revenue_aggregated(
+  p_start timestamptz,
+  p_end   timestamptz,
+  p_grain text
+)
+returns table(bucket_start timestamptz, value bigint)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  if p_grain = 'hour' then
+    return query
+    select
+      ((date_trunc('hour', completed_at at time zone 'Africa/Kampala')) at time zone 'Africa/Kampala')::timestamptz as bucket_start,
+      coalesce(sum(greatest(total_amount, 0))::bigint, 0) as value
+    from public.orders
+    where status = 'completed'
+      and payment_status = 'paid'
+      and completed_at >= p_start
+      and completed_at <  p_end
+    group by 1
+    order by 1;
+  else
+    return query
+    select
+      ((date_trunc('day', completed_at at time zone 'Africa/Kampala')) at time zone 'Africa/Kampala')::timestamptz as bucket_start,
+      coalesce(sum(greatest(total_amount, 0))::bigint, 0) as value
+    from public.orders
+    where status = 'completed'
+      and payment_status = 'paid'
+      and completed_at >= p_start
+      and completed_at <  p_end
+    group by 1
+    order by 1;
+  end if;
+end;
+$$;
+
+revoke execute on function public.get_analytics_revenue_aggregated(timestamptz, timestamptz, text) from public, anon, authenticated;
+grant execute on function public.get_analytics_revenue_aggregated(timestamptz, timestamptz, text) to service_role;
+
+create or replace function public.get_analytics_orders_aggregated(
+  p_start timestamptz,
+  p_end   timestamptz,
+  p_grain text
+)
+returns table(bucket_start timestamptz, value bigint)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  if p_grain = 'hour' then
+    return query
+    select
+      ((date_trunc('hour', created_at at time zone 'Africa/Kampala')) at time zone 'Africa/Kampala')::timestamptz as bucket_start,
+      count(*)::bigint as value
+    from public.orders
+    where created_at >= p_start
+      and created_at <  p_end
+    group by 1
+    order by 1;
+  else
+    return query
+    select
+      ((date_trunc('day', created_at at time zone 'Africa/Kampala')) at time zone 'Africa/Kampala')::timestamptz as bucket_start,
+      count(*)::bigint as value
+    from public.orders
+    where created_at >= p_start
+      and created_at <  p_end
+    group by 1
+    order by 1;
+  end if;
+end;
+$$;
+
+revoke execute on function public.get_analytics_orders_aggregated(timestamptz, timestamptz, text) from public, anon, authenticated;
+grant execute on function public.get_analytics_orders_aggregated(timestamptz, timestamptz, text) to service_role;
+
 -- ---------------------------------------------------------------------------
 -- Phase 16: chicken processing allocation
 -- ---------------------------------------------------------------------------

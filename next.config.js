@@ -4,7 +4,8 @@ const nextConfig = {
   experimental: {
     serverActions: {
       bodySizeLimit: "6mb"
-    }
+    },
+    optimizePackageImports: ["@supabase/supabase-js", "@supabase/ssr"]
   },
   async headers() {
     return [

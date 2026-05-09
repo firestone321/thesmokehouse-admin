@@ -1,5 +1,6 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
 import webpush from "web-push";
 import { createAdminSupabaseClient } from "@/lib/supabase/server";
 import { requireEnv } from "@/lib/supabase/shared";
@@ -12,6 +13,7 @@ const RETRY_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000, 30 * 60_000, 60 * 60_0
 const MAX_ACTIVE_SUBSCRIPTIONS = 10;
 const SEND_CONCURRENCY = 5;
 const DISPATCH_CONCURRENCY = 3;
+const ADMIN_PUSH_DRAIN_LOCK_TTL_SECONDS = 60;
 
 type AdminPushSubscriptionRow = {
   id: string;
@@ -463,6 +465,40 @@ export async function processAdminPushDispatchQueue(options?: { limit?: number; 
 
   console.info("admin_push_dispatch_queue_processed", stats);
   return stats;
+}
+
+export async function runAdminPushDrainWithLock(
+  work: () => Promise<void>
+): Promise<{ acquired: boolean }> {
+  const supabase = createAdminSupabaseClient();
+  const holder = randomUUID();
+
+  const { data: acquired, error: lockError } = await supabase.rpc("try_acquire_admin_push_drain_lock", {
+    p_holder: holder,
+    p_ttl_seconds: ADMIN_PUSH_DRAIN_LOCK_TTL_SECONDS
+  });
+
+  if (lockError) {
+    console.error("admin_push_drain_lock_acquire_failed", { error: lockError.message });
+    return { acquired: false };
+  }
+
+  if (acquired !== true) {
+    return { acquired: false };
+  }
+
+  try {
+    await work();
+  } finally {
+    const { error: releaseError } = await supabase.rpc("release_admin_push_drain_lock", {
+      p_holder: holder
+    });
+    if (releaseError) {
+      console.error("admin_push_drain_lock_release_failed", { error: releaseError.message });
+    }
+  }
+
+  return { acquired: true };
 }
 
 export async function reopenNoSubscriberAdminPushDispatches(limit = 10) {

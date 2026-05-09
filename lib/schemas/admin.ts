@@ -98,8 +98,34 @@ export const adminPaidOrderPushProcessSchema = z.object({
   orderId: idSchema
 });
 
+const allowedPushHostSuffixes = [
+  "fcm.googleapis.com",
+  ".push.services.mozilla.com",
+  ".push.apple.com",
+  ".windows.com",
+  ".notify.windows.com"
+];
+
+function isAllowedPushEndpoint(value: string): boolean {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:") return false;
+    const host = url.hostname.toLowerCase();
+    return allowedPushHostSuffixes.some((suffix) =>
+      suffix.startsWith(".") ? host.endsWith(suffix) : host === suffix
+    );
+  } catch {
+    return false;
+  }
+}
+
 export const adminPushSubscriptionSchema = z.object({
-  endpoint: z.string().trim().url().max(maxUrlLength),
+  endpoint: z
+    .string()
+    .trim()
+    .url()
+    .max(maxUrlLength)
+    .refine(isAllowedPushEndpoint, { message: "Push endpoint host not allowed." }),
   expirationTime: z.number().int().nullable().optional(),
   keys: z.object({
     p256dh: z.string().trim().min(1).max(maxTextLength),
