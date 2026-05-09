@@ -73,83 +73,174 @@ export default async function MenuPage({
 
             <div className="mt-4 space-y-3">
               {menuItems.length > 0 ? (
-                menuItems.map((item) => (
-                  <article key={item.id} className="rounded-[24px] border border-[#E4E7EB] bg-white px-4 py-4">
-                    <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                      <div className="flex gap-4">
-                        <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-[20px] bg-[#F8FAFB] text-[11px] font-semibold uppercase tracking-[0.14em] text-[#9CA3AF]">
-                          {item.imageUrl ? (
-                            <img src={item.imageUrl} alt={item.name} className="h-full w-full object-cover" />
+                menuItems.map((item) => {
+                  const isEditing = selectedMenuItem?.id === item.id;
+                  return (
+                    <article
+                      key={item.id}
+                      className={`rounded-[24px] border bg-white px-4 py-4 ${isEditing ? "border-[#111418]" : "border-[#E4E7EB]"}`}
+                    >
+                      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                        <div className="flex gap-4">
+                          <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-[20px] bg-[#F8FAFB] text-[11px] font-semibold uppercase tracking-[0.14em] text-[#9CA3AF]">
+                            {item.imageUrl ? (
+                              <img src={item.imageUrl} alt={item.name} className="h-full w-full object-cover" />
+                            ) : (
+                              "No image"
+                            )}
+                          </div>
+                          <div className="space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="text-lg font-semibold text-[#111418]">{item.name}</h3>
+                              <span
+                                className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${
+                                  item.isActive ? "bg-[#ECFDF3] text-[#15803D]" : "bg-[#F3F4F6] text-[#4B5563]"
+                                }`}
+                              >
+                                {item.isActive ? "active" : "inactive"}
+                              </span>
+                              <span
+                                className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${
+                                  item.isAvailableToday ? "bg-[#EEF2FF] text-[#4338CA]" : "bg-[#FDECEC] text-[#D32F2F]"
+                                }`}
+                              >
+                                {item.isAvailableToday ? "available today" : "hidden today"}
+                              </span>
+                            </div>
+                            <p className="text-sm text-[#6B7280]">
+                              {item.categoryName} • {item.portionLabel} • {item.prepType}
+                            </p>
+                            {item.description ? <p className="text-sm leading-6 text-[#6B7280]">{item.description}</p> : null}
+                            <p className="text-sm font-semibold text-[#111418]">{formatCurrency(item.basePrice)}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2 xl:justify-end">
+                          {isEditing ? (
+                            <Link
+                              href="/menu"
+                              scroll={false}
+                              className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2 text-sm font-semibold text-[#111418]"
+                            >
+                              Close
+                            </Link>
                           ) : (
-                            "No image"
+                            <Link
+                              href={`/menu?edit=${item.id}`}
+                              scroll={false}
+                              className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2 text-sm font-semibold text-[#111418]"
+                            >
+                              Edit
+                            </Link>
                           )}
-                        </div>
-                        <div className="space-y-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-lg font-semibold text-[#111418]">{item.name}</h3>
-                          <span
-                            className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${
-                              item.isActive ? "bg-[#ECFDF3] text-[#15803D]" : "bg-[#F3F4F6] text-[#4B5563]"
-                            }`}
-                          >
-                            {item.isActive ? "active" : "inactive"}
-                          </span>
-                          <span
-                            className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${
-                              item.isAvailableToday ? "bg-[#EEF2FF] text-[#4338CA]" : "bg-[#FDECEC] text-[#D32F2F]"
-                            }`}
-                          >
-                            {item.isAvailableToday ? "available today" : "hidden today"}
-                          </span>
-                        </div>
-                        <p className="text-sm text-[#6B7280]">
-                          {item.categoryName} • {item.portionLabel} • {item.prepType}
-                        </p>
-                        {item.description ? <p className="text-sm leading-6 text-[#6B7280]">{item.description}</p> : null}
-                        <p className="text-sm font-semibold text-[#111418]">{formatCurrency(item.basePrice)}</p>
+
+                          <form action={toggleMenuItemActiveAction}>
+                            <input type="hidden" name="menu_item_id" value={item.id} />
+                            <input type="hidden" name="next_value" value={item.isActive ? "false" : "true"} />
+                            <button type="submit" className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2 text-sm font-semibold text-[#111418]">
+                              {item.isActive ? "Deactivate" : "Activate"}
+                            </button>
+                          </form>
+
+                          <form action={toggleMenuItemAvailabilityAction}>
+                            <input type="hidden" name="menu_item_id" value={item.id} />
+                            <input type="hidden" name="next_value" value={item.isAvailableToday ? "false" : "true"} />
+                            <button type="submit" className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2 text-sm font-semibold text-[#111418]">
+                              {item.isAvailableToday ? "Hide today" : "Make available"}
+                            </button>
+                          </form>
                         </div>
                       </div>
 
-                      <div className="flex flex-wrap gap-2 xl:justify-end">
-                        <Link
-                          href={`/menu?edit=${item.id}`}
-                          className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2 text-sm font-semibold text-[#111418]"
-                        >
-                          Edit
-                        </Link>
+                      {item.components.length > 0 ? (
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {item.components.map((component) => (
+                            <span
+                              key={component.id}
+                              className="rounded-full bg-[#F8FAFB] px-3 py-1 text-xs font-semibold text-[#4B5563]"
+                            >
+                              {component.inventoryItemName} x {component.quantityRequired} {component.unitName}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
 
-                        <form action={toggleMenuItemActiveAction}>
-                          <input type="hidden" name="menu_item_id" value={item.id} />
-                          <input type="hidden" name="next_value" value={item.isActive ? "false" : "true"} />
-                          <button type="submit" className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2 text-sm font-semibold text-[#111418]">
-                            {item.isActive ? "Deactivate" : "Activate"}
-                          </button>
-                        </form>
+                      {isEditing && selectedMenuItem ? (
+                        <div className="mt-4 space-y-4 border-t border-[#EEF2F6] pt-4">
+                          <MenuItemForm
+                            key={selectedMenuItem.id}
+                            categories={categories}
+                            portionTypes={portionTypes}
+                            selectedMenuItem={selectedMenuItem}
+                            nextSortOrder={menuItems.length + 1}
+                          />
+                          <div className="rounded-[20px] border border-[#EEF2F6] bg-[#F8FAFB] p-4">
+                            <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Components</p>
+                            <p className="mt-1 text-sm font-semibold text-[#111418]">Linked inventory items</p>
+                            <form action={addMenuItemComponentAction} className="mt-3 grid gap-2">
+                              <input type="hidden" name="menu_item_id" value={selectedMenuItem.id} />
+                              <select
+                                name="inventory_item_id"
+                                required
+                                className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
+                              >
+                                <option value="">Select inventory item</option>
+                                {inventoryItems.map((inv) => (
+                                  <option key={inv.id} value={inv.id}>
+                                    {inv.name} ({inv.unitName})
+                                  </option>
+                                ))}
+                              </select>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0.01"
+                                name="quantity_required"
+                                required
+                                placeholder="Quantity required per menu item"
+                                className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
+                              />
+                              <button type="submit" className="rounded-2xl bg-[#111418] px-4 py-2.5 text-sm font-semibold text-white">
+                                Save component link
+                              </button>
+                            </form>
 
-                        <form action={toggleMenuItemAvailabilityAction}>
-                          <input type="hidden" name="menu_item_id" value={item.id} />
-                          <input type="hidden" name="next_value" value={item.isAvailableToday ? "false" : "true"} />
-                          <button type="submit" className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2 text-sm font-semibold text-[#111418]">
-                            {item.isAvailableToday ? "Hide today" : "Make available"}
-                          </button>
-                        </form>
-                      </div>
-                    </div>
+                            <div className="mt-3 space-y-2">
+                              {selectedMenuItem.components.length > 0 ? (
+                                selectedMenuItem.components.map((component) => (
+                                  <div key={component.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[16px] bg-white px-4 py-3">
+                                    <div>
+                                      <p className="text-sm font-semibold text-[#111418]">{component.inventoryItemName}</p>
+                                      <p className="text-xs text-[#6B7280]">
+                                        {component.quantityRequired} {component.unitName} per item
+                                      </p>
+                                    </div>
+                                    <form action={removeMenuItemComponentAction}>
+                                      <input type="hidden" name="component_id" value={component.id} />
+                                      <input type="hidden" name="menu_item_id" value={selectedMenuItem.id} />
+                                      <button type="submit" className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-1.5 text-xs font-semibold text-[#111418]">
+                                        Remove
+                                      </button>
+                                    </form>
+                                  </div>
+                                ))
+                              ) : (
+                                <p className="pt-1 text-xs leading-5 text-[#6B7280]">No inventory components linked yet.</p>
+                              )}
+                            </div>
+                          </div>
 
-                    {item.components.length > 0 ? (
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {item.components.map((component) => (
-                          <span
-                            key={component.id}
-                            className="rounded-full bg-[#F8FAFB] px-3 py-1 text-xs font-semibold text-[#4B5563]"
-                          >
-                            {component.inventoryItemName} x {component.quantityRequired} {component.unitName}
-                          </span>
-                        ))}
-                      </div>
-                    ) : null}
-                  </article>
-                ))
+                          <form action={deleteMenuItemAction}>
+                            <input type="hidden" name="menu_item_id" value={selectedMenuItem.id} />
+                            <button type="submit" className="rounded-2xl border border-[#F4C7C7] px-4 py-2.5 text-sm font-semibold text-[#D32F2F]">
+                              Delete menu item
+                            </button>
+                          </form>
+                        </div>
+                      ) : null}
+                    </article>
+                  );
+                })
               ) : (
                 <div className="rounded-[24px] bg-[#F8FAFB] px-4 py-5 text-sm leading-6 text-[#6B7280]">
                   No menu items exist yet. Use the form on the right to create the first live sellable item.
@@ -192,97 +283,35 @@ export default async function MenuPage({
             </form>
           </section>
 
-          <section className="surface-card rounded-[32px] p-5">
-            <div className="border-b border-[#EEF2F6] pb-4">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">
-                {selectedMenuItem ? "Edit menu item" : "New menu item"}
-              </p>
-              <h2 className="mt-2 text-xl font-semibold">
-                {selectedMenuItem ? selectedMenuItem.name : "Create a sellable item"}
-              </h2>
-            </div>
-            <MenuItemForm
-              key={selectedMenuItem?.id ?? "new-menu-item"}
-              categories={categories}
-              portionTypes={portionTypes}
-              selectedMenuItem={selectedMenuItem}
-              nextSortOrder={menuItems.length + 1}
-            />
-
-            {selectedMenuItem ? (
-              <form action={deleteMenuItemAction} className="mt-3">
-                <input type="hidden" name="menu_item_id" value={selectedMenuItem.id} />
-                <button type="submit" className="rounded-2xl border border-[#F4C7C7] px-4 py-2.5 text-sm font-semibold text-[#D32F2F]">
-                  Delete menu item
-                </button>
-              </form>
-            ) : null}
-          </section>
-
-          {selectedMenuItem ? (
-            <section className="surface-card rounded-[32px] p-5">
-              <div className="border-b border-[#EEF2F6] pb-4">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Components</p>
-                <h2 className="mt-2 text-xl font-semibold">Linked inventory items</h2>
-              </div>
-
-              <form action={addMenuItemComponentAction} className="mt-4 grid gap-3">
-                <input type="hidden" name="menu_item_id" value={selectedMenuItem.id} />
-                <select
-                  name="inventory_item_id"
-                  required
-                  className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
+          <details className="surface-card rounded-[32px] group">
+            <summary className="list-none cursor-pointer p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">New menu item</p>
+                  <h2 className="mt-2 text-xl font-semibold">Create a sellable item</h2>
+                </div>
+                <svg
+                  className="h-4 w-4 shrink-0 text-[#6B7280] transition-transform group-open:rotate-90"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
                 >
-                  <option value="">Select inventory item</option>
-                  {inventoryItems.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name} ({item.unitName})
-                    </option>
-                  ))}
-                </select>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  name="quantity_required"
-                  required
-                  placeholder="Quantity required per menu item"
-                  className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
-                />
-                <button type="submit" className="rounded-2xl bg-[#111418] px-4 py-2.5 text-sm font-semibold text-white">
-                  Save component link
-                </button>
-              </form>
-
-              <div className="mt-4 space-y-3">
-                {selectedMenuItem.components.length > 0 ? (
-                  selectedMenuItem.components.map((component) => (
-                    <article key={component.id} className="rounded-[22px] bg-[#F8FAFB] px-4 py-4">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-semibold text-[#111418]">{component.inventoryItemName}</p>
-                          <p className="text-sm text-[#6B7280]">
-                            {component.quantityRequired} {component.unitName} per menu item
-                          </p>
-                        </div>
-                        <form action={removeMenuItemComponentAction}>
-                          <input type="hidden" name="component_id" value={component.id} />
-                          <input type="hidden" name="menu_item_id" value={selectedMenuItem.id} />
-                          <button type="submit" className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2 text-sm font-semibold text-[#111418]">
-                            Remove
-                          </button>
-                        </form>
-                      </div>
-                    </article>
-                  ))
-                ) : (
-                  <div className="rounded-[22px] bg-[#F8FAFB] px-4 py-4 text-sm leading-6 text-[#6B7280]">
-                    This menu item has no linked inventory components yet.
-                  </div>
-                )}
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
               </div>
-            </section>
-          ) : null}
+            </summary>
+            <div className="border-t border-[#EEF2F6] px-5 pb-5 pt-4">
+              <MenuItemForm
+                key="new-menu-item"
+                categories={categories}
+                portionTypes={portionTypes}
+                selectedMenuItem={null}
+                nextSortOrder={menuItems.length + 1}
+              />
+            </div>
+          </details>
+
         </aside>
       </div>
     </div>
