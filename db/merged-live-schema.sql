@@ -305,14 +305,8 @@ as $$
       then floor(coalesce(src_ds.starting_quantity, src_fs.current_quantity, 0)::numeric / pt.stock_source_units_per_serving)::integer
       else coalesce(ds.starting_quantity, fs.current_quantity, 0)
     end as starting_quantity,
-    case
-      when pt.stock_source_portion_type_id is not null then coalesce(ot.reserved_quantity, 0)
-      else coalesce(ds.reserved_quantity, 0)
-    end as reserved_quantity,
-    case
-      when pt.stock_source_portion_type_id is not null then coalesce(ot.sold_quantity, 0)
-      else coalesce(ds.sold_quantity, 0)
-    end as sold_quantity,
+    coalesce(ot.reserved_quantity, 0) as reserved_quantity,
+    coalesce(ot.sold_quantity, 0) as sold_quantity,
     case
       when pt.stock_source_portion_type_id is not null then 0
       else coalesce(ds.waste_quantity, 0)
@@ -348,7 +342,7 @@ as $$
 $$;
 
 comment on function public.get_daily_menu_stock(date) is
-  'Returns active menu portions for a service day; falls back to durable finished_stock when day stock has not been initialized.';
+  'Returns active menu portions for a service day. Reserved/sold counts are per portion (from order_items) so shared-source portions (e.g. fries_250g and large_fries) no longer overlap. starting/remaining still derive from the shared physical pool.';
 
 -- Phase 39: collapsed storefront menu read model.
 
@@ -4908,14 +4902,14 @@ as $$
   ),
   daily_paid_totals as (
     select
-      mi.portion_type_id,
+      coalesce(pt.stock_source_portion_type_id, mi.portion_type_id) as portion_type_id,
       sum(
         case
           when o.payment_status = 'paid'
            and o.status <> 'completed'
            and o.status <> 'cancelled'
            and o.stock_reserved_at is not null
-          then oi.quantity
+          then oi.quantity * coalesce(pt.stock_source_units_per_serving, 1)
           else 0
         end
       )::integer as expected_reserved_quantity,
@@ -4923,7 +4917,7 @@ as $$
         case
           when o.payment_status = 'paid'
            and o.status = 'completed'
-          then oi.quantity
+          then oi.quantity * coalesce(pt.stock_source_units_per_serving, 1)
           else 0
         end
       )::integer as expected_sold_quantity
@@ -4936,8 +4930,7 @@ as $$
       on pt.id = mi.portion_type_id
     where o.service_date = p_service_date
       and mi.portion_type_id is not null
-      and pt.stock_source_portion_type_id is null
-    group by mi.portion_type_id
+    group by coalesce(pt.stock_source_portion_type_id, mi.portion_type_id)
   ),
   daily_stock_drift as (
     select
@@ -5073,7 +5066,7 @@ grant execute on function public.get_business_truth_health_snapshot(timestamptz,
 to service_role;
 
 comment on function public.get_business_truth_health_snapshot(timestamptz, date) is
-  'Returns read-only payment/stock/recovery reconciliation counts and previews for elevated admin diagnostics.';
+  'Returns read-only payment/stock/recovery reconciliation counts and previews for elevated admin diagnostics. Phase 55: daily_paid_totals is source-aware so shared-stock portions (e.g. fries_250g sourced by large_fries) reconcile correctly against daily_stock.';
 
 -- Phase 47: DB-side aggregate for dashboard revenue today.
 
