@@ -101,14 +101,18 @@ self.addEventListener("notificationclick", (event) => {
 
   const requestedUrl =
     event.notification.data && typeof event.notification.data.url === "string" ? event.notification.data.url : "/";
-  const targetUrl = new URL(requestedUrl, self.location.origin).toString();
+  const candidateUrl = new URL(requestedUrl, self.location.origin);
+  const targetUrl = candidateUrl.origin === self.location.origin
+    ? candidateUrl.href
+    : new URL("/", self.location.origin).href;
 
   event.waitUntil(
-    (async () => {
-      const clients = await self.clients.matchAll({
-        type: "window",
-        includeUncontrolled: true
-      });
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (clients) => {
+      for (const client of clients) {
+        if (client.url === targetUrl && "focus" in client) {
+          return client.focus();
+        }
+      }
 
       for (const client of clients) {
         if (client.url.startsWith(self.location.origin)) {
@@ -116,14 +120,17 @@ self.addEventListener("notificationclick", (event) => {
             await client.navigate(targetUrl);
           }
 
-          await client.focus();
-          return;
+          if ("focus" in client) {
+            return client.focus();
+          }
         }
       }
 
       if (self.clients.openWindow) {
-        await self.clients.openWindow(targetUrl);
+        return self.clients.openWindow(targetUrl);
       }
-    })()
+
+      return undefined;
+    })
   );
 });

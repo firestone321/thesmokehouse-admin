@@ -65,7 +65,7 @@ export function AdminSidebar({
   return (
     <>
       <div className="space-y-3 lg:hidden">
-        <div className="wood-surface sticky top-3 z-30 rounded-[24px] border border-white/5 px-4 py-4 text-[#E6E8EB] shadow-[0_18px_36px_rgba(15,23,42,0.14)]">
+        <div className="wood-surface fixed inset-x-3 top-3 z-30 rounded-[24px] border border-white/5 px-4 py-4 text-[#E6E8EB] shadow-[0_18px_36px_rgba(15,23,42,0.14)]">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
               <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-2xl">
@@ -87,6 +87,8 @@ export function AdminSidebar({
             </button>
           </div>
         </div>
+
+        <div aria-hidden="true" className="h-20" />
 
         <div className="flex gap-2 overflow-x-auto pb-1">
           {quickAccessItems.map((item) => {
