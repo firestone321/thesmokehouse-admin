@@ -1,6 +1,6 @@
 import "server-only";
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import webpush from "web-push";
 import { createAdminSupabaseClient } from "@/lib/supabase/server";
 import { requireEnv } from "@/lib/supabase/shared";
@@ -14,6 +14,17 @@ const MAX_ACTIVE_SUBSCRIPTIONS = 10;
 const SEND_CONCURRENCY = 5;
 const DISPATCH_CONCURRENCY = 3;
 const ADMIN_PUSH_DRAIN_LOCK_TTL_SECONDS = 60;
+const MAX_PUSH_TOPIC_LENGTH = 32;
+
+function buildPushTopic(tag: string) {
+  // Apple Web Push rejects Topic headers that are not valid base64url-decodable
+  // strings (responds 400 BadWebPushTopic). Hashing the tag and base64url-encoding
+  // the digest produces a deterministic, always-valid topic for every provider.
+  return createHash("sha256")
+    .update(tag, "utf8")
+    .digest("base64url")
+    .slice(0, MAX_PUSH_TOPIC_LENGTH);
+}
 
 type AdminPushSubscriptionRow = {
   id: string;
@@ -286,7 +297,7 @@ async function sendPushNotification(
       {
         TTL: 300,
         urgency: "high",
-        topic: `paid-order-${String(payload.data.orderId).slice(0, 20)}`
+        topic: buildPushTopic(`paid-order-${payload.data.orderId}`)
       }
     );
 
