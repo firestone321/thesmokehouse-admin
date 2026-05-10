@@ -346,12 +346,6 @@ export function SupplyIntakeForm({
                   />
                   <input
                     form="supply-quick-add-item-form"
-                    name="code"
-                    placeholder="Code, e.g. paper_cups"
-                    className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
-                  />
-                  <input
-                    form="supply-quick-add-item-form"
                     name="unit_name"
                     required
                     placeholder="Unit, e.g. piece, pack, box"
