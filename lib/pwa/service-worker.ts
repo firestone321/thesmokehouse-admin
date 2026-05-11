@@ -15,22 +15,21 @@ export function supportsPushNotifications() {
   );
 }
 
-export function registerAppServiceWorker() {
+export async function registerAppServiceWorker() {
   if (!supportsServiceWorker()) {
-    return Promise.resolve(null);
+    return null;
   }
 
   if (process.env.NODE_ENV !== "production") {
-    return navigator.serviceWorker.getRegistrations().then(async (registrations) => {
-      await Promise.all(registrations.map((registration) => registration.unregister()));
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(registrations.map((registration) => registration.unregister()));
 
-      if ("caches" in window) {
-        const keys = await caches.keys();
-        await Promise.all(keys.map((key) => caches.delete(key)));
-      }
+    if ("caches" in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((key) => caches.delete(key)));
+    }
 
-      return null;
-    });
+    return null;
   }
 
   if (!registrationPromise) {
@@ -49,11 +48,11 @@ export async function getAppServiceWorkerRegistration() {
   }
 
   const existingRegistration = await navigator.serviceWorker.getRegistration("/");
-  if (existingRegistration) {
-    return existingRegistration;
+  if (!existingRegistration) {
+    await registerAppServiceWorker();
   }
 
-  return registerAppServiceWorker();
+  return navigator.serviceWorker.ready;
 }
 
 export function decodeVapidPublicKey(publicKey: string) {

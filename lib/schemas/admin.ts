@@ -102,6 +102,7 @@ const allowedPushHostSuffixes = [
   "fcm.googleapis.com",
   ".push.services.mozilla.com",
   ".push.apple.com",
+  ".push.services.microsoft.com",
   ".windows.com",
   ".notify.windows.com"
 ];
