@@ -149,7 +149,7 @@ function getOptionalImageFile(formData: FormData, key: string) {
 
 async function uploadMenuItemImage(menuItemId: number, file: File) {
   const supabase = createAdminSupabaseClient();
-  const filePath = `menu-items/${menuItemId}/cover`;
+  const filePath = `menu-items/${menuItemId}/${randomUUID()}`;
   const arrayBuffer = await file.arrayBuffer();
 
   const { error: uploadError } = await supabase.storage.from(menuImageBucket).upload(filePath, arrayBuffer, {

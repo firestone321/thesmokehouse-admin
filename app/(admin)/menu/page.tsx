@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { SchemaSetupNotice } from "@/components/admin/schema-setup-notice";
 import { MenuItemForm } from "@/components/menu/menu-item-form";
@@ -84,7 +85,7 @@ export default async function MenuPage({
                         <div className="flex gap-4">
                           <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-[20px] bg-[#F8FAFB] text-[11px] font-semibold uppercase tracking-[0.14em] text-[#9CA3AF]">
                             {item.imageUrl ? (
-                              <img src={item.imageUrl} alt={item.name} className="h-full w-full object-cover" />
+                              <Image src={item.imageUrl} alt={item.name} width={80} height={80} className="h-full w-full object-cover" />
                             ) : (
                               "No image"
                             )}

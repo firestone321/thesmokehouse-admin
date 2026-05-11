@@ -13,10 +13,6 @@ type EnforceRateLimitOptions = {
   bucketSuffix?: string | null;
 };
 
-function hasKnownProxyMarker(request: Request) {
-  return Boolean(request.headers.get("cf-ray") || request.headers.get("fly-region") || request.headers.get("x-vercel-id"));
-}
-
 function getClientIp(request: Request): string {
   for (const header of ["cf-connecting-ip", "fly-client-ip"]) {
     const value = request.headers.get(header);
@@ -25,13 +21,12 @@ function getClientIp(request: Request): string {
     }
   }
 
-  const allowGenericForwardingHeaders = process.env.NODE_ENV !== "production" || hasKnownProxyMarker(request);
-  if (allowGenericForwardingHeaders) {
-    const realIp = request.headers.get("x-real-ip")?.trim();
-    if (realIp) {
-      return realIp;
-    }
+  const realIp = request.headers.get("x-real-ip")?.trim();
+  if (realIp) {
+    return realIp;
+  }
 
+  if (process.env.NODE_ENV !== "production") {
     const forwardedFor = request.headers.get("x-forwarded-for");
     if (forwardedFor) {
       return forwardedFor.split(",")[0]?.trim() || "unknown";

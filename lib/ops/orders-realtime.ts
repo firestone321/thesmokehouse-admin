@@ -4,7 +4,7 @@ import type { RealtimeChannel, RealtimePostgresChangesPayload } from "@supabase/
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
 
 const ORDERS_REALTIME_CHANNEL_NAME = "ops-orders-realtime-v1";
-const FALLBACK_POLL_INTERVAL_MS = 10_000;
+const FALLBACK_POLL_INTERVAL_MS = 20_000;
 const SUBSCRIPTION_TIMEOUT_MS = 5_000;
 const BATCH_FLUSH_MS = 400;
 

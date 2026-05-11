@@ -1,6 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  images: {
+    remotePatterns: [
+      { protocol: "https", hostname: "stvbivbatrlutqhgfgic.supabase.co" }
+    ]
+  },
   experimental: {
     serverActions: {
       bodySizeLimit: "6mb"
