@@ -20,6 +20,7 @@ export default async function OrdersPage({
   const params = await searchParams;
   const status = getFirstValue(params.status) ?? "all";
   const search = getFirstValue(params.search) ?? "";
+  const page = Math.max(1, parseInt(getFirstValue(params.page) ?? "1", 10) || 1);
   const pushQueueStatus = getFirstValue(params.push_queue_status);
   const pushQueueMessage = getFirstValue(params.push_queue_message);
   const adminProfile = await requireApprovedAdminRole();
@@ -30,7 +31,7 @@ export default async function OrdersPage({
 
   try {
     [data, pushQueues, businessTruthHealth] = await Promise.all([
-      getOrdersPageData({ status, search }),
+      getOrdersPageData({ status, search, page }),
       getPushQueueSnapshots(),
       canViewBusinessTruthHealth ? getBusinessTruthHealthSnapshot() : Promise.resolve(null)
     ]);
@@ -42,7 +43,7 @@ export default async function OrdersPage({
     throw error;
   }
 
-  const { orders, limit } = data;
+  const { orders, limit, page: currentPage, hasNextPage } = data;
   const returnToParams = new URLSearchParams();
   if (status !== "all") {
     returnToParams.set("status", status);
@@ -137,7 +138,7 @@ export default async function OrdersPage({
 
       <PushQueueHealthCard queues={pushQueues} returnTo={returnTo} />
       {businessTruthHealth ? <BusinessTruthHealthCard snapshot={businessTruthHealth} /> : null}
-      <LiveOrdersPanel orders={orders} status={status} search={search} limit={limit} />
+      <LiveOrdersPanel orders={orders} status={status} search={search} limit={limit} page={currentPage} hasNextPage={hasNextPage} />
     </div>
   );
 }

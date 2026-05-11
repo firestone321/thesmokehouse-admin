@@ -66,8 +66,9 @@ const procurementMigrationFiles = [
   "db/phase-45-grouped-order-item-presentation.sql"
 ];
 
-const DEFAULT_ORDER_LIST_LIMIT = 50;
-const MAX_ORDER_LIST_LIMIT = 100;
+const PAGE_SIZE = 30;
+const DEFAULT_ORDER_LIST_LIMIT = PAGE_SIZE;
+const MAX_ORDER_LIST_LIMIT = PAGE_SIZE;
 const DASHBOARD_ACTIVE_ORDERS_LIMIT = 100;
 const DASHBOARD_TODAY_ORDERS_LIMIT = 100;
 const PUSH_PROCESSING_STALE_MS = 5 * 60 * 1000;
@@ -256,6 +257,16 @@ function normalizeOrderListLimit(value: unknown) {
   return Math.max(1, Math.min(MAX_ORDER_LIST_LIMIT, Math.trunc(parsed)));
 }
 
+function normalizePage(value: unknown) {
+  const parsed = Number(value ?? 1);
+
+  if (!Number.isFinite(parsed)) {
+    return 1;
+  }
+
+  return Math.max(1, Math.trunc(parsed));
+}
+
 function escapePostgresLikePattern(value: string) {
   return value.replace(/[\\%_]/g, "\\$&");
 }
@@ -282,25 +293,30 @@ async function fetchOrderListRows(
     statusValues: string[];
     search: string;
     limit: number;
+    offset: number;
   }
 ) {
+  const { limit, offset } = options;
+
   const buildBaseQuery = () =>
     applyOrderStatusFilter(
       supabase
         .from("orders")
         .select(orderListSelection)
-        .order("created_at", { ascending: false })
-        .limit(options.limit),
+        .order("created_at", { ascending: false }),
       options.statusValues
     );
 
   if (options.search.length === 0) {
-    return await buildBaseQuery();
+    // Fetch limit+1 rows so callers can detect whether a next page exists.
+    return await buildBaseQuery().range(offset, offset + limit);
   }
 
   const likePattern = `%${escapePostgresLikePattern(options.search)}%`;
+  // Fan-out: fetch enough rows per column to cover the requested offset + page + 1.
+  const searchFetchLimit = offset + limit + 1;
   const responses = await Promise.all(
-    orderSearchColumns.map((column) => buildBaseQuery().ilike(column, likePattern))
+    orderSearchColumns.map((column) => buildBaseQuery().limit(searchFetchLimit).ilike(column, likePattern))
   );
   const firstError = responses.find((response) => response.error)?.error ?? null;
 
@@ -320,7 +336,7 @@ async function fetchOrderListRows(
   }
 
   return {
-    data: sortOrderRowsByCreatedAt(Array.from(rowsById.values())).slice(0, options.limit),
+    data: sortOrderRowsByCreatedAt(Array.from(rowsById.values())).slice(offset, offset + limit + 1),
     error: null
   };
 }
@@ -668,6 +684,7 @@ export async function getOrdersPageData(options?: {
   status?: string | string[] | null;
   search?: string | null;
   limit?: number | null;
+  page?: number | null;
 }) {
   noStore();
 
@@ -681,19 +698,27 @@ export async function getOrdersPageData(options?: {
   const status = statusValues.length > 0 ? statusValues.join(",") : "all";
   const search = options?.search?.trim() || "";
   const limit = normalizeOrderListLimit(options?.limit);
+  const page = normalizePage(options?.page);
+  const offset = (page - 1) * limit;
 
   const { data, error } = await fetchOrderListRows(supabase, {
     statusValues,
     search,
-    limit
+    limit,
+    offset
   });
   ensureNoError(error, "Unable to load orders");
+
+  const rows = data ?? [];
+  const hasNextPage = rows.length > limit;
 
   return {
     status,
     search,
     limit,
-    orders: (data ?? []).map(mapOrderListItem)
+    page,
+    hasNextPage,
+    orders: rows.slice(0, limit).map(mapOrderListItem)
   };
 }
 
@@ -722,6 +747,7 @@ export async function getOrderHistoryPageData(options?: {
   search?: string | null;
   orderLimit?: number | null;
   batchLimit?: number | null;
+  page?: number | null;
 }): Promise<OrderHistoryPageData> {
   noStore();
 
@@ -729,11 +755,14 @@ export async function getOrderHistoryPageData(options?: {
   const search = options?.search?.trim() || "";
   const orderLimit = normalizeOrderListLimit(options?.orderLimit);
   const batchLimit = Math.max(1, Math.min(24, Math.trunc(options?.batchLimit ?? 12)));
+  const page = normalizePage(options?.page);
+  const offset = (page - 1) * orderLimit;
 
   const ordersQuery = fetchOrderListRows(supabase, {
     statusValues: ["completed", "cancelled"],
     search,
-    limit: orderLimit
+    limit: orderLimit,
+    offset
   });
 
   const batchesQuery = supabase
@@ -769,12 +798,17 @@ export async function getOrderHistoryPageData(options?: {
   ensureNoError(ordersResponse.error, "Unable to load archived orders");
   ensureNoError(batchesResponse.error, "Unable to load order history batches", procurementMigrationFiles);
 
+  const orderRows = ordersResponse.data ?? [];
+  const hasNextPage = orderRows.length > orderLimit;
+
   return {
     search,
-    orders: (ordersResponse.data ?? []).map(mapOrderListItem),
+    orders: orderRows.slice(0, orderLimit).map(mapOrderListItem),
     batches: (batchesResponse.data ?? []).map(mapOrderHistoryBatch),
     orderLimit,
-    batchLimit
+    batchLimit,
+    page,
+    hasNextPage
   };
 }
 

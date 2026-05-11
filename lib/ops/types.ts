@@ -351,6 +351,8 @@ export interface OrderHistoryPageData {
   batches: OrderHistoryBatchRecord[];
   orderLimit: number;
   batchLimit: number;
+  page: number;
+  hasNextPage: boolean;
 }
 
 export interface DashboardIssueRecord {

@@ -137,7 +137,8 @@ export const adminPushSubscriptionSchema = z.object({
 export const adminOrdersQuerySchema = z.object({
   status: optionalText(maxStatusLength),
   search: optionalText(maxSearchLength),
-  limit: z.preprocess(blankToUndefined, z.coerce.number().int().min(1).max(100).default(50)).default(50)
+  limit: z.preprocess(blankToUndefined, z.coerce.number().int().min(1).max(30).default(30)).default(30),
+  page: z.preprocess(blankToUndefined, z.coerce.number().int().min(1).default(1)).default(1)
 });
 
 export const orderRouteParamsSchema = z.object({

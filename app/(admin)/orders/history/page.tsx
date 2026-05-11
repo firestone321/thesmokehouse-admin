@@ -76,10 +76,11 @@ export default async function OrderHistoryPage({
 }) {
   const params = await searchParams;
   const search = getFirstValue(params.search) ?? "";
+  const page = Math.max(1, parseInt(getFirstValue(params.page) ?? "1", 10) || 1);
   let data;
 
   try {
-    data = await getOrderHistoryPageData({ search });
+    data = await getOrderHistoryPageData({ search, page });
   } catch (error) {
     if (error instanceof OperationsSchemaMissingError) {
       return <SchemaSetupNotice title="Order history cannot load yet" error={error} />;
@@ -88,7 +89,14 @@ export default async function OrderHistoryPage({
     throw error;
   }
 
-  const { orders, batches } = data;
+  const { orders, batches, page: currentPage, hasNextPage } = data;
+
+  const buildPageUrl = (targetPage: number) => {
+    const params = new URLSearchParams();
+    if (search) params.set("search", search);
+    if (targetPage > 1) params.set("page", String(targetPage));
+    return `/orders/history${params.size > 0 ? `?${params.toString()}` : ""}`;
+  };
 
   return (
     <div className="space-y-4 text-[#111418]">
@@ -194,6 +202,32 @@ export default async function OrderHistoryPage({
               <p className="py-4 text-sm text-[#6B7280]">No archived orders match the current search.</p>
             )}
           </div>
+
+          {(currentPage > 1 || hasNextPage) && (
+            <div className="mt-5 flex items-center justify-between gap-3 border-t border-[#EEF2F6] pt-4">
+              {currentPage > 1 ? (
+                <Link
+                  href={buildPageUrl(currentPage - 1)}
+                  className="rounded-2xl border border-[#D7DDE4] bg-white px-4 py-2.5 text-sm font-semibold text-[#111418]"
+                >
+                  Previous
+                </Link>
+              ) : (
+                <span className="rounded-2xl border border-[#E4E7EB] px-4 py-2.5 text-sm font-semibold text-[#9CA3AF]">Previous</span>
+              )}
+              <span className="text-sm text-[#6B7280]">Page {currentPage}</span>
+              {hasNextPage ? (
+                <Link
+                  href={buildPageUrl(currentPage + 1)}
+                  className="rounded-2xl border border-[#D7DDE4] bg-white px-4 py-2.5 text-sm font-semibold text-[#111418]"
+                >
+                  Next
+                </Link>
+              ) : (
+                <span className="rounded-2xl border border-[#E4E7EB] px-4 py-2.5 text-sm font-semibold text-[#9CA3AF]">Next</span>
+              )}
+            </div>
+          )}
         </section>
 
         <aside className="space-y-4">

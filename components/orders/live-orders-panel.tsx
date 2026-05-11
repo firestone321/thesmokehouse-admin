@@ -81,11 +81,12 @@ function orderMatchesFilters(order: OrderListItem, status: string, search: strin
   );
 }
 
-async function fetchOrdersSnapshot(status: string, search: string, limit: number) {
+async function fetchOrdersSnapshot(status: string, search: string, limit: number, page: number) {
   const params = new URLSearchParams({
     status,
     search,
-    limit: String(limit)
+    limit: String(limit),
+    page: String(page)
   });
   const response = await fetch(`/api/admin/orders?${params.toString()}`, {
     method: "GET",
@@ -121,12 +122,16 @@ export function LiveOrdersPanel({
   orders,
   status,
   search,
-  limit
+  limit,
+  page,
+  hasNextPage
 }: {
   orders: OrderListItem[];
   status: string;
   search: string;
   limit: number;
+  page: number;
+  hasNextPage: boolean;
 }) {
   const [localOrders, setLocalOrders] = useState<OrderListItem[]>(orders);
   const pendingReconcileIdsRef = useRef<Set<string>>(new Set());
@@ -152,7 +157,7 @@ export function LiveOrdersPanel({
   };
 
   const refreshOrders = async () => {
-    const nextOrders = await fetchOrdersSnapshot(status, search, limit);
+    const nextOrders = await fetchOrdersSnapshot(status, search, limit, page);
     setLocalOrders(nextOrders);
   };
 
@@ -224,6 +229,14 @@ export function LiveOrdersPanel({
     onInsert: scheduleReconcile,
     onRefresh: scheduleReconcile
   });
+
+  const buildPageUrl = (targetPage: number) => {
+    const params = new URLSearchParams();
+    if (status !== "all") params.set("status", status);
+    if (search) params.set("search", search);
+    if (targetPage > 1) params.set("page", String(targetPage));
+    return `/orders${params.size > 0 ? `?${params.toString()}` : ""}`;
+  };
 
   return (
     <section className="surface-card rounded-[32px] p-5">
@@ -300,6 +313,32 @@ export function LiveOrdersPanel({
           </div>
         )}
       </div>
+
+      {(page > 1 || hasNextPage) && (
+        <div className="mt-5 flex items-center justify-between gap-3 border-t border-[#EEF2F6] pt-4">
+          {page > 1 ? (
+            <Link
+              href={buildPageUrl(page - 1)}
+              className="rounded-2xl border border-[#D7DDE4] bg-white px-4 py-2.5 text-sm font-semibold text-[#111418]"
+            >
+              Previous
+            </Link>
+          ) : (
+            <span className="rounded-2xl border border-[#E4E7EB] px-4 py-2.5 text-sm font-semibold text-[#9CA3AF]">Previous</span>
+          )}
+          <span className="text-sm text-[#6B7280]">Page {page}</span>
+          {hasNextPage ? (
+            <Link
+              href={buildPageUrl(page + 1)}
+              className="rounded-2xl border border-[#D7DDE4] bg-white px-4 py-2.5 text-sm font-semibold text-[#111418]"
+            >
+              Next
+            </Link>
+          ) : (
+            <span className="rounded-2xl border border-[#E4E7EB] px-4 py-2.5 text-sm font-semibold text-[#9CA3AF]">Next</span>
+          )}
+        </div>
+      )}
     </section>
   );
 }
