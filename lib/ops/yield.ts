@@ -19,27 +19,6 @@ function parsePortionWeightInGrams(portionLabel: string | null | undefined) {
   return Number.isFinite(grams) && grams > 0 ? grams : null;
 }
 
-export function getAllowedPortionCodesForReceipt(proteinCode: ProteinProcurementCode | null) {
-  switch (proteinCode) {
-    case "beef_ribs":
-      return ["beef_ribs_300g"];
-    case "beef_chunks":
-      return ["beef_chunks_300g"];
-    case "whole_chicken":
-      return ["chicken_half", "chicken_quarter"];
-    case "goat_ribs":
-      return ["goat_ribs_300g"];
-    case "goat_chunks":
-      return ["goat_chunks_300g"];
-    case "beef":
-      return ["beef_ribs_300g", "beef_chunks_300g"];
-    case "goat":
-      return ["goat_ribs_300g", "goat_chunks_300g"];
-    default:
-      return [];
-  }
-}
-
 export function getExpectedYieldEstimate(options: {
   proteinCode: ProteinProcurementCode;
   quantityReceived: number;

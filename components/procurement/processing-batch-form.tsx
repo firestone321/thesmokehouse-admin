@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { processProcurementReceiptToFinishedStockAction } from "@/lib/ops/actions";
-import { ProcurementActivityRecord, ProcurementPortionOption } from "@/lib/ops/types";
-import { getAllowedPortionCodesForReceipt, getExpectedYieldEstimate } from "@/lib/ops/yield";
+import { ProcurementActivityRecord, ProcurementPortionOption, ProteinIntakeItemOption } from "@/lib/ops/types";
+import { getExpectedYieldEstimate } from "@/lib/ops/yield";
 
 function formatPortionLabel(option: ProcurementPortionOption) {
   return option.portionLabel ? `${option.name} (${option.portionLabel})` : option.name;
@@ -46,9 +46,11 @@ function parsePortionWeightKg(portionLabel: string | null | undefined) {
 
 export function ProcessingBatchForm({
   portionOptions,
+  proteinIntakeItems,
   proteinReceipts
 }: {
   portionOptions: ProcurementPortionOption[];
+  proteinIntakeItems: ProteinIntakeItemOption[];
   proteinReceipts: ProcurementActivityRecord[];
 }) {
   const [selectedReceiptId, setSelectedReceiptId] = useState<string>(
@@ -67,18 +69,22 @@ export function ProcessingBatchForm({
     [proteinReceipts, selectedReceiptId]
   );
   const hasActionableReceipt = proteinReceipts.some((receipt) => !receipt.hasProcessingBatch);
-  const isWholeChicken = selectedReceipt?.proteinCode === "whole_chicken";
+  const selectedProteinItem = useMemo(
+    () => proteinIntakeItems.find((item) => item.id === selectedReceipt?.proteinIntakeItemId) ?? null,
+    [proteinIntakeItems, selectedReceipt?.proteinIntakeItemId]
+  );
+  const isWholeChicken = selectedReceipt?.processingMode === "whole_bird";
   const totalBirds = selectedReceipt && isWholeChicken ? selectedReceipt.quantityReceived : 0;
   const wholeChickenCountIsValid = !isWholeChicken || (Number.isInteger(totalBirds) && totalBirds > 0);
 
   const filteredPortionOptions = useMemo(() => {
-    if (!selectedReceipt?.proteinCode) {
+    if (!selectedProteinItem) {
       return [];
     }
 
-    const allowedPortionCodes = new Set(getAllowedPortionCodesForReceipt(selectedReceipt.proteinCode));
-    return portionOptions.filter((option) => allowedPortionCodes.has(option.code));
-  }, [portionOptions, selectedReceipt]);
+    const allowedPortionTypeIds = new Set(selectedProteinItem.portionTypeIds);
+    return portionOptions.filter((option) => allowedPortionTypeIds.has(option.id));
+  }, [portionOptions, selectedProteinItem]);
 
   useEffect(() => {
     if (!filteredPortionOptions.find((option) => String(option.id) === selectedPortionId)) {
@@ -122,7 +128,7 @@ export function ProcessingBatchForm({
 
   useEffect(() => {
     setPostRoastPackedWeightKg("");
-    if (selectedReceipt?.proteinCode === "whole_chicken") {
+    if (selectedReceipt?.processingMode === "whole_bird") {
       const initialBirds = wholeChickenCountIsValid ? String(totalBirds) : "0";
       setBirdsAllocatedToHalves(initialBirds);
       setBirdsAllocatedToQuarters("0");
@@ -372,7 +378,7 @@ export function ProcessingBatchForm({
                     </p>
                   </>
                 )}
-                {selectedReceipt.proteinCode === "whole_chicken" ? (
+                {selectedReceipt.processingMode === "whole_bird" ? (
                   <p className="mt-2 text-sm leading-6 text-[#6B7280]">
                     Already processed from this receipt: {selectedReceipt.processedHalves} halves and {selectedReceipt.processedQuarters} quarters.
                   </p>

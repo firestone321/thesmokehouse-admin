@@ -2,36 +2,17 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { createSupplierInlineAction, recordProteinProcurementAction } from "@/lib/ops/actions";
-import { ProcurementSupplierOption, ProteinProcurementCode } from "@/lib/ops/types";
-
-const proteinLabels: Record<ProteinProcurementCode, string> = {
-  beef_ribs: "Beef ribs",
-  beef_chunks: "Beef chunks",
-  whole_chicken: "Whole chicken",
-  goat_ribs: "Goat ribs",
-  goat_chunks: "Goat chunks",
-  beef: "Beef",
-  goat: "Goat meat"
-};
-
-const proteinUnitDefaults: Record<ProteinProcurementCode, string> = {
-  beef_ribs: "kg",
-  beef_chunks: "kg",
-  whole_chicken: "bird",
-  goat_ribs: "kg",
-  goat_chunks: "kg",
-  beef: "kg",
-  goat: "kg"
-};
-
-const selectableProteinCodes: ProteinProcurementCode[] = [
-  "beef_ribs",
-  "beef_chunks",
-  "whole_chicken",
-  "goat_ribs",
-  "goat_chunks"
-];
+import {
+  createProteinIntakeItemInlineAction,
+  createSupplierInlineAction,
+  recordProteinProcurementAction
+} from "@/lib/ops/actions";
+import {
+  ProcurementPortionOption,
+  ProcurementSupplierOption,
+  ProteinFamilyOption,
+  ProteinIntakeItemOption
+} from "@/lib/ops/types";
 
 function formatSupplierType(value: ProcurementSupplierOption["supplierType"]) {
   switch (value) {
@@ -48,14 +29,22 @@ function formatSupplierType(value: ProcurementSupplierOption["supplierType"]) {
 
 export function ProteinIntakeForm({
   defaultDeliveryDate,
-  suppliers
+  suppliers,
+  proteinFamilies,
+  proteinIntakeItems,
+  portionOptions
 }: {
   defaultDeliveryDate: string;
   suppliers: ProcurementSupplierOption[];
+  proteinFamilies: ProteinFamilyOption[];
+  proteinIntakeItems: ProteinIntakeItemOption[];
+  portionOptions: ProcurementPortionOption[];
 }) {
   const [supplierOptions, setSupplierOptions] = useState(suppliers);
-  const [proteinCode, setProteinCode] = useState<ProteinProcurementCode>("beef_ribs");
-  const [unitName, setUnitName] = useState(proteinUnitDefaults.beef_ribs);
+  const initialProteinItems = proteinIntakeItems.filter((item) => item.isActive);
+  const [proteinItemOptions, setProteinItemOptions] = useState(initialProteinItems);
+  const [proteinItemId, setProteinItemId] = useState(initialProteinItems[0] ? String(initialProteinItems[0].id) : "");
+  const [unitName, setUnitName] = useState(initialProteinItems[0]?.defaultUnitName ?? "kg");
   const [quantityReceived, setQuantityReceived] = useState("0");
   const [deliveryDate, setDeliveryDate] = useState(defaultDeliveryDate);
   const [supplierId, setSupplierId] = useState<string>(suppliers[0] ? String(suppliers[0].id) : "");
@@ -64,6 +53,10 @@ export function ProteinIntakeForm({
   const [quickAddError, setQuickAddError] = useState<string | null>(null);
   const [quickAddSuccess, setQuickAddSuccess] = useState<string | null>(null);
   const [isCreatingSupplier, startCreateSupplierTransition] = useTransition();
+  const [isQuickAddItemOpen, setIsQuickAddItemOpen] = useState(initialProteinItems.length === 0);
+  const [quickAddItemError, setQuickAddItemError] = useState<string | null>(null);
+  const [quickAddItemSuccess, setQuickAddItemSuccess] = useState<string | null>(null);
+  const [isCreatingItem, startCreateItemTransition] = useTransition();
   const [batchPreviewTime, setBatchPreviewTime] = useState(() => {
     const now = new Date();
     const timeFormatter = new Intl.DateTimeFormat("en-GB", {
@@ -80,12 +73,22 @@ export function ProteinIntakeForm({
     () => supplierOptions.find((supplier) => String(supplier.id) === supplierId) ?? null,
     [supplierId, supplierOptions]
   );
-  const batchPreviewValue = `${proteinCode.toUpperCase()}-${deliveryDate.replaceAll("-", "")}-${batchPreviewTime}`;
+  const selectedProteinItem = useMemo(
+    () => proteinItemOptions.find((item) => String(item.id) === proteinItemId) ?? null,
+    [proteinItemId, proteinItemOptions]
+  );
+  const batchPreviewValue = `${(selectedProteinItem?.code ?? "PROTEIN").toUpperCase()}-${deliveryDate.replaceAll("-", "")}-${batchPreviewTime}`;
 
   useEffect(() => {
     setSupplierOptions(suppliers);
     setSupplierId((currentSupplierId) => currentSupplierId || (suppliers[0] ? String(suppliers[0].id) : ""));
   }, [suppliers]);
+
+  useEffect(() => {
+    const activeProteinItems = proteinIntakeItems.filter((item) => item.isActive);
+    setProteinItemOptions(activeProteinItems);
+    setProteinItemId((currentItemId) => currentItemId || (activeProteinItems[0] ? String(activeProteinItems[0].id) : ""));
+  }, [proteinIntakeItems]);
 
   useEffect(() => {
     setAbattoirName(selectedSupplier?.defaultAbattoirName ?? "");
@@ -182,6 +185,40 @@ export function ProteinIntakeForm({
     });
   }
 
+  async function handleQuickAddProteinItem(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setQuickAddItemError(null);
+    setQuickAddItemSuccess(null);
+
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+
+    startCreateItemTransition(async () => {
+      try {
+        const result = await createProteinIntakeItemInlineAction(formData);
+
+        if (!result.ok) {
+          setQuickAddItemError("Unable to create protein item.");
+          return;
+        }
+
+        setProteinItemOptions((currentItems) => {
+          const nextItems = currentItems.filter((item) => item.id !== result.item.id);
+          nextItems.push(result.item);
+          nextItems.sort((left, right) => left.name.localeCompare(right.name));
+          return nextItems;
+        });
+        setProteinItemId(String(result.item.id));
+        setUnitName(result.item.defaultUnitName);
+        setQuickAddItemSuccess(`${result.item.name} is ready to receive and process.`);
+        setIsQuickAddItemOpen(false);
+        form.reset();
+      } catch (error) {
+        setQuickAddItemError(error instanceof Error ? error.message : "Unable to create protein item.");
+      }
+    });
+  }
+
   return (
     <section className="surface-card rounded-[32px] p-5">
       <div className="border-b border-[#EEF2F6] pb-4">
@@ -266,6 +303,84 @@ export function ProteinIntakeForm({
         </div>
       ) : null}
 
+      {isQuickAddItemOpen ? (
+        <div className="mt-4 rounded-[24px] border border-[#E4E7EB] bg-[#F8FAFB] px-4 py-4">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Quick Add Protein</p>
+            <h3 className="mt-2 text-lg font-semibold text-[#111418]">Add a protein without leaving this receipt</h3>
+            <p className="mt-2 text-sm leading-6 text-[#6B7280]">
+              Link the raw item to the sellable menu portion it produces. Existing receipt details stay in place.
+            </p>
+          </div>
+
+          <form onSubmit={handleQuickAddProteinItem} className="mt-4 grid gap-3 lg:grid-cols-2">
+            <input
+              name="name"
+              required
+              placeholder="Protein item, e.g. Beef Oxtail"
+              className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
+            />
+            <select
+              name="default_unit_name"
+              defaultValue="kg"
+              className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
+            >
+              <option value="kg">Kilograms (kg)</option>
+            </select>
+            <label className="space-y-2 text-sm text-[#6B7280]">
+              <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Protein family</span>
+              <select
+                name="protein_id"
+                required
+                defaultValue={proteinFamilies.find((protein) => protein.code === "beef")?.id ?? proteinFamilies[0]?.id}
+                disabled={proteinFamilies.length === 0}
+                className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
+              >
+                {proteinFamilies.map((protein) => (
+                  <option key={protein.id} value={protein.id}>
+                    {protein.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-2 text-sm text-[#6B7280]">
+              <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Sellable portion</span>
+              <select
+                name="portion_type_id"
+                required
+                defaultValue={portionOptions.find((portion) => portion.code === "oxtail_portions")?.id ?? portionOptions[0]?.id}
+                disabled={portionOptions.length === 0}
+                className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
+              >
+                {portionOptions.map((portion) => (
+                  <option key={portion.id} value={portion.id}>
+                    {portion.name}{portion.portionLabel ? ` (${portion.portionLabel})` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {quickAddItemError ? (
+              <div className="rounded-[20px] border border-[#F4C7C7] bg-[#FFF8F8] px-4 py-3 text-sm leading-6 text-[#8A1C1C] lg:col-span-2">
+                {quickAddItemError}
+              </div>
+            ) : null}
+            <button
+              type="submit"
+              disabled={isCreatingItem || proteinFamilies.length === 0 || portionOptions.length === 0}
+              className="rounded-2xl bg-[#111418] px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70 lg:col-span-2"
+            >
+              {isCreatingItem ? "Creating protein item..." : "Create protein item and use it"}
+            </button>
+          </form>
+        </div>
+      ) : null}
+
+      {quickAddItemSuccess ? (
+        <div className="mt-4 rounded-[20px] border border-[#CFE8D6] bg-[#F2FBF5] px-4 py-3 text-sm leading-6 text-[#166534]">
+          {quickAddItemSuccess}
+        </div>
+      ) : null}
+
       <form action={recordProteinProcurementAction} className="mt-4">
         <div className="mt-4 grid gap-3 lg:grid-cols-2">
           <label className="space-y-2 text-sm text-[#6B7280]">
@@ -300,21 +415,35 @@ export function ProteinIntakeForm({
           <label className="space-y-2 text-sm text-[#6B7280]">
             <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Protein</span>
             <select
-              name="protein_code"
-              value={proteinCode}
+              name="protein_intake_item_id"
+              value={proteinItemId}
               onChange={(event) => {
-                const nextProtein = event.target.value as ProteinProcurementCode;
-                setProteinCode(nextProtein);
-                setUnitName(proteinUnitDefaults[nextProtein]);
+                const nextItemId = event.target.value;
+                const nextItem = proteinItemOptions.find((item) => String(item.id) === nextItemId);
+                setProteinItemId(nextItemId);
+                setUnitName(nextItem?.defaultUnitName ?? "kg");
               }}
+              disabled={proteinItemOptions.length === 0}
               className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
             >
-              {selectableProteinCodes.map((code) => (
-                <option key={code} value={code}>
-                  {proteinLabels[code]}
+              {proteinItemOptions.length === 0 ? <option value="">Create a protein item first</option> : null}
+              {proteinItemOptions.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
                 </option>
               ))}
             </select>
+            <button
+              type="button"
+              onClick={() => {
+                setIsQuickAddItemOpen((currentValue) => !currentValue);
+                setQuickAddItemError(null);
+                setQuickAddItemSuccess(null);
+              }}
+              className="text-left text-xs font-semibold text-[#111418] underline underline-offset-4"
+            >
+              {isQuickAddItemOpen ? "Close quick add protein" : "Quick add protein"}
+            </button>
           </label>
 
           <label className="space-y-2 text-sm text-[#6B7280]">
@@ -390,7 +519,7 @@ export function ProteinIntakeForm({
             <input
               type="number"
               min="0"
-              step={proteinCode === "whole_chicken" ? "1" : "0.01"}
+              step={selectedProteinItem?.processingMode === "whole_bird" ? "1" : "0.01"}
               name="quantity_received"
               required
               value={quantityReceived}
@@ -427,7 +556,7 @@ export function ProteinIntakeForm({
             <textarea
               name="note"
               rows={3}
-              placeholder={`Receiving notes for this ${proteinLabels[proteinCode].toLowerCase()} batch`}
+              placeholder={`Receiving notes for this ${(selectedProteinItem?.name ?? "protein").toLowerCase()} batch`}
               className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-3 text-[#111418]"
             />
           </label>
@@ -457,7 +586,7 @@ export function ProteinIntakeForm({
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button
             type="submit"
-            disabled={supplierOptions.length === 0}
+            disabled={supplierOptions.length === 0 || proteinItemOptions.length === 0}
             className="rounded-2xl bg-[#111418] px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70"
           >
             Record protein intake
@@ -469,6 +598,11 @@ export function ProteinIntakeForm({
         {supplierOptions.length === 0 ? (
           <p className="mt-3 text-sm leading-6 text-[#6B7280]">
             Supplier traceability is required before a meat receipt can be recorded. Use quick add above or open the suppliers page.
+          </p>
+        ) : null}
+        {proteinItemOptions.length === 0 ? (
+          <p className="mt-3 text-sm leading-6 text-[#6B7280]">
+            Add a protein item and map its sellable portion before recording this receipt.
           </p>
         ) : null}
         <input type="hidden" name="allocated_to_halves" value="0" />

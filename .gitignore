@@ -7,5 +7,7 @@ progress-log.md
 smokehouse-paranoid-review.md
 zod-implementation-plan.md
 paranoid-audit-2026-05-09.md
+protein-quick-add-audit-2026-07-20.md
 .env.local
 tsconfig.tsbuildinfo
+/.security-audit-local/

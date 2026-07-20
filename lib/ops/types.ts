@@ -5,15 +5,7 @@ export const movementTypes = ["adjustment", "restock", "usage", "waste"] as cons
 export const procurementIntakeTypes = ["protein", "ingredient", "supply"] as const;
 export const supplierTypes = ["protein", "ingredient", "supply", "mixed"] as const;
 export const inventoryItemTypes = ["ingredient", "supply"] as const;
-export const proteinProcurementCodes = [
-  "beef_ribs",
-  "beef_chunks",
-  "whole_chicken",
-  "goat_ribs",
-  "goat_chunks",
-  "beef",
-  "goat"
-] as const;
+export const proteinProcessingModes = ["standard_weight", "whole_bird"] as const;
 
 export type OrderStatus = (typeof orderStatuses)[number];
 export type PaymentStatus = (typeof paymentStatuses)[number];
@@ -22,7 +14,25 @@ export type InventoryMovementType = (typeof movementTypes)[number];
 export type ProcurementIntakeType = (typeof procurementIntakeTypes)[number];
 export type SupplierType = (typeof supplierTypes)[number];
 export type InventoryItemType = (typeof inventoryItemTypes)[number];
-export type ProteinProcurementCode = (typeof proteinProcurementCodes)[number];
+export type ProteinProcessingMode = (typeof proteinProcessingModes)[number];
+export type ProteinProcurementCode = string;
+
+export interface ProteinFamilyOption {
+  id: number;
+  code: string;
+  name: string;
+}
+
+export interface ProteinIntakeItemOption {
+  id: number;
+  code: string;
+  name: string;
+  defaultUnitName: string;
+  proteinId: number;
+  processingMode: ProteinProcessingMode;
+  portionTypeIds: number[];
+  isActive: boolean;
+}
 
 export interface InventoryItemRecord {
   id: number;
@@ -61,6 +71,8 @@ export interface ProcurementActivityRecord {
   id: number;
   intakeType: ProcurementIntakeType;
   proteinCode: ProteinProcurementCode | null;
+  proteinIntakeItemId: number | null;
+  processingMode: ProteinProcessingMode | null;
   inventoryItemId: number | null;
   supplierId: number | null;
   itemName: string;
@@ -96,6 +108,7 @@ export interface ProcurementPortionOption {
   name: string;
   portionLabel: string | null;
   proteinCode: string | null;
+  proteinId: number | null;
 }
 
 export interface FinishedStockRecord {
@@ -168,6 +181,8 @@ export interface ProcurementPageData {
   serviceDate: string;
   inventoryItems: ProcurementInventoryOption[];
   suppliers: ProcurementSupplierOption[];
+  proteinFamilies: ProteinFamilyOption[];
+  proteinIntakeItems: ProteinIntakeItemOption[];
   portionOptions: ProcurementPortionOption[];
   recentActivity: ProcurementActivityRecord[];
   processingProteinReceipts: ProcurementActivityRecord[];

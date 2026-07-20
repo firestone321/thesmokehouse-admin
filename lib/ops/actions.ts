@@ -22,6 +22,7 @@ import {
   menuItemImageActionSchema,
   portionTypeActionSchema,
   processProcurementReceiptToFinishedStockActionSchema,
+  proteinIntakeItemActionSchema,
   proteinProcurementActionSchema,
   queueActionSchema,
   removeMenuItemComponentActionSchema,
@@ -445,14 +446,26 @@ export async function recordProteinProcurementAction(formData: FormData) {
   await requireApprovedAdminRole();
   const input = parseFormData(formData, proteinProcurementActionSchema);
   const supabase = createAdminSupabaseClient();
-  const batchNumber = buildProcurementBatchNumber(input.protein_code, input.delivery_date);
+  const { data: proteinItem, error: proteinItemError } = await supabase
+    .from("protein_intake_items")
+    .select("code")
+    .eq("id", input.protein_intake_item_id)
+    .eq("is_active", true)
+    .maybeSingle();
 
-  const { error } = await supabase.rpc("record_procurement_receipt", {
-    p_intake_type: "protein",
-    p_protein_code: input.protein_code,
-    p_inventory_item_id: null,
+  if (proteinItemError) {
+    throw new Error(`Unable to load protein intake item: ${proteinItemError.message}`);
+  }
+
+  if (!proteinItem?.code) {
+    throw new Error("Select an active protein intake item.");
+  }
+
+  const batchNumber = buildProcurementBatchNumber(proteinItem.code, input.delivery_date);
+
+  const { error } = await supabase.rpc("record_protein_procurement_receipt", {
+    p_protein_intake_item_id: input.protein_intake_item_id,
     p_supplier_id: input.supplier_id,
-    p_supplier_name: null,
     p_batch_number: batchNumber,
     p_delivery_date: input.delivery_date,
     p_butchered_on: input.butchered_on,
@@ -473,6 +486,86 @@ export async function recordProteinProcurementAction(formData: FormData) {
 
   revalidateProcurementPaths();
   redirect("/procurement");
+}
+
+export async function createProteinIntakeItemInlineAction(formData: FormData) {
+  await requireApprovedAdminRole();
+  const input = parseFormData(formData, proteinIntakeItemActionSchema);
+  const supabase = createAdminSupabaseClient();
+  const code = toCode(input.name);
+
+  const { data, error } = await supabase.rpc("create_protein_intake_item", {
+    p_code: code,
+    p_name: input.name,
+    p_default_unit_name: input.default_unit_name,
+    p_protein_id: input.protein_id,
+    p_portion_type_id: input.portion_type_id
+  });
+
+  let item = Array.isArray(data) ? data[0] : data;
+
+  if (error?.code === "23505" || error?.message.toLowerCase().includes("duplicate key")) {
+    const { data: existingItem, error: existingItemError } = await supabase
+      .from("protein_intake_items")
+      .select(
+        `
+          id,
+          code,
+          name,
+          default_unit_name,
+          protein_id,
+          processing_mode,
+          is_active,
+          protein_intake_item_portions (portion_type_id)
+        `
+      )
+      .eq("code", code)
+      .maybeSingle();
+
+    if (existingItemError) {
+      throw new Error(`Unable to load existing protein intake item: ${existingItemError.message}`);
+    }
+
+    const portionTypeIds = (existingItem?.protein_intake_item_portions ?? []).map((mapping: any) =>
+      Number(mapping.portion_type_id)
+    );
+
+    if (
+      !existingItem?.is_active ||
+      Number(existingItem.protein_id) !== input.protein_id ||
+      existingItem.processing_mode !== "standard_weight" ||
+      !portionTypeIds.includes(input.portion_type_id)
+    ) {
+      throw new Error(
+        `A protein item with code "${code}" already exists with different setup. Apply the latest protein intake registry migration before retrying.`
+      );
+    }
+
+    item = {
+      ...existingItem,
+      portion_type_id: input.portion_type_id
+    };
+  } else if (error) {
+    throw new Error(`Unable to create protein intake item: ${error.message}`);
+  }
+
+  if (!item) {
+    throw new Error("Unable to create protein intake item: Unknown error");
+  }
+
+  return {
+    ok: true as const,
+    item: {
+      id: Number(item.id),
+      code: item.code as string,
+      name: item.name as string,
+      defaultUnitName: item.default_unit_name as string,
+      proteinId: Number(item.protein_id),
+      processingMode: item.processing_mode as "standard_weight" | "whole_bird",
+      portionTypeIds: [Number(item.portion_type_id)],
+      isActive: true
+    }
+  };
 }
 
 export async function recordSupplyProcurementAction(formData: FormData) {

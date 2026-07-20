@@ -4,7 +4,6 @@ import {
   movementTypes,
   orderStatuses,
   prepTypes,
-  proteinProcurementCodes,
   supplierTypes
 } from "@/lib/ops/types";
 
@@ -207,7 +206,7 @@ export const inventoryAdjustmentActionSchema = z.object({
 
 export const proteinProcurementActionSchema = z.object({
   supplier_id: idSchema,
-  protein_code: z.enum(proteinProcurementCodes),
+  protein_intake_item_id: idSchema,
   delivery_date: dateSchema,
   butchered_on: dateSchema,
   abattoir_name: shortTextSchema,
@@ -219,6 +218,13 @@ export const proteinProcurementActionSchema = z.object({
   note: longTextSchema,
   allocated_to_halves: quantitySchema.default(0),
   allocated_to_quarters: quantitySchema.default(0)
+});
+
+export const proteinIntakeItemActionSchema = z.object({
+  name: shortTextSchema,
+  default_unit_name: shortTextSchema,
+  protein_id: idSchema,
+  portion_type_id: idSchema
 });
 
 export const supplyProcurementActionSchema = z.object({

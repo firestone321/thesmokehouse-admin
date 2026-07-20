@@ -15,6 +15,8 @@ import {
   PortionTypeOption,
   FinishedStockRecord,
   ProcessingBatchRecord,
+  ProteinFamilyOption,
+  ProteinIntakeItemOption,
   ProcurementActivityRecord,
   ProcurementInventoryOption,
   ProcurementPageData,
@@ -63,7 +65,8 @@ const procurementMigrationFiles = [
   "db/phase-25-processing-posts-daily-stock.sql",
   "db/phase-35-shared-fries-inventory.sql",
   "db/phase-38-menu-stock-finished-stock-fallback.sql",
-  "db/phase-45-grouped-order-item-presentation.sql"
+  "db/phase-45-grouped-order-item-presentation.sql",
+  "db/phase-57-protein-intake-registry.sql"
 ];
 
 const PAGE_SIZE = 30;
@@ -495,12 +498,15 @@ function mapProcurementActivity(
   const quantityReceived = normalizeNumber(row.quantity_received);
   const allocatedToHalves = normalizeNumber(row.allocated_to_halves);
   const allocatedToQuarters = normalizeNumber(row.allocated_to_quarters);
-  const isWholeChicken = row.protein_code === "whole_chicken";
+  const processingMode = row.protein_intake_items?.processing_mode ?? (row.protein_code === "whole_chicken" ? "whole_bird" : "standard_weight");
+  const isWholeChicken = processingMode === "whole_bird";
 
   return {
     id: normalizeNumber(row.id),
     intakeType: row.intake_type,
     proteinCode: row.protein_code,
+    proteinIntakeItemId: row.protein_intake_item_id ? normalizeNumber(row.protein_intake_item_id) : null,
+    processingMode,
     inventoryItemId: row.inventory_item_id ? normalizeNumber(row.inventory_item_id) : null,
     supplierId: row.supplier_id ? normalizeNumber(row.supplier_id) : null,
     itemName: row.item_name,
@@ -1347,6 +1353,8 @@ export async function getProcurementPageData(): Promise<ProcurementPageData> {
   const [
     inventoryItemsResponse,
     suppliersResponse,
+    proteinFamiliesResponse,
+    proteinIntakeItemsResponse,
     portionOptionsResponse,
     finishedStockResponse,
     recentActivityResponse,
@@ -1364,6 +1372,29 @@ export async function getProcurementPageData(): Promise<ProcurementPageData> {
       .eq("is_active", true)
       .order("name", { ascending: true }),
     supabase
+      .from("proteins")
+      .select("id, code, name")
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true }),
+    supabase
+      .from("protein_intake_items")
+      .select(
+        `
+        id,
+        code,
+        name,
+        default_unit_name,
+        protein_id,
+        processing_mode,
+        is_active,
+        protein_intake_item_portions (
+          portion_type_id,
+          is_default
+        )
+      `
+      )
+      .order("name", { ascending: true }),
+    supabase
       .from("portion_types")
       .select(
         `
@@ -1371,13 +1402,13 @@ export async function getProcurementPageData(): Promise<ProcurementPageData> {
         code,
         name,
         portion_label,
+        protein_id,
         proteins (
           code
         )
       `
       )
       .eq("is_active", true)
-      .not("protein_id", "is", null)
       .order("sort_order", { ascending: true }),
     supabase
       .from("finished_stock")
@@ -1400,14 +1431,14 @@ export async function getProcurementPageData(): Promise<ProcurementPageData> {
     supabase
       .from("procurement_receipts")
       .select(
-        "id, intake_type, protein_code, inventory_item_id, supplier_id, item_name, supplier_name, batch_number, delivery_date, butchered_on, abattoir_name, vet_stamp_number, inspection_officer_name, quantity_received, unit_name, unit_cost, note, allocated_to_halves, allocated_to_quarters, created_at"
+        "id, intake_type, protein_code, protein_intake_item_id, inventory_item_id, supplier_id, item_name, supplier_name, batch_number, delivery_date, butchered_on, abattoir_name, vet_stamp_number, inspection_officer_name, quantity_received, unit_name, unit_cost, note, allocated_to_halves, allocated_to_quarters, created_at, protein_intake_items(processing_mode)"
       )
       .order("created_at", { ascending: false })
       .limit(12),
     supabase
       .from("procurement_receipts")
       .select(
-        "id, intake_type, protein_code, inventory_item_id, supplier_id, item_name, supplier_name, batch_number, delivery_date, butchered_on, abattoir_name, vet_stamp_number, inspection_officer_name, quantity_received, unit_name, unit_cost, note, allocated_to_halves, allocated_to_quarters, created_at"
+        "id, intake_type, protein_code, protein_intake_item_id, inventory_item_id, supplier_id, item_name, supplier_name, batch_number, delivery_date, butchered_on, abattoir_name, vet_stamp_number, inspection_officer_name, quantity_received, unit_name, unit_cost, note, allocated_to_halves, allocated_to_quarters, created_at, protein_intake_items(processing_mode)"
       )
       .eq("intake_type", "protein")
       .order("delivery_date", { ascending: false })
@@ -1443,6 +1474,8 @@ export async function getProcurementPageData(): Promise<ProcurementPageData> {
 
   ensureNoError(inventoryItemsResponse.error, "Unable to load tracked supply items");
   ensureNoError(suppliersResponse.error, "Unable to load suppliers", procurementMigrationFiles);
+  ensureNoError(proteinFamiliesResponse.error, "Unable to load protein families", procurementMigrationFiles);
+  ensureNoError(proteinIntakeItemsResponse.error, "Unable to load protein intake items", procurementMigrationFiles);
   ensureNoError(portionOptionsResponse.error, "Unable to load sellable portion options");
   ensureNoError(finishedStockResponse.error, "Unable to load finished frozen stock", procurementMigrationFiles);
   ensureNoError(recentActivityResponse.error, "Unable to load procurement activity", procurementMigrationFiles);
@@ -1499,12 +1532,32 @@ export async function getProcurementPageData(): Promise<ProcurementPageData> {
     defaultAbattoirName: supplier.default_abattoir_name
   }));
 
+  const proteinFamilies: ProteinFamilyOption[] = (proteinFamiliesResponse.data ?? []).map((protein: any) => ({
+    id: normalizeNumber(protein.id),
+    code: protein.code,
+    name: protein.name
+  }));
+
+  const proteinIntakeItems: ProteinIntakeItemOption[] = (proteinIntakeItemsResponse.data ?? []).map((item: any) => ({
+    id: normalizeNumber(item.id),
+    code: item.code,
+    name: item.name,
+    defaultUnitName: item.default_unit_name,
+    proteinId: normalizeNumber(item.protein_id),
+    processingMode: item.processing_mode,
+    isActive: Boolean(item.is_active),
+    portionTypeIds: (item.protein_intake_item_portions ?? [])
+      .map((mapping: any) => normalizeNumber(mapping.portion_type_id))
+      .filter((portionTypeId: number) => portionTypeId > 0)
+  }));
+
   const portionOptions: ProcurementPortionOption[] = (portionOptionsResponse.data ?? []).map((portion: any) => ({
     id: normalizeNumber(portion.id),
     code: portion.code,
     name: portion.name,
     portionLabel: portion.portion_label,
-    proteinCode: portion.proteins?.code ?? null
+    proteinCode: portion.proteins?.code ?? null,
+    proteinId: portion.protein_id ? normalizeNumber(portion.protein_id) : null
   }));
 
   const finishedStock = (finishedStockResponse.data ?? []).map(mapFinishedStock);
@@ -1594,6 +1647,8 @@ export async function getProcurementPageData(): Promise<ProcurementPageData> {
     serviceDate,
     inventoryItems,
     suppliers,
+    proteinFamilies,
+    proteinIntakeItems,
     portionOptions,
     finishedStock,
     recentActivity,

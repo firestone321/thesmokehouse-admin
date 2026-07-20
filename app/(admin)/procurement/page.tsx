@@ -114,8 +114,18 @@ export default async function ProcurementPage() {
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="space-y-4">
-          <ProteinIntakeForm defaultDeliveryDate={data.serviceDate} suppliers={proteinSuppliers} />
-          <ProcessingBatchForm portionOptions={data.portionOptions} proteinReceipts={processingProteinReceipts} />
+          <ProteinIntakeForm
+            defaultDeliveryDate={data.serviceDate}
+            suppliers={proteinSuppliers}
+            proteinFamilies={data.proteinFamilies}
+            proteinIntakeItems={data.proteinIntakeItems}
+            portionOptions={data.portionOptions}
+          />
+          <ProcessingBatchForm
+            portionOptions={data.portionOptions}
+            proteinIntakeItems={data.proteinIntakeItems}
+            proteinReceipts={processingProteinReceipts}
+          />
         </div>
 
         <aside className="space-y-4">
