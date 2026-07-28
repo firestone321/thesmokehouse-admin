@@ -418,6 +418,8 @@ export interface PushQueueSnapshot {
   title: string;
   description: string;
   configured: boolean;
+  missingEnvironmentVariables: string[];
+  configurationError: string | null;
   activeSubscriptionCount: number;
   openCount: number;
   dueNowCount: number;

@@ -108,6 +108,27 @@ export function PushQueueHealthCard({
                   </span>
                 </div>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6B7280]">{queue.description}</p>
+                {!queue.configured ? (
+                  <div className="mt-3 rounded-[14px] bg-[#FFF4F4] px-3 py-2.5 text-xs leading-5 text-[#A61B1B]">
+                    {queue.missingEnvironmentVariables.length > 0 ? (
+                      <>
+                        <p className="font-semibold">Missing environment variables:</p>
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                          {queue.missingEnvironmentVariables.map((name) => (
+                            <code key={name} className="rounded-md bg-white/80 px-1.5 py-0.5 font-mono text-[11px]">
+                              {name}
+                            </code>
+                          ))}
+                        </div>
+                      </>
+                    ) : null}
+                    {queue.configurationError ? (
+                      <p className={queue.missingEnvironmentVariables.length > 0 ? "mt-2" : ""}>
+                        <span className="font-semibold">Configuration error:</span> {queue.configurationError}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
 
               <form action={action.action} className="flex flex-col items-start gap-2">
@@ -120,7 +141,9 @@ export function PushQueueHealthCard({
                   {action.label}
                 </button>
                 <p className="text-xs text-[#6B7280]">
-                  {queue.configured ? "Use this if pushes are waiting and normal traffic has gone quiet." : "This queue cannot be kicked until the required env values are present."}
+                  {queue.configured
+                    ? "Use this if pushes are waiting and normal traffic has gone quiet."
+                    : "This queue cannot be kicked until the configuration issue shown here is resolved."}
                 </p>
               </form>
             </div>

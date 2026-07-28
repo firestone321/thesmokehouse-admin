@@ -39,7 +39,7 @@ import {
   PushQueueSnapshot
 } from "@/lib/ops/types";
 import { toOperationsError } from "@/lib/ops/errors";
-import { isStorefrontReadyNotificationKickoffConfigured } from "@/lib/ops/storefront-ready-notifications";
+import { getStorefrontInternalRequestConfigurationStatus } from "@/lib/ops/storefront-config";
 import { getDailyStockWarningLevel, getUgandaDayRange, getUgandaServiceDate, isDailyStockLow } from "@/lib/ops/utils";
 
 const procurementMigrationFiles = [
@@ -75,6 +75,19 @@ const MAX_ORDER_LIST_LIMIT = PAGE_SIZE;
 const DASHBOARD_ACTIVE_ORDERS_LIMIT = 100;
 const DASHBOARD_TODAY_ORDERS_LIMIT = 100;
 const PUSH_PROCESSING_STALE_MS = 5 * 60 * 1000;
+
+function getMissingAdminPushEnvironmentVariables() {
+  const requiredAlternatives = [
+    ["VAPID_SUBJECT", "WEB_PUSH_VAPID_SUBJECT"],
+    ["NEXT_PUBLIC_VAPID_PUBLIC_KEY", "NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY"],
+    ["VAPID_PRIVATE_KEY", "WEB_PUSH_VAPID_PRIVATE_KEY"]
+  ];
+
+  return requiredAlternatives
+    .filter((names) => !names.some((name) => process.env[name]?.trim()))
+    .map((names) => names.join(" or "));
+}
+
 const orderSearchColumns = ["order_number", "customer_name", "customer_phone"] as const;
 
 const orderListSelection = `
@@ -981,15 +994,16 @@ export async function getPushQueueSnapshots(): Promise<PushQueueSnapshot[]> {
     throw new Error("Push queue snapshot RPCs returned no data. Ensure Phase 41 is applied to Supabase.");
   }
 
+  const missingAdminPushEnvironmentVariables = getMissingAdminPushEnvironmentVariables();
+  const storefrontConfiguration = getStorefrontInternalRequestConfigurationStatus();
+
   const adminQueue: PushQueueSnapshot = {
     key: "admin_paid_order",
     title: "Admin paid-order push queue",
     description: "Staff notifications for newly paid orders awaiting review.",
-    configured: Boolean(
-      (process.env.VAPID_SUBJECT?.trim() || process.env.WEB_PUSH_VAPID_SUBJECT?.trim())
-      && (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim() || process.env.NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY?.trim())
-      && (process.env.VAPID_PRIVATE_KEY?.trim() || process.env.WEB_PUSH_VAPID_PRIVATE_KEY?.trim())
-    ),
+    configured: missingAdminPushEnvironmentVariables.length === 0,
+    missingEnvironmentVariables: missingAdminPushEnvironmentVariables,
+    configurationError: null,
     activeSubscriptionCount: normalizeCount(adminRow.subscription_count),
     openCount: normalizeCount(adminRow.open_count),
     dueNowCount: normalizeCount(adminRow.due_now_count),
@@ -1006,7 +1020,9 @@ export async function getPushQueueSnapshots(): Promise<PushQueueSnapshot[]> {
     key: "storefront_ready",
     title: "Customer Ready push queue",
     description: "Ready-for-pickup notifications waiting to reach customer devices.",
-    configured: isStorefrontReadyNotificationKickoffConfigured(),
+    configured: storefrontConfiguration.configured,
+    missingEnvironmentVariables: storefrontConfiguration.missingEnvironmentVariables,
+    configurationError: storefrontConfiguration.configurationError,
     activeSubscriptionCount: normalizeCount(storefrontRow.subscription_count),
     openCount: normalizeCount(storefrontRow.open_count),
     dueNowCount: normalizeCount(storefrontRow.due_now_count),

@@ -1,6 +1,18 @@
 import "server-only";
 
 const EXPECTED_STOREFRONT_HOSTNAMES_ENV = "EXPECTED_STOREFRONT_HOSTNAMES";
+const STOREFRONT_BASE_URL_ENV = "STOREFRONT_BASE_URL";
+const STOREFRONT_INTERNAL_AUTH_TOKEN_ENV = "STOREFRONT_INTERNAL_AUTH_TOKEN";
+
+export type StorefrontInternalRequestConfigurationStatus = {
+  configured: boolean;
+  missingEnvironmentVariables: string[];
+  configurationError: string | null;
+};
+
+function readEnv(name: string) {
+  return process.env[name]?.trim() || null;
+}
 
 function getExpectedStorefrontHostnames() {
   return new Set(
@@ -16,11 +28,11 @@ function isLocalhost(hostname: string) {
 }
 
 export function getStorefrontSigningSecret() {
-  return process.env.STOREFRONT_INTERNAL_AUTH_TOKEN?.trim() || null;
+  return readEnv(STOREFRONT_INTERNAL_AUTH_TOKEN_ENV);
 }
 
 export function getValidatedStorefrontBaseUrl() {
-  const rawBaseUrl = process.env.STOREFRONT_BASE_URL?.trim();
+  const rawBaseUrl = readEnv(STOREFRONT_BASE_URL_ENV);
   if (!rawBaseUrl) {
     return null;
   }
@@ -54,10 +66,36 @@ export function getValidatedStorefrontBaseUrl() {
   return url.toString().replace(/\/+$/, "");
 }
 
-export function isStorefrontInternalRequestConfigured() {
-  try {
-    return Boolean(getValidatedStorefrontBaseUrl() && getStorefrontSigningSecret());
-  } catch {
-    return false;
+export function getStorefrontInternalRequestConfigurationStatus(): StorefrontInternalRequestConfigurationStatus {
+  const missingEnvironmentVariables = [
+    !readEnv(STOREFRONT_BASE_URL_ENV) ? STOREFRONT_BASE_URL_ENV : null,
+    !readEnv(EXPECTED_STOREFRONT_HOSTNAMES_ENV) ? EXPECTED_STOREFRONT_HOSTNAMES_ENV : null,
+    !getStorefrontSigningSecret() ? STOREFRONT_INTERNAL_AUTH_TOKEN_ENV : null
+  ].filter((name): name is string => Boolean(name));
+
+  if (missingEnvironmentVariables.length > 0) {
+    return {
+      configured: false,
+      missingEnvironmentVariables,
+      configurationError: null
+    };
   }
+
+  try {
+    return {
+      configured: Boolean(getValidatedStorefrontBaseUrl() && getStorefrontSigningSecret()),
+      missingEnvironmentVariables: [],
+      configurationError: null
+    };
+  } catch (error) {
+    return {
+      configured: false,
+      missingEnvironmentVariables: [],
+      configurationError: error instanceof Error ? error.message : "Storefront push configuration is invalid."
+    };
+  }
+}
+
+export function isStorefrontInternalRequestConfigured() {
+  return getStorefrontInternalRequestConfigurationStatus().configured;
 }
