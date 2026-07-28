@@ -21,9 +21,15 @@ export default async function AdminLayout({ children }: Readonly<{ children: Rea
       redirect("/login");
     }
 
-    const message =
-      error instanceof Error ? error.message : "This account is not approved for the Smokehouse admin.";
-    redirect(`/login?message=${encodeURIComponent(message)}`);
+    if (error instanceof AdminAuthorizationError && error.status === 403) {
+      redirect(
+        `/access-denied?message=${encodeURIComponent(
+          "This signed-in account is a customer account and does not have access to the Smokehouse admin."
+        )}`
+      );
+    }
+
+    throw error;
   }
 
   return (

@@ -6,6 +6,7 @@ import { isLocalAuthBypassEnabled } from "@/lib/auth/local-bypass";
 export type AdminRole = "admin" | "manager" | "staff";
 
 const approvedAdminRoles = new Set<AdminRole>(["admin", "manager", "staff"]);
+const staffProvisioningRoles = new Set<AdminRole>(["admin", "manager"]);
 
 export class AdminAuthorizationError extends Error {
   readonly status: 401 | 403;
@@ -15,6 +16,10 @@ export class AdminAuthorizationError extends Error {
     this.name = "AdminAuthorizationError";
     this.status = status;
   }
+}
+
+export function canProvisionStaffAccounts(role: AdminRole) {
+  return staffProvisioningRoles.has(role);
 }
 
 export async function requireApprovedAdminRole(): Promise<{ userId: string; email: string | null; role: AdminRole }> {
