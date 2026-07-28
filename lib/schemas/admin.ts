@@ -108,6 +108,11 @@ export const createStaffUserActionSchema = z
     message: "Passwords do not match."
   });
 
+export const manageStaffAccountActionSchema = z.object({
+  user_id: z.string().uuid(),
+  operation: z.enum(["disable", "enable", "promote_to_manager"])
+});
+
 const allowedPushHostSuffixes = [
   "fcm.googleapis.com",
   ".push.services.mozilla.com",

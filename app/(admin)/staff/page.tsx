@@ -1,4 +1,4 @@
-import { createStaffUserAction } from "@/lib/auth/staff-actions";
+import { createStaffUserAction, manageStaffAccountAction } from "@/lib/auth/staff-actions";
 import { canProvisionStaffAccounts, requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import { createAdminSupabaseClient } from "@/lib/supabase/server";
 
@@ -8,6 +8,15 @@ function getFirstValue(value?: string | string[]) {
 
 function formatRole(role: string) {
   return role.charAt(0).toUpperCase() + role.slice(1);
+}
+
+function isAuthUserDisabled(bannedUntil?: string) {
+  if (!bannedUntil) {
+    return false;
+  }
+
+  const bannedUntilTime = Date.parse(bannedUntil);
+  return Number.isFinite(bannedUntilTime) && bannedUntilTime > Date.now();
 }
 
 export default async function StaffPage({
@@ -33,7 +42,8 @@ export default async function StaffPage({
     );
   }
 
-  const { data: profiles, error } = await createAdminSupabaseClient()
+  const supabase = createAdminSupabaseClient();
+  const { data: profiles, error } = await supabase
     .from("profiles")
     .select("id,email,role,created_at")
     .order("created_at", { ascending: true });
@@ -41,6 +51,20 @@ export default async function StaffPage({
   if (error) {
     throw new Error(`Unable to load staff profiles: ${error.message}`);
   }
+
+  const accounts = await Promise.all(
+    (profiles ?? []).map(async (profile) => {
+      const { data, error: authError } = await supabase.auth.admin.getUserById(profile.id);
+
+      return {
+        ...profile,
+        authError: authError?.message ?? null,
+        disabled: data.user ? isAuthUserDisabled(data.user.banned_until) : false,
+        hasAuthUser: Boolean(data.user)
+      };
+    })
+  );
+  const activeAccountCount = accounts.filter((account) => account.hasAuthUser && !account.disabled).length;
 
   return (
     <div className="space-y-4 text-[#111418]">
@@ -55,8 +79,8 @@ export default async function StaffPage({
             </p>
           </div>
           <div className="rounded-[22px] bg-[#F8FAFB] px-4 py-3 text-sm">
-            <p className="text-[10px] uppercase tracking-[0.18em] text-[#9CA3AF]">Active profiles</p>
-            <p className="mt-1 font-semibold">{profiles?.length ?? 0}</p>
+            <p className="text-[10px] uppercase tracking-[0.18em] text-[#9CA3AF]">Active accounts</p>
+            <p className="mt-1 font-semibold">{activeAccountCount}</p>
           </div>
         </div>
       </section>
@@ -81,28 +105,101 @@ export default async function StaffPage({
           </div>
 
           <div className="mt-4 grid gap-3">
-            {(profiles ?? []).map((profile) => (
+            {accounts.map((profile) => {
+              const isCurrentAccount = profile.id === actor.userId;
+              const actorCanManageAccount =
+                !isCurrentAccount &&
+                profile.hasAuthUser &&
+                (actor.role === "admin" ? profile.role !== "admin" : profile.role === "staff");
+
+              return (
               <div
                 key={profile.id}
-                className="flex flex-col gap-2 rounded-[22px] border border-[#E4E7EB] bg-[#F8FAFB] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                className="rounded-[22px] border border-[#E4E7EB] bg-[#F8FAFB] px-4 py-4"
               >
-                <div>
-                  <p className="text-sm font-semibold">{profile.email}</p>
-                  <p className="mt-1 text-xs text-[#6B7280]">
-                    Added{" "}
-                    {new Date(profile.created_at).toLocaleDateString("en-GB", {
-                      day: "2-digit",
-                      month: "short",
-                      year: "numeric",
-                      timeZone: "Africa/Kampala"
-                    })}
-                  </p>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold">{profile.email}</p>
+                    <p className="mt-1 text-xs text-[#6B7280]">
+                      Added{" "}
+                      {new Date(profile.created_at).toLocaleDateString("en-GB", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                        timeZone: "Africa/Kampala"
+                      })}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <span className="w-fit rounded-full bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#4B5563]">
+                      {formatRole(profile.role)}
+                    </span>
+                    <span
+                      className={`w-fit rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${
+                        profile.authError || !profile.hasAuthUser
+                          ? "bg-[#FFF7ED] text-[#C2410C]"
+                          : profile.disabled
+                            ? "bg-[#FDECEC] text-[#B42318]"
+                            : "bg-[#ECFDF3] text-[#15803D]"
+                      }`}
+                    >
+                      {profile.authError || !profile.hasAuthUser
+                        ? "Auth unavailable"
+                        : profile.disabled
+                          ? "Disabled"
+                          : "Active"}
+                    </span>
+                  </div>
                 </div>
-                <span className="w-fit rounded-full bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#4B5563]">
-                  {formatRole(profile.role)}
-                </span>
+
+                {profile.authError ? (
+                  <p className="mt-3 text-xs leading-5 text-[#B45309]">
+                    Supabase Auth status could not be loaded: {profile.authError}
+                  </p>
+                ) : null}
+
+                {isCurrentAccount ? (
+                  <p className="mt-3 text-xs font-semibold text-[#6B7280]">Current signed-in account</p>
+                ) : actorCanManageAccount ? (
+                  <div className="mt-4 flex flex-wrap gap-2 border-t border-[#E4E7EB] pt-3">
+                    <form action={manageStaffAccountAction}>
+                      <input type="hidden" name="user_id" value={profile.id} />
+                      <input type="hidden" name="operation" value={profile.disabled ? "enable" : "disable"} />
+                      <button
+                        type="submit"
+                        className={`rounded-xl px-3 py-2 text-xs font-semibold ${
+                          profile.disabled
+                            ? "bg-[#ECFDF3] text-[#166534]"
+                            : "border border-[#F4C7C7] bg-white text-[#B42318]"
+                        }`}
+                      >
+                        {profile.disabled ? "Re-enable account" : "Disable account"}
+                      </button>
+                    </form>
+
+                    {profile.role === "staff" ? (
+                      <form action={manageStaffAccountAction}>
+                        <input type="hidden" name="user_id" value={profile.id} />
+                        <input type="hidden" name="operation" value="promote_to_manager" />
+                        <button
+                          type="submit"
+                          className="rounded-xl bg-[#111418] px-3 py-2 text-xs font-semibold text-white"
+                        >
+                          Promote to manager
+                        </button>
+                      </form>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="mt-3 text-xs leading-5 text-[#6B7280]">
+                    {profile.role === "admin"
+                      ? "Administrator accounts are protected from changes on this page."
+                      : "An administrator is required to manage this account."}
+                  </p>
+                )}
               </div>
-            ))}
+              );
+            })}
           </div>
         </section>
 
