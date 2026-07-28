@@ -3,9 +3,9 @@ import "server-only";
 import { createAdminSupabaseClient, createServerSupabaseClient } from "@/lib/supabase/server";
 import { isLocalAuthBypassEnabled } from "@/lib/auth/local-bypass";
 
-export type AdminRole = "admin" | "manager" | "staff";
+export type AdminRole = "admin" | "manager" | "chef" | "staff";
 
-const approvedAdminRoles = new Set<AdminRole>(["admin", "manager", "staff"]);
+const approvedAdminRoles = new Set<AdminRole>(["admin", "manager", "chef", "staff"]);
 const staffProvisioningRoles = new Set<AdminRole>(["admin", "manager"]);
 
 export class AdminAuthorizationError extends Error {

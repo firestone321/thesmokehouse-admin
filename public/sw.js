@@ -86,7 +86,7 @@ self.addEventListener("push", (event) => {
 
   const title = typeof payload.title === "string" ? payload.title : "Smokehouse Admin";
   const notificationOptions = {
-    body: typeof payload.body === "string" ? payload.body : "A new paid order is ready for review.",
+    body: typeof payload.body === "string" ? payload.body : "An order update is ready for review.",
     icon: "/icons/icon-192.png",
     badge: "/icons/icon-192.png",
     tag: typeof payload.tag === "string" ? payload.tag : undefined,

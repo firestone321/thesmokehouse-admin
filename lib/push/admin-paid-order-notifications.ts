@@ -6,6 +6,7 @@ import { createAdminSupabaseClient } from "@/lib/supabase/server";
 import { requireEnv } from "@/lib/supabase/shared";
 
 const ADMIN_PAID_ORDER_NOTIFICATION_TYPE = "new_paid_order";
+const CHEF_IN_PREP_NOTIFICATION_TYPE = "order_in_prep";
 const MAX_DISPATCH_BATCH_SIZE = 25;
 const MAX_DISPATCH_ATTEMPTS = 6;
 const NO_SUBSCRIBER_RETRY_DELAY_MS = 5 * 60_000;
@@ -15,6 +16,10 @@ const SEND_CONCURRENCY = 5;
 const DISPATCH_CONCURRENCY = 3;
 const ADMIN_PUSH_DRAIN_LOCK_TTL_SECONDS = 60;
 const MAX_PUSH_TOPIC_LENGTH = 32;
+
+type AdminPushNotificationType =
+  | typeof ADMIN_PAID_ORDER_NOTIFICATION_TYPE
+  | typeof CHEF_IN_PREP_NOTIFICATION_TYPE;
 
 function buildPushTopic(tag: string) {
   // Apple Web Push rejects Topic headers that are not valid base64url-decodable
@@ -36,6 +41,7 @@ type AdminPushSubscriptionRow = {
 type AdminPushDispatchRow = {
   id: string;
   order_id: number;
+  notification_type: AdminPushNotificationType;
   status: string;
   attempt_count: number;
 };
@@ -158,8 +164,26 @@ function getOrderActorLabel(order: AdminPushOrderSummary) {
   return null;
 }
 
-function buildAdminPaidOrderNotificationPayload(order: AdminPushOrderSummary) {
+function buildAdminOrderNotificationPayload(
+  order: AdminPushOrderSummary,
+  notificationType: AdminPushNotificationType
+) {
   const actorLabel = getOrderActorLabel(order);
+
+  if (notificationType === CHEF_IN_PREP_NOTIFICATION_TYPE) {
+    return {
+      title: "Order moved to In Prep",
+      body: actorLabel
+        ? `${order.order_number} for ${actorLabel} is ready for the kitchen`
+        : `${order.order_number} is ready for the kitchen`,
+      tag: `chef-order-in-prep:${order.id}`,
+      data: {
+        orderId: order.id,
+        url: `/orders/${order.id}`,
+        eventType: CHEF_IN_PREP_NOTIFICATION_TYPE
+      }
+    };
+  }
 
   return {
     title: "New paid order received",
@@ -188,15 +212,38 @@ async function loadOrderSummary(orderId: number): Promise<AdminPushOrderSummary 
   return (data ?? null) as AdminPushOrderSummary | null;
 }
 
-async function listAdminPushSubscriptions() {
+async function listAdminPushSubscriptions(notificationType: AdminPushNotificationType) {
   const supabaseAdmin = createAdminSupabaseClient();
-  const { data, error } = await supabaseAdmin
+  let chefProfileIds: string[] | null = null;
+
+  if (notificationType === CHEF_IN_PREP_NOTIFICATION_TYPE) {
+    const { data: chefProfiles, error: chefProfilesError } = await supabaseAdmin
+      .from("profiles")
+      .select("id")
+      .eq("role", "chef");
+
+    if (chefProfilesError) {
+      throw new Error(`Unable to load Chef profiles for admin push: ${chefProfilesError.message}`);
+    }
+
+    chefProfileIds = (chefProfiles ?? []).map((profile) => profile.id);
+    if (chefProfileIds.length === 0) {
+      return [];
+    }
+  }
+
+  let query = supabaseAdmin
     .from("admin_push_subscriptions")
     .select("id,endpoint,p256dh,auth")
     .order("last_seen_at", { ascending: false })
     .order("updated_at", { ascending: false })
-    .order("created_at", { ascending: false })
-    .limit(MAX_ACTIVE_SUBSCRIPTIONS);
+    .order("created_at", { ascending: false });
+
+  if (chefProfileIds) {
+    query = query.in("owner_profile_id", chefProfileIds);
+  }
+
+  const { data, error } = await query.limit(MAX_ACTIVE_SUBSCRIPTIONS);
 
   if (error) {
     throw new Error(`Unable to load admin push subscriptions: ${error.message}`);
@@ -276,7 +323,7 @@ async function claimDispatches(options?: { limit?: number; orderId?: number }) {
 
 async function sendPushNotification(
   subscription: AdminPushSubscriptionRow,
-  payload: ReturnType<typeof buildAdminPaidOrderNotificationPayload>
+  payload: ReturnType<typeof buildAdminOrderNotificationPayload>
 ): Promise<PushSendOutcome> {
   try {
     webpush.setVapidDetails(
@@ -297,7 +344,7 @@ async function sendPushNotification(
       {
         TTL: 300,
         urgency: "high",
-        topic: buildPushTopic(`paid-order-${payload.data.orderId}`)
+        topic: buildPushTopic(`${payload.data.eventType}-${payload.data.orderId}`)
       }
     );
 
@@ -330,7 +377,7 @@ async function processDispatch(dispatch: AdminPushDispatchRow) {
     return { ...createEmptyProcessDispatchResult(), failed: 1 };
   }
 
-  const subscriptions = await listAdminPushSubscriptions();
+  const subscriptions = await listAdminPushSubscriptions(dispatch.notification_type);
   const receipts = await listDispatchReceipts(dispatch.id);
   const deliveredSubscriptionIds = new Set(receipts.map((receipt) => receipt.subscription_id));
   const pendingSubscriptions = subscriptions.filter((subscription) => !deliveredSubscriptionIds.has(subscription.id));
@@ -356,7 +403,7 @@ async function processDispatch(dispatch: AdminPushDispatchRow) {
     return { ...createEmptyProcessDispatchResult(), succeeded: 1 };
   }
 
-  const payload = buildAdminPaidOrderNotificationPayload(order);
+  const payload = buildAdminOrderNotificationPayload(order, dispatch.notification_type);
   const deliveryResults = await runLimited(
     pendingSubscriptions,
     SEND_CONCURRENCY,

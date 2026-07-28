@@ -74,7 +74,7 @@ export default async function StaffPage({
           <div>
             <h1 className="text-2xl font-semibold sm:text-3xl">Staff account management</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6B7280]">
-              Accounts created here are confirmed Auth users and are assigned to the staff profile directory.
+              Accounts created here are confirmed Auth users and are assigned a Staff or Chef role.
               Storefront signups remain customer accounts.
             </p>
           </div>
@@ -110,7 +110,12 @@ export default async function StaffPage({
               const actorCanManageAccount =
                 !isCurrentAccount &&
                 profile.hasAuthUser &&
-                (actor.role === "admin" ? profile.role !== "admin" : profile.role === "staff");
+                (actor.role === "admin"
+                  ? profile.role !== "admin"
+                  : profile.role === "staff" || profile.role === "chef");
+              const availableRoles = (["staff", "chef", "manager"] as const).filter(
+                (role) => role !== profile.role
+              );
 
               return (
               <div
@@ -177,18 +182,23 @@ export default async function StaffPage({
                       </button>
                     </form>
 
-                    {profile.role === "staff" ? (
-                      <form action={manageStaffAccountAction}>
+                    {availableRoles.map((targetRole) => (
+                      <form key={targetRole} action={manageStaffAccountAction}>
                         <input type="hidden" name="user_id" value={profile.id} />
-                        <input type="hidden" name="operation" value="promote_to_manager" />
+                        <input type="hidden" name="operation" value="set_role" />
+                        <input type="hidden" name="target_role" value={targetRole} />
                         <button
                           type="submit"
                           className="rounded-xl bg-[#111418] px-3 py-2 text-xs font-semibold text-white"
                         >
-                          Promote to manager
+                          {targetRole === "manager"
+                            ? "Promote to Manager"
+                            : targetRole === "chef" && profile.role === "staff"
+                              ? "Promote to Chef"
+                              : `Change to ${formatRole(targetRole)}`}
                         </button>
                       </form>
-                    ) : null}
+                    ))}
                   </div>
                 ) : (
                   <p className="mt-3 text-xs leading-5 text-[#6B7280]">
@@ -206,15 +216,16 @@ export default async function StaffPage({
         <aside className="surface-card rounded-[32px] p-5">
           <div className="border-b border-[#EEF2F6] pb-4">
             <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Provision account</p>
-            <h2 className="mt-2 text-xl font-semibold">Create staff user</h2>
+            <h2 className="mt-2 text-xl font-semibold">Create team user</h2>
             <p className="mt-2 text-sm leading-6 text-[#6B7280]">
-              The role is fixed to Staff. Share the temporary password securely with the intended user.
+              Choose Staff for general operations or Chef for the same access plus In Prep order alerts.
+              Share the temporary password securely with the intended user.
             </p>
           </div>
 
           <form action={createStaffUserAction} className="mt-4 grid gap-4">
             <label className="grid gap-2 text-sm font-semibold">
-              Staff email
+              Team member email
               <input
                 type="email"
                 name="email"
@@ -253,12 +264,20 @@ export default async function StaffPage({
               />
             </label>
 
-            <div className="rounded-[20px] bg-[#F8FAFB] px-4 py-3 text-sm leading-6 text-[#6B7280]">
-              New account role: <span className="font-semibold text-[#111418]">Staff</span>
-            </div>
+            <label className="grid gap-2 text-sm font-semibold">
+              Role
+              <select
+                name="role"
+                defaultValue="staff"
+                className="rounded-2xl border border-[#D7DDE4] bg-white px-4 py-3 text-sm font-normal"
+              >
+                <option value="staff">Staff</option>
+                <option value="chef">Chef</option>
+              </select>
+            </label>
 
             <button type="submit" className="rounded-2xl bg-[#111418] px-4 py-3 text-sm font-semibold text-white">
-              Create staff account
+              Create team account
             </button>
           </form>
         </aside>

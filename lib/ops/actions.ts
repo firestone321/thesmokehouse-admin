@@ -3,13 +3,17 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import {
   didTransitionToReady,
   triggerStorefrontReadyNotification,
   triggerStorefrontReadyQueueProcessing
 } from "@/lib/ops/storefront-ready-notifications";
 import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
-import { processAdminPushDispatchQueue } from "@/lib/push/admin-paid-order-notifications";
+import {
+  processAdminPushDispatchQueue,
+  runAdminPushDrainWithLock
+} from "@/lib/push/admin-paid-order-notifications";
 import {
   addOrderNoteActionSchema,
   completeOrderWithPickupCodeActionSchema,
@@ -1033,6 +1037,21 @@ export async function updateOrderStatusAction(formData: FormData) {
 
   if (error) {
     throw new Error(`Unable to update order status: ${error.message}`);
+  }
+
+  if (nextStatus === "in_prep") {
+    after(async () => {
+      try {
+        await runAdminPushDrainWithLock(async () => {
+          await processAdminPushDispatchQueue({ orderId, limit: 2 });
+        });
+      } catch (pushError) {
+        console.error("chef_in_prep_push_process_failed", {
+          orderId,
+          error: pushError instanceof Error ? pushError.message : "unknown_error"
+        });
+      }
+    });
   }
 
   if (nextStatus === "ready") {

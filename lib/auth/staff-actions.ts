@@ -71,6 +71,7 @@ export async function createStaffUserAction(formData: FormData) {
   }
 
   const supabase = createAdminSupabaseClient();
+  const roleLabel = input.role === "chef" ? "Chef" : "Staff";
   const provisionedAt = new Date().toISOString();
   const { data, error: createError } = await supabase.auth.admin.createUser({
     email: input.email,
@@ -80,7 +81,7 @@ export async function createStaffUserAction(formData: FormData) {
       provisioned_by_admin: true,
       provisioned_by_admin_user_id: actor.userId,
       provisioned_by_admin_at: provisionedAt,
-      role: "staff"
+      role: input.role
     }
   });
 
@@ -99,7 +100,7 @@ export async function createStaffUserAction(formData: FormData) {
     {
       id: userId,
       email: normalizedEmail,
-      role: "staff"
+      role: input.role
     },
     {
       onConflict: "id"
@@ -137,7 +138,7 @@ export async function createStaffUserAction(formData: FormData) {
     .eq("id", userId)
     .maybeSingle();
 
-  if (readbackError || !profile || profile.role !== "staff" || profile.email.toLowerCase() !== normalizedEmail) {
+  if (readbackError || !profile || profile.role !== input.role || profile.email.toLowerCase() !== normalizedEmail) {
     const rollbackError = await rollbackCreatedAuthUser(userId);
     redirect(
       buildStaffRedirect(
@@ -150,7 +151,7 @@ export async function createStaffUserAction(formData: FormData) {
   }
 
   revalidatePath("/staff");
-  redirect(buildStaffRedirect("success", `${normalizedEmail} was created as a staff account.`));
+  redirect(buildStaffRedirect("success", `${normalizedEmail} was created with the ${roleLabel} role.`));
 }
 
 export async function manageStaffAccountAction(formData: FormData) {
@@ -186,13 +187,13 @@ export async function manageStaffAccountAction(formData: FormData) {
     redirect(buildStaffRedirect("error", `Unable to load the selected staff profile: ${profileError.message}`));
   }
 
-  if (!targetProfile || !["staff", "manager", "admin"].includes(targetProfile.role)) {
+  if (!targetProfile || !["staff", "chef", "manager", "admin"].includes(targetProfile.role)) {
     redirect(buildStaffRedirect("error", "The selected account is not an approved dashboard profile."));
   }
 
   const actorCanManageTarget = actor.role === "admin"
     ? targetProfile.role !== "admin"
-    : targetProfile.role === "staff";
+    : targetProfile.role === "staff" || targetProfile.role === "chef";
 
   if (!actorCanManageTarget) {
     redirect(
@@ -200,7 +201,7 @@ export async function manageStaffAccountAction(formData: FormData) {
         "error",
         actor.role === "admin"
           ? "Administrator accounts cannot be changed from this page."
-          : "Managers can manage staff accounts, but manager and administrator accounts require an administrator."
+          : "Managers can manage Staff and Chef accounts, but Manager and Administrator accounts require an administrator."
       )
     );
   }
@@ -253,18 +254,23 @@ export async function manageStaffAccountAction(formData: FormData) {
     );
   }
 
-  if (targetProfile.role !== "staff") {
-    redirect(buildStaffRedirect("error", "Only staff accounts can be promoted to manager."));
+  const targetRole = input.target_role;
+  if (!targetRole) {
+    redirect(buildStaffRedirect("error", "Choose the new role."));
+  }
+
+  if (targetProfile.role === targetRole) {
+    redirect(buildStaffRedirect("error", `${email} already has the ${targetRole} role.`));
   }
 
   const { error: roleUpdateError } = await supabase
     .from("profiles")
-    .update({ role: "manager" })
+    .update({ role: targetRole })
     .eq("id", input.user_id)
-    .eq("role", "staff");
+    .eq("role", targetProfile.role);
 
   if (roleUpdateError) {
-    redirect(buildStaffRedirect("error", `Unable to promote ${email}: ${roleUpdateError.message}`));
+    redirect(buildStaffRedirect("error", `Unable to change ${email}'s role: ${roleUpdateError.message}`));
   }
 
   const previousAppMetadata = authUserData.user.app_metadata ?? {};
@@ -273,7 +279,7 @@ export async function manageStaffAccountAction(formData: FormData) {
     app_metadata: {
       ...previousAppMetadata,
       provisioned_by_admin: true,
-      role: "manager",
+      role: targetRole,
       role_changed_by_admin_user_id: actor.userId,
       role_changed_at: roleChangedAt
     }
@@ -282,12 +288,12 @@ export async function manageStaffAccountAction(formData: FormData) {
   if (authUpdateError || !promotedAuthUserData.user) {
     const { error: rollbackError } = await supabase
       .from("profiles")
-      .update({ role: "staff" })
+      .update({ role: targetProfile.role })
       .eq("id", input.user_id)
-      .eq("role", "manager");
+      .eq("role", targetRole);
 
     if (rollbackError) {
-      console.error("staff_role_promotion_rollback_failed", {
+      console.error("staff_role_change_rollback_failed", {
         userId: input.user_id,
         error: rollbackError.message
       });
@@ -297,8 +303,8 @@ export async function manageStaffAccountAction(formData: FormData) {
       buildStaffRedirect(
         "error",
         rollbackError
-          ? `Promotion failed and the profile could not be rolled back. Review ${email} in Supabase.`
-          : `Promotion failed and ${email} was restored to Staff: ${
+          ? `Role change failed and the profile could not be rolled back. Review ${email} in Supabase.`
+          : `Role change failed and ${email} was restored to ${targetProfile.role}: ${
               authUpdateError?.message ?? "Supabase did not return the updated Auth user."
             }`
       )
@@ -313,17 +319,21 @@ export async function manageStaffAccountAction(formData: FormData) {
 
   if (
     readbackError ||
-    promotedProfile?.role !== "manager" ||
-    promotedAuthUserData.user.app_metadata?.role !== "manager"
+    promotedProfile?.role !== targetRole ||
+    promotedAuthUserData.user.app_metadata?.role !== targetRole
   ) {
     redirect(
       buildStaffRedirect(
         "error",
-        `Promotion was submitted but could not be verified for ${email}. Review the account in Supabase.`
+        `The role change was submitted but could not be verified for ${email}. Review the account in Supabase.`
       )
     );
   }
 
   revalidatePath("/staff");
-  redirect(buildStaffRedirect("success", `${email} was promoted to Manager.`));
+  redirect(buildStaffRedirect("success", `${email} now has the ${targetRole === "chef" ? "Chef" : formatRoleLabel(targetRole)} role.`));
+}
+
+function formatRoleLabel(role: "staff" | "manager") {
+  return role.charAt(0).toUpperCase() + role.slice(1);
 }

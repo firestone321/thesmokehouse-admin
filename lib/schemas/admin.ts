@@ -100,6 +100,7 @@ export const adminPaidOrderPushProcessSchema = z.object({
 export const createStaffUserActionSchema = z
   .object({
     email: z.string().trim().toLowerCase().email().max(254),
+    role: z.enum(["staff", "chef"]).default("staff"),
     password: z.string().min(12).max(128),
     confirm_password: z.string().min(12).max(128)
   })
@@ -110,7 +111,16 @@ export const createStaffUserActionSchema = z
 
 export const manageStaffAccountActionSchema = z.object({
   user_id: z.string().uuid(),
-  operation: z.enum(["disable", "enable", "promote_to_manager"])
+  operation: z.enum(["disable", "enable", "set_role"]),
+  target_role: z.enum(["staff", "chef", "manager"]).optional()
+}).superRefine((value, ctx) => {
+  if (value.operation === "set_role" && !value.target_role) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["target_role"],
+      message: "Choose the new role."
+    });
+  }
 });
 
 const allowedPushHostSuffixes = [

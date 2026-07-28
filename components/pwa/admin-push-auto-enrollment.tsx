@@ -96,7 +96,7 @@ export function AdminPushAutoEnrollment() {
     if (Notification.permission !== "granted") {
       if (!options?.requestPermission) {
         setStatus("needs_permission");
-        setMessage("Allow alerts on this device to receive paid-order pushes.");
+        setMessage("Allow alerts on this device to receive order updates.");
         return;
       }
 
@@ -106,14 +106,14 @@ export function AdminPushAutoEnrollment() {
         setMessage(
           permission === "denied"
             ? "Notifications are blocked in this browser."
-            : "Allow alerts on this device to receive paid-order pushes."
+            : "Allow alerts on this device to receive order updates."
         );
         return;
       }
     }
 
     setStatus("checking");
-    setMessage("Setting up paid-order alerts...");
+    setMessage("Setting up order alerts...");
 
     try {
       const registration = await getAppServiceWorkerRegistration();
@@ -131,7 +131,7 @@ export function AdminPushAutoEnrollment() {
     } catch (error) {
       console.warn("admin_push_auto_enrollment_failed", error);
       setStatus("error");
-      setMessage(error instanceof Error ? error.message : "Unable to set up paid-order alerts.");
+      setMessage(error instanceof Error ? error.message : "Unable to set up order alerts.");
     }
   }
 
@@ -145,7 +145,7 @@ export function AdminPushAutoEnrollment() {
 
   return (
     <div className="fixed bottom-4 right-4 z-50 max-w-sm rounded-md border border-[#2B211B]/15 bg-white px-4 py-3 text-sm font-semibold text-[#2B211B] shadow-[0_14px_35px_rgba(17,20,24,0.16)]">
-      <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#8A6246]">Paid-order alerts</p>
+      <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#8A6246]">Order alerts</p>
       {message ? <p className="mt-2 leading-5 text-[#5C4A3E]">{message}</p> : null}
       {status === "needs_permission" || status === "error" ? (
         <button

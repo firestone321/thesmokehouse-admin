@@ -14,7 +14,7 @@ import { RequestValidationError, parseJsonBody } from "@/lib/validation/http";
 export async function POST(request: Request) {
   try {
     assertSameOriginRequest(request);
-    await requireApprovedAdminRole();
+    const actor = await requireApprovedAdminRole();
 
     const routeRateLimit = await enforceRateLimit(request, "admin-push-subscribe", 12, 60_000);
     if (!routeRateLimit.allowed) {
@@ -41,6 +41,7 @@ export async function POST(request: Request) {
       .from("admin_push_subscriptions")
       .upsert(
         {
+          owner_profile_id: actor.userId,
           endpoint: body.endpoint,
           p256dh: body.keys.p256dh,
           auth: body.keys.auth,
