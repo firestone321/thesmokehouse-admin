@@ -7,6 +7,7 @@ import { requireEnv } from "@/lib/supabase/shared";
 
 const ADMIN_PAID_ORDER_NOTIFICATION_TYPE = "new_paid_order";
 const CHEF_IN_PREP_NOTIFICATION_TYPE = "order_in_prep";
+const ADMIN_PAID_ORDER_RECIPIENT_ROLES = ["admin", "manager", "chef", "staff"] as const;
 const MAX_DISPATCH_BATCH_SIZE = 25;
 const MAX_DISPATCH_ATTEMPTS = 6;
 const NO_SUBSCRIBER_RETRY_DELAY_MS = 5 * 60_000;
@@ -214,34 +215,31 @@ async function loadOrderSummary(orderId: number): Promise<AdminPushOrderSummary 
 
 async function listAdminPushSubscriptions(notificationType: AdminPushNotificationType) {
   const supabaseAdmin = createAdminSupabaseClient();
-  let chefProfileIds: string[] | null = null;
+  const recipientRoles =
+    notificationType === CHEF_IN_PREP_NOTIFICATION_TYPE
+      ? ["chef"]
+      : [...ADMIN_PAID_ORDER_RECIPIENT_ROLES];
+  const { data: recipientProfiles, error: recipientProfilesError } = await supabaseAdmin
+    .from("profiles")
+    .select("id")
+    .in("role", recipientRoles);
 
-  if (notificationType === CHEF_IN_PREP_NOTIFICATION_TYPE) {
-    const { data: chefProfiles, error: chefProfilesError } = await supabaseAdmin
-      .from("profiles")
-      .select("id")
-      .eq("role", "chef");
-
-    if (chefProfilesError) {
-      throw new Error(`Unable to load Chef profiles for admin push: ${chefProfilesError.message}`);
-    }
-
-    chefProfileIds = (chefProfiles ?? []).map((profile) => profile.id);
-    if (chefProfileIds.length === 0) {
-      return [];
-    }
+  if (recipientProfilesError) {
+    throw new Error(`Unable to load eligible profiles for admin push: ${recipientProfilesError.message}`);
   }
 
-  let query = supabaseAdmin
+  const recipientProfileIds = (recipientProfiles ?? []).map((profile) => profile.id);
+  if (recipientProfileIds.length === 0) {
+    return [];
+  }
+
+  const query = supabaseAdmin
     .from("admin_push_subscriptions")
     .select("id,endpoint,p256dh,auth")
+    .in("owner_profile_id", recipientProfileIds)
     .order("last_seen_at", { ascending: false })
     .order("updated_at", { ascending: false })
     .order("created_at", { ascending: false });
-
-  if (chefProfileIds) {
-    query = query.in("owner_profile_id", chefProfileIds);
-  }
 
   const { data, error } = await query.limit(MAX_ACTIVE_SUBSCRIPTIONS);
 
