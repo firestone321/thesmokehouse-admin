@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
+import { UgxAmountInput } from "@/components/ugx-amount-input";
 import {
   createInventoryItemInlineAction,
   createSupplierInlineAction,
@@ -451,8 +452,8 @@ export function SidesIntakeForm({
 
           <label className="space-y-2 text-sm text-[#6B7280]">
             <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Unit cost</span>
-            <input
-              type="number"
+            <UgxAmountInput
+              allowDecimals
               min="0"
               step="0.01"
               name="unit_cost"

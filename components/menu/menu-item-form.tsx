@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { UgxAmountInput } from "@/components/ugx-amount-input";
 import { createPortionTypeInlineAction, saveMenuItemDetailsAction, uploadMenuItemImageAction } from "@/lib/ops/actions";
 import { MenuItemRecord, PortionTypeOption, MenuCategoryRecord } from "@/lib/ops/types";
 
@@ -301,9 +302,8 @@ export function MenuItemForm({
           <label className="text-sm font-semibold text-[#111418]" htmlFor="menu-base-price">
             Base price
           </label>
-          <input
+          <UgxAmountInput
             id="menu-base-price"
-            type="number"
             min="0"
             name="base_price"
             required

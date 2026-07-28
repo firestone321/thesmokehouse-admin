@@ -43,6 +43,10 @@ function blankToUndefined(value: unknown) {
   return value;
 }
 
+function stripNumericGrouping(value: unknown) {
+  return typeof value === "string" ? value.replace(/[,\s]/g, "") : value;
+}
+
 function parseBoolean(value: unknown) {
   return value === true || value === "true" || value === "on" || value === "1" || value === 1;
 }
@@ -63,6 +67,13 @@ function optionalNumber(min: number, max: number) {
   return z.preprocess(blankToUndefined, z.coerce.number().min(min).max(max).optional()).optional();
 }
 
+function nullableMoney(min: number, max: number) {
+  return z.preprocess(
+    (value) => blankToNull(stripNumericGrouping(value)),
+    z.coerce.number().min(min).max(max).nullable()
+  ).default(null);
+}
+
 export const idSchema = z.coerce.number().int().positive();
 
 export const optionalIdSchema = z.preprocess(blankToNull, idSchema.nullable()).default(null);
@@ -73,7 +84,10 @@ export const longTextSchema = nullableText(maxLongTextLength);
 
 export const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
-export const moneySchema = z.coerce.number().min(0).max(maxNumericValue);
+export const moneySchema = z.preprocess(
+  stripNumericGrouping,
+  z.coerce.number().min(0).max(maxNumericValue)
+);
 
 export const quantitySchema = z.coerce.number().min(0).max(maxNumericValue);
 
@@ -240,7 +254,7 @@ export const proteinProcurementActionSchema = z.object({
   inspection_officer_name: shortTextSchema,
   quantity_received: quantitySchema,
   unit_name: shortTextSchema,
-  unit_cost: nullableNumber(0, maxNumericValue),
+  unit_cost: nullableMoney(0, maxNumericValue),
   note: longTextSchema,
   allocated_to_halves: quantitySchema.default(0),
   allocated_to_quarters: quantitySchema.default(0)
@@ -260,7 +274,7 @@ export const supplyProcurementActionSchema = z.object({
   supplier_name: longTextSchema,
   delivery_date: dateSchema,
   quantity_received: quantitySchema,
-  unit_cost: nullableNumber(0, maxNumericValue),
+  unit_cost: nullableMoney(0, maxNumericValue),
   note: longTextSchema
 });
 
@@ -270,7 +284,7 @@ export const ingredientProcurementActionSchema = z.object({
   supplier_name: longTextSchema,
   delivery_date: dateSchema,
   quantity_received: quantitySchema,
-  unit_cost: nullableNumber(0, maxNumericValue),
+  unit_cost: nullableMoney(0, maxNumericValue),
   note: longTextSchema
 });
 
