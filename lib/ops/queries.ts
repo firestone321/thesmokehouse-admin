@@ -66,7 +66,8 @@ const procurementMigrationFiles = [
   "db/phase-35-shared-fries-inventory.sql",
   "db/phase-38-menu-stock-finished-stock-fallback.sql",
   "db/phase-45-grouped-order-item-presentation.sql",
-  "db/phase-57-protein-intake-registry.sql"
+  "db/phase-57-protein-intake-registry.sql",
+  "db/phase-59-menu-drink-intake-mapping.sql"
 ];
 
 const PAGE_SIZE = 30;
@@ -1379,7 +1380,23 @@ export async function getProcurementPageData(): Promise<ProcurementPageData> {
   ] = await Promise.all([
     supabase
       .from("inventory_items")
-      .select("id, code, name, unit_name, item_type, current_quantity, reorder_threshold")
+      .select(
+        `
+        id,
+        code,
+        name,
+        unit_name,
+        item_type,
+        current_quantity,
+        reorder_threshold,
+        direct_sellable_portion_type_id,
+        sellable_units_per_input,
+        requires_whole_input,
+        source_menu_item:menu_items!inventory_items_source_menu_item_id_fkey (
+          name
+        )
+      `
+      )
       .eq("is_active", true)
       .order("name", { ascending: true }),
     supabase
@@ -1533,10 +1550,16 @@ export async function getProcurementPageData(): Promise<ProcurementPageData> {
     id: normalizeNumber(item.id),
     code: item.code,
     name: item.name,
+    displayName: item.source_menu_item?.name ?? item.name,
     unitName: item.unit_name,
     itemType: item.item_type ?? "supply",
     currentQuantity: normalizeNumber(item.current_quantity),
-    reorderThreshold: normalizeNumber(item.reorder_threshold)
+    reorderThreshold: normalizeNumber(item.reorder_threshold),
+    directSellablePortionTypeId: item.direct_sellable_portion_type_id
+      ? normalizeNumber(item.direct_sellable_portion_type_id)
+      : null,
+    sellableUnitsPerInput: normalizeNumber(item.sellable_units_per_input ?? 1),
+    requiresWholeInput: Boolean(item.requires_whole_input)
   }));
 
   const suppliers: ProcurementSupplierOption[] = (suppliersResponse.data ?? []).map((supplier: any) => ({

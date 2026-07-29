@@ -109,7 +109,7 @@ function revalidateSupplierPaths() {
 }
 
 function revalidateMenuPaths() {
-  revalidatePaths(["/menu"]);
+  revalidatePaths(["/menu", "/procurement"]);
 }
 
 function buildOrdersFlashRedirect(returnTo: string, status: "success" | "error", message: string) {
@@ -402,7 +402,9 @@ export async function createInventoryItemInlineAction(formData: FormData) {
       item_type: input.item_type,
       is_active: true
     })
-    .select("id, code, name, unit_name, item_type, current_quantity, reorder_threshold")
+    .select(
+      "id, code, name, unit_name, item_type, current_quantity, reorder_threshold, direct_sellable_portion_type_id, sellable_units_per_input, requires_whole_input"
+    )
     .single();
 
   if (error || !data) {
@@ -418,10 +420,16 @@ export async function createInventoryItemInlineAction(formData: FormData) {
       id: data.id,
       code: data.code,
       name: data.name,
+      displayName: data.name,
       unitName: data.unit_name,
       itemType: data.item_type,
       currentQuantity: Number(data.current_quantity ?? 0),
-      reorderThreshold: Number(data.reorder_threshold ?? 0)
+      reorderThreshold: Number(data.reorder_threshold ?? 0),
+      directSellablePortionTypeId: data.direct_sellable_portion_type_id
+        ? Number(data.direct_sellable_portion_type_id)
+        : null,
+      sellableUnitsPerInput: Number(data.sellable_units_per_input ?? 1),
+      requiresWholeInput: Boolean(data.requires_whole_input)
     }
   };
 }
@@ -618,37 +626,60 @@ export async function recordIngredientProcurementAction(formData: FormData) {
   await requireApprovedAdminRole();
   const input = parseFormData(formData, ingredientProcurementActionSchema);
   const supabase = createAdminSupabaseClient();
-  const batchNumber = buildProcurementBatchNumber(
-    await getInventoryItemBatchCode(input.inventory_item_id),
-    input.delivery_date
-  );
+  const { data: inventoryItem, error: inventoryItemError } = await supabase
+    .from("inventory_items")
+    .select("code, direct_sellable_portion_type_id")
+    .eq("id", input.inventory_item_id)
+    .eq("is_active", true)
+    .maybeSingle();
+
+  if (inventoryItemError) {
+    throw new Error(`Unable to load sides and drinks intake item: ${inventoryItemError.message}`);
+  }
+
+  if (!inventoryItem?.code) {
+    throw new Error("Select an active sides or drinks intake item.");
+  }
+
+  const batchNumber = buildProcurementBatchNumber(inventoryItem.code, input.delivery_date);
 
   if (input.supplier_id === null && !input.supplier_name) {
     throw new Error("Supplier is required");
   }
 
-  const { error } = await supabase.rpc("record_procurement_receipt", {
-    p_intake_type: "ingredient",
-    p_protein_code: null,
-    p_inventory_item_id: input.inventory_item_id,
-    p_supplier_id: input.supplier_id,
-    p_supplier_name: input.supplier_name,
-    p_batch_number: batchNumber,
-    p_delivery_date: input.delivery_date,
-    p_butchered_on: null,
-    p_abattoir_name: null,
-    p_vet_stamp_number: null,
-    p_inspection_officer_name: null,
-    p_quantity_received: input.quantity_received,
-    p_unit_name: null,
-    p_unit_cost: input.unit_cost,
-    p_note: input.note,
-    p_allocated_to_halves: 0,
-    p_allocated_to_quarters: 0
-  });
+  const { error } = inventoryItem.direct_sellable_portion_type_id
+    ? await supabase.rpc("record_direct_sellable_procurement_receipt", {
+      p_inventory_item_id: input.inventory_item_id,
+      p_supplier_id: input.supplier_id,
+      p_supplier_name: input.supplier_name,
+      p_batch_number: batchNumber,
+      p_delivery_date: input.delivery_date,
+      p_quantity_received: input.quantity_received,
+      p_unit_cost: input.unit_cost,
+      p_note: input.note
+    })
+    : await supabase.rpc("record_procurement_receipt", {
+      p_intake_type: "ingredient",
+      p_protein_code: null,
+      p_inventory_item_id: input.inventory_item_id,
+      p_supplier_id: input.supplier_id,
+      p_supplier_name: input.supplier_name,
+      p_batch_number: batchNumber,
+      p_delivery_date: input.delivery_date,
+      p_butchered_on: null,
+      p_abattoir_name: null,
+      p_vet_stamp_number: null,
+      p_inspection_officer_name: null,
+      p_quantity_received: input.quantity_received,
+      p_unit_name: null,
+      p_unit_cost: input.unit_cost,
+      p_note: input.note,
+      p_allocated_to_halves: 0,
+      p_allocated_to_quarters: 0
+    });
 
   if (error) {
-    throw new Error(`Unable to record side ingredient procurement: ${error.message}`);
+    throw new Error(`Unable to record sides and drinks intake: ${error.message}`);
   }
 
   revalidateProcurementPaths();

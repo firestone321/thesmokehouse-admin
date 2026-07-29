@@ -61,10 +61,14 @@ export interface ProcurementInventoryOption {
   id: number;
   code: string;
   name: string;
+  displayName?: string;
   unitName: string;
   itemType: InventoryItemType;
   currentQuantity: number;
   reorderThreshold: number;
+  directSellablePortionTypeId?: number | null;
+  sellableUnitsPerInput?: number;
+  requiresWholeInput?: boolean;
 }
 
 export interface ProcurementActivityRecord {

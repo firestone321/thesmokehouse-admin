@@ -176,7 +176,7 @@ export function SidesIntakeForm({
         const result = await createInventoryItemInlineAction(formData);
 
         if (!result.ok) {
-          setQuickAddItemError("Unable to create tracked side item.");
+          setQuickAddItemError("Unable to create tracked side or drink item.");
           return;
         }
 
@@ -192,7 +192,7 @@ export function SidesIntakeForm({
         setIsQuickAddItemOpen(false);
         form.reset();
       } catch (error) {
-        setQuickAddItemError(error instanceof Error ? error.message : "Unable to create tracked side item.");
+        setQuickAddItemError(error instanceof Error ? error.message : "Unable to create tracked side or drink item.");
       }
     });
   }
@@ -217,8 +217,8 @@ export function SidesIntakeForm({
             <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Sides & Drinks Intake</p>
             <h2 className="mt-2 text-xl font-semibold">Receive fries, gonja, juice, yoghurt, and soda</h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6B7280]">
-              Use this for side and drink inputs. Fries, juice, yoghurt, and soda receipts can credit sellable stock
-              directly, while gonja stays on the ingredient-input path until its ripening workflow is confirmed.
+              Use this for side and drink inputs. Drinks created from the Menu page appear here automatically and credit
+              their sellable stock directly, while raw side ingredients stay on the tracked-input path.
             </p>
           </div>
           <span className="rounded-full bg-[#F3F4F6] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#4B5563]">
@@ -331,7 +331,7 @@ export function SidesIntakeForm({
             <div className="rounded-[24px] border border-[#E4E7EB] bg-[#F8FAFB] px-4 py-4">
               <div>
                 <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Add Tracked Item</p>
-                <h3 className="mt-2 text-lg font-semibold text-[#111418]">Quick add a side input item</h3>
+                <h3 className="mt-2 text-lg font-semibold text-[#111418]">Quick add a tracked side input</h3>
               </div>
 
               <div className="mt-4 grid gap-3">
@@ -383,7 +383,7 @@ export function SidesIntakeForm({
           ) : null}
 
           <label className="space-y-2 text-sm text-[#6B7280]">
-            <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Tracked side item</span>
+            <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Side or drink item</span>
             <select
               name="inventory_item_id"
               value={selectedItemId}
@@ -394,7 +394,8 @@ export function SidesIntakeForm({
               {itemOptions.length === 0 ? <option value="">Create a tracked item first</option> : null}
               {itemOptions.map((item) => (
                 <option key={item.id} value={item.id}>
-                  {item.name}
+                  {item.displayName ?? item.name}
+                  {item.directSellablePortionTypeId ? ` — received by ${item.unitName}` : ""}
                 </option>
               ))}
             </select>
@@ -442,12 +443,18 @@ export function SidesIntakeForm({
             </span>
             <input
               type="number"
-              min="0"
-              step="0.01"
+              min={selectedItem?.requiresWholeInput ? "1" : "0.01"}
+              step={selectedItem?.requiresWholeInput ? "1" : "0.01"}
               name="quantity_received"
               required
               className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
             />
+            {selectedItem?.directSellablePortionTypeId ? (
+              <p className="text-xs leading-5 text-[#6B7280]">
+                Each {selectedItem.unitName} credits {(selectedItem.sellableUnitsPerInput ?? 1).toLocaleString("en-UG")} sellable{" "}
+                {(selectedItem.sellableUnitsPerInput ?? 1) === 1 ? "portion" : "portions"}.
+              </p>
+            ) : null}
           </label>
 
           <label className="space-y-2 text-sm text-[#6B7280]">
@@ -463,7 +470,15 @@ export function SidesIntakeForm({
           </label>
         </div>
 
-        {selectedItem ? (
+        {selectedItem?.directSellablePortionTypeId ? (
+          <article className="rounded-[22px] border border-[#CFE8D6] bg-[#F2FBF5] px-4 py-4">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-[#15803D]">Stock destination</p>
+            <p className="mt-2 text-base font-semibold text-[#111418]">Sellable finished stock</p>
+            <p className="mt-1 text-sm leading-6 text-[#6B7280]">
+              Saving this receipt makes {selectedItem.displayName ?? selectedItem.name} available through its menu portion immediately.
+            </p>
+          </article>
+        ) : selectedItem ? (
           <div className="grid gap-3 md:grid-cols-2">
             <article className="rounded-[22px] bg-[#F8FAFB] px-4 py-4">
               <p className="text-[10px] uppercase tracking-[0.18em] text-[#9CA3AF]">Current on hand</p>
@@ -515,7 +530,7 @@ export function SidesIntakeForm({
         ) : null}
         {itemOptions.length === 0 ? (
           <p className="text-sm leading-6 text-[#6B7280]">
-            Add a tracked side item first so this intake can be recorded into inventory.
+            Add a tracked side item or create a drink on the Menu page first.
           </p>
         ) : null}
           </form>
@@ -525,7 +540,7 @@ export function SidesIntakeForm({
       ) : (
         <div className="mt-4 rounded-[22px] bg-[#F8FAFB] px-4 py-4 text-sm leading-6 text-[#6B7280]">
           Expand this card when you need to receive fries, gonja, juice, yoghurt, soda, or other tracked side and drink
-          inputs. Fries, juice, yoghurt, and soda currently post straight into sellable stock; gonja does not.
+          inputs. Menu-created drinks and mapped legacy items post straight into sellable stock; raw side inputs do not.
         </div>
       )}
     </section>
