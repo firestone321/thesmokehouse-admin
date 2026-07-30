@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test:payments": "node tests/payment-integrity-sql.test.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.0",

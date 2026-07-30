@@ -41,6 +41,6 @@ export async function processPendingPaymentRecoveriesAction(formData: FormData) 
   }
 
   const stats = result.stats;
-  const message = `Payment recovery checked ${stats.trackedClaimed} claimed payments, completed ${stats.trackedCompleted}, rescheduled ${stats.trackedRescheduled}, soft-cancelled ${stats.trackedCancelled}, errors ${stats.errors.length}.`;
+  const message = `Payment recovery checked ${stats.trackedClaimed} claimed payments, completed ${stats.trackedCompleted}, rescheduled ${stats.trackedRescheduled}, provider-cancelled ${stats.trackedCancelled}, exhausted ${stats.trackedFailed}, errors ${stats.errors.length}.`;
   redirect(buildOrdersFlashRedirect(returnTo, stats.errors.length > 0 ? "error" : "success", message));
 }

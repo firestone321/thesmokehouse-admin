@@ -15,6 +15,7 @@ export type StorefrontPendingPaymentRecoveryStats = {
   trackedCancelled: number;
   trackedCompleted: number;
   trackedRescheduled: number;
+  trackedFailed: number;
   errors: string[];
 };
 
