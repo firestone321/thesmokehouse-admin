@@ -85,6 +85,7 @@ function SupplierForm({
         className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-3 text-sm text-[#111418]"
       />
       <label className="flex items-center gap-2 text-sm text-[#6B7280]">
+        <input type="hidden" name="is_active" value="false" />
         <input type="checkbox" name="is_active" defaultChecked={supplier?.isActive ?? true} />
         Active supplier
       </label>

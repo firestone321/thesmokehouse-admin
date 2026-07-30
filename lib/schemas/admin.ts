@@ -105,7 +105,7 @@ export const returnToSchema = z.preprocess(blankToUndefined, safeReturnPath.defa
 
 export const optionalReturnToSchema = z.preprocess(blankToUndefined, safeReturnPath.optional()).optional();
 
-export const checkboxSchema = z.preprocess(parseBoolean, z.boolean());
+export const checkboxSchema = z.preprocess(parseBoolean, z.boolean()).default(false);
 
 export const adminPaidOrderPushProcessSchema = z.object({
   orderId: idSchema

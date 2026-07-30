@@ -268,6 +268,7 @@ export default async function InventoryPage({
             </div>
             <form action={saveInventoryItemAction} className="mt-4 grid gap-3">
               <input type="hidden" name="item_type" value="supply" />
+              <input type="hidden" name="is_active" value="true" />
               <input
                 name="code"
                 placeholder="Code, e.g. charcoal_bag"
@@ -347,6 +348,7 @@ export default async function InventoryPage({
                   />
                   <input type="hidden" name="initial_quantity" value="0" />
                   <label className="flex items-center gap-2 text-sm text-[#6B7280]">
+                    <input type="hidden" name="is_active" value="false" />
                     <input type="checkbox" name="is_active" defaultChecked={selectedItem.isActive} />
                     Active
                   </label>

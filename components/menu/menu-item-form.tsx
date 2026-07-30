@@ -364,10 +364,12 @@ export function MenuItemForm({
           </div>
         ) : null}
         <label className="flex items-center gap-2 text-sm text-[#6B7280]">
+          <input type="hidden" name="is_active" value="false" />
           <input type="checkbox" name="is_active" defaultChecked={selectedMenuItem?.isActive ?? true} />
           Active
         </label>
         <label className="flex items-center gap-2 text-sm text-[#6B7280]">
+          <input type="hidden" name="is_available_today" value="false" />
           <input type="checkbox" name="is_available_today" defaultChecked={selectedMenuItem?.isAvailableToday ?? true} />
           Available today
         </label>
