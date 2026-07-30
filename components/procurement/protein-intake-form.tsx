@@ -224,7 +224,7 @@ export function ProteinIntakeForm({
     <section className="surface-card rounded-[32px] p-5">
       <div className="border-b border-[#EEF2F6] pb-4">
         <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Protein Intake</p>
-        <h2 className="mt-2 text-xl font-semibold">Receive raw protein deliveries</h2>
+        <h2 className="mt-2 text-xl font-semibold">Receive meat deliveries</h2>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6B7280]">
           Capture the supplier and meat inspection details first, then record the received quantity for processing.
           The batch number is generated automatically when the receipt is saved.
