@@ -40,7 +40,7 @@ import { createAdminSupabaseClient } from "@/lib/supabase/server";
 import { toCode } from "@/lib/ops/utils";
 
 const menuImageBucket = "menu-item-images";
-const maxMenuImageBytes = 5 * 1024 * 1024;
+const maxMenuImageBytes = 10 * 1024 * 1024;
 const allowedMenuImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 function buildProcurementBatchNumber(sourceCode: string, deliveryDate: string) {
@@ -146,7 +146,7 @@ function getOptionalImageFile(formData: FormData, key: string) {
   }
 
   if (value.size > maxMenuImageBytes) {
-    throw new Error("Menu image must be 5MB or smaller.");
+    throw new Error("Menu image must be 10MB or smaller.");
   }
 
   return value;

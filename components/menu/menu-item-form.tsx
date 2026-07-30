@@ -7,7 +7,7 @@ import { createPortionTypeInlineAction, saveMenuItemDetailsAction, uploadMenuIte
 import { MenuItemRecord, PortionTypeOption, MenuCategoryRecord } from "@/lib/ops/types";
 
 type SavePhase = "idle" | "creating" | "saving" | "uploading" | "finishing";
-const maxMenuImageBytes = 5 * 1024 * 1024;
+const maxMenuImageBytes = 10 * 1024 * 1024;
 
 function getStatusLabel(phase: SavePhase, isEditing: boolean) {
   switch (phase) {
@@ -45,6 +45,7 @@ export function MenuItemForm({
   const [isCreatingPortionType, setIsCreatingPortionType] = useState(false);
   const [quickAddError, setQuickAddError] = useState<string | null>(null);
   const [quickAddSuccess, setQuickAddSuccess] = useState<string | null>(null);
+  const [imagePreview, setImagePreview] = useState<{ name: string; url: string } | null>(null);
   const isEditing = Boolean(selectedMenuItem);
   const isPending = phase !== "idle";
   const selectedCategory = categories.find((category) => String(category.id) === menuCategoryId);
@@ -65,6 +66,20 @@ export function MenuItemForm({
     setQuickAddError(null);
     setQuickAddSuccess(null);
   }, [portionTypes, selectedMenuItem?.id, selectedMenuItem?.portionTypeId]);
+
+  useEffect(() => {
+    return () => {
+      if (imagePreview) {
+        URL.revokeObjectURL(imagePreview.url);
+      }
+    };
+  }, [imagePreview]);
+
+  function handleImageSelection(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0];
+
+    setImagePreview(file ? { name: file.name, url: URL.createObjectURL(file) } : null);
+  }
 
   async function handleQuickAddPortionType(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -125,7 +140,7 @@ export function MenuItemForm({
       }
 
       if (hasImage && imageValue instanceof File && imageValue.size > maxMenuImageBytes) {
-        const error = "Menu image must be 5MB or smaller.";
+        const error = "Menu image must be 10MB or smaller.";
 
         setPhase("finishing");
         router.refresh();
@@ -221,8 +236,11 @@ export function MenuItemForm({
               setQuickAddError(null);
               setQuickAddSuccess(null);
             }}
-            className="text-left text-xs font-semibold text-[#111418] underline underline-offset-4"
+            className="inline-flex w-fit items-center gap-1.5 rounded-xl border border-[#D7DDE4] bg-[#F8FAFB] px-2.5 py-1.5 text-xs font-semibold text-[#374151] transition hover:border-[#BFC7D1] hover:bg-white"
           >
+            <span aria-hidden="true" className="text-sm leading-none">
+              {isQuickAddOpen ? "×" : "+"}
+            </span>
             {isQuickAddOpen ? "Close add portion" : "Add portion"}
           </button>
           <p className="text-xs leading-5 text-[#6B7280]">
@@ -327,12 +345,24 @@ export function MenuItemForm({
             type="file"
             name="image"
             accept="image/png,image/jpeg,image/webp"
+            onChange={isEditing ? undefined : handleImageSelection}
             className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
           />
           <p className="text-xs leading-5 text-[#6B7280]">
-            Upload a JPG, PNG, or WebP image up to 5MB. A new upload replaces the current image for this item.
+            {isEditing
+              ? "Upload a JPG, PNG, or WebP image up to 10MB. A new upload replaces the current image for this item."
+              : "Upload a JPG, PNG, or WebP image up to 10MB. You will see a local preview before creating the item."}
           </p>
         </div>
+        {!isEditing && imagePreview ? (
+          <div className="overflow-hidden rounded-[24px] border border-[#E4E7EB] bg-[#F8FAFB]">
+            <img src={imagePreview.url} alt={`Local preview of ${imagePreview.name}`} className="h-52 w-full object-cover" />
+            <div className="border-t border-[#E4E7EB] px-4 py-3">
+              <p className="text-sm font-semibold text-[#111418]">Local image preview</p>
+              <p className="mt-1 truncate text-xs text-[#6B7280]">{imagePreview.name} · Not uploaded yet</p>
+            </div>
+          </div>
+        ) : null}
         <label className="flex items-center gap-2 text-sm text-[#6B7280]">
           <input type="checkbox" name="is_active" defaultChecked={selectedMenuItem?.isActive ?? true} />
           Active
