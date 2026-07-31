@@ -346,7 +346,7 @@ export function SidesIntakeForm({
                   form="sides-quick-add-item-form"
                   name="unit_name"
                   required
-                  defaultValue="kg"
+                  placeholder="Unit of measure, e.g. kg"
                   className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
                 />
                 <input
@@ -355,7 +355,6 @@ export function SidesIntakeForm({
                   step="0.01"
                   min="0"
                   name="reorder_threshold"
-                  defaultValue="0"
                   placeholder="Reorder threshold"
                   className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
                 />
