@@ -6,7 +6,7 @@ import { UgxAmountInput } from "@/components/ugx-amount-input";
 import { createPortionTypeInlineAction, saveMenuItemDetailsAction, uploadMenuItemImageAction } from "@/lib/ops/actions";
 import { MenuItemRecord, PortionTypeOption, MenuCategoryRecord } from "@/lib/ops/types";
 
-type SavePhase = "idle" | "creating" | "saving" | "uploading" | "finishing";
+type SavePhase = "idle" | "creating" | "saving" | "uploading";
 const maxMenuImageBytes = 10 * 1024 * 1024;
 
 function getStatusLabel(phase: SavePhase, isEditing: boolean) {
@@ -17,8 +17,6 @@ function getStatusLabel(phase: SavePhase, isEditing: boolean) {
       return "Saving changes...";
     case "uploading":
       return "Uploading image...";
-    case "finishing":
-      return "Finishing up...";
     default:
       return isEditing ? "Save menu item" : "Create menu item";
   }
@@ -79,6 +77,22 @@ export function MenuItemForm({
     const file = event.currentTarget.files?.[0];
 
     setImagePreview(file ? { name: file.name, url: URL.createObjectURL(file) } : null);
+  }
+
+  function finishCreatedMenuItem(form: HTMLFormElement, menuItemId: number, error?: string) {
+    form.reset();
+    setMenuCategoryId("");
+    setPortionTypeId("");
+    setImagePreview(null);
+    setQuickAddError(null);
+    setQuickAddSuccess(null);
+    setPhase("idle");
+
+    const destination = error
+      ? `/menu?edit=${menuItemId}&error=${encodeURIComponent(error)}`
+      : `/menu?edit=${menuItemId}`;
+
+    router.replace(destination, { scroll: false });
   }
 
   async function handleQuickAddPortionType(event: React.FormEvent<HTMLFormElement>) {
@@ -142,16 +156,14 @@ export function MenuItemForm({
       if (hasImage && imageValue instanceof File && imageValue.size > maxMenuImageBytes) {
         const error = "Menu image must be 10MB or smaller.";
 
-        setPhase("finishing");
-        router.refresh();
-
         if (!isEditing || selectedMenuItem?.id !== saveResult.menuItemId) {
-          router.push(`/menu?edit=${saveResult.menuItemId}&error=${encodeURIComponent(error)}`);
+          finishCreatedMenuItem(form, saveResult.menuItemId, error);
           return;
         }
 
         setErrorMessage(error);
         setPhase("idle");
+        router.refresh();
         return;
       }
 
@@ -163,15 +175,13 @@ export function MenuItemForm({
         await uploadMenuItemImageAction(imageFormData);
       }
 
-      setPhase("finishing");
-      router.refresh();
-
       if (!isEditing || selectedMenuItem?.id !== saveResult.menuItemId) {
-        router.push(`/menu?edit=${saveResult.menuItemId}`);
+        finishCreatedMenuItem(form, saveResult.menuItemId);
         return;
       }
 
       setPhase("idle");
+      router.refresh();
     } catch (error) {
       setPhase("idle");
       setErrorMessage(error instanceof Error ? error.message : "Unable to save the menu item.");
@@ -394,9 +404,7 @@ export function MenuItemForm({
               ? "The image is uploading now."
               : phase === "creating"
                 ? "The sellable item record is being created now."
-                : phase === "saving"
-                  ? "The menu item changes are being saved now."
-                  : "Refreshing the page with the latest data."}
+                : "The menu item changes are being saved now."}
           </p>
         ) : null}
       </form>
