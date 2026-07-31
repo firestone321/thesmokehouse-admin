@@ -264,20 +264,7 @@ export default async function MenuPage({
                 placeholder="Category name"
                 className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
               />
-              <p className="text-xs leading-5 text-[#6B7280]">Code will be generated automatically from the category name.</p>
-              <div className="grid gap-2">
-                <label className="text-sm font-semibold text-[#111418]" htmlFor="category-sort-order">
-                  Sort order
-                </label>
-                <input
-                  id="category-sort-order"
-                  type="number"
-                  min="1"
-                  name="sort_order"
-                  defaultValue="1"
-                  className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
-                />
-              </div>
+              <p className="text-xs leading-5 text-[#6B7280]">Code and position will be generated automatically from the category name.</p>
               <button type="submit" className="rounded-2xl bg-[#111418] px-4 py-2.5 text-sm font-semibold text-white">
                 Save category
               </button>

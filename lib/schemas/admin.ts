@@ -189,8 +189,7 @@ export const queueActionSchema = z.object({
 });
 
 export const menuCategoryActionSchema = z.object({
-  name: shortTextSchema,
-  sort_order: z.preprocess(blankToUndefined, z.coerce.number().int().min(0).max(999).default(1)).default(1)
+  name: shortTextSchema
 });
 
 export const menuItemActionSchema = z.object({

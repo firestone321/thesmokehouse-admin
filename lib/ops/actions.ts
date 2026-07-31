@@ -903,17 +903,40 @@ export async function saveMenuCategoryAction(formData: FormData) {
   const supabase = createAdminSupabaseClient();
   const code = toCode(input.name);
 
-  const { error } = await supabase.from("menu_categories").upsert(
-    {
-      code,
-      name: input.name,
-      sort_order: input.sort_order,
-      is_active: true
-    },
-    {
-      onConflict: "code"
-    }
-  );
+  const { data: existingCategory, error: existingCategoryError } = await supabase
+    .from("menu_categories")
+    .select("id")
+    .eq("code", code)
+    .maybeSingle();
+
+  if (existingCategoryError) {
+    throw new Error(`Unable to check the menu category: ${existingCategoryError.message}`);
+  }
+
+  const { error } = existingCategory
+    ? await supabase
+        .from("menu_categories")
+        .update({ name: input.name, is_active: true })
+        .eq("id", existingCategory.id)
+    : await (async () => {
+        const { data: latestCategory, error: latestCategoryError } = await supabase
+          .from("menu_categories")
+          .select("sort_order")
+          .order("sort_order", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (latestCategoryError) {
+          throw new Error(`Unable to determine the next menu category order: ${latestCategoryError.message}`);
+        }
+
+        return supabase.from("menu_categories").insert({
+          code,
+          name: input.name,
+          sort_order: Number(latestCategory?.sort_order ?? 0) + 1,
+          is_active: true
+        });
+      })();
 
   if (error) {
     throw new Error(`Unable to save menu category: ${error.message}`);

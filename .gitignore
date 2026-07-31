@@ -11,3 +11,4 @@ protein-quick-add-audit-2026-07-20.md
 .env.local
 tsconfig.tsbuildinfo
 /.security-audit-local/
+/.pos-audit-local/
