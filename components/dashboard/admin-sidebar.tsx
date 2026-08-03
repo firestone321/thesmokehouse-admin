@@ -6,11 +6,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LogoutButton } from "@/components/auth/logout-button";
 import { adminNavItems } from "@/lib/admin/nav";
+import type { AdminRole } from "@/lib/auth/admin-role";
 
 const quickAccessLabels = new Set(["Dashboard", "Orders", "Menu", "Resupplies", "Suppliers", "Inventory", "Kitchen Queue"]);
-const secondaryNavLabels = new Set(["Staff", "Settings"]);
-const primaryNavItems = adminNavItems.filter((item) => !secondaryNavLabels.has(item.label));
-const secondaryNavItems = adminNavItems.filter((item) => secondaryNavLabels.has(item.label));
+const secondaryNavLabels = new Set(["Activity", "Staff", "Settings"]);
 const quickAccessItems = adminNavItems.filter((item) => quickAccessLabels.has(item.label));
 
 function SidebarNav({
@@ -54,13 +53,20 @@ function SidebarNav({
 
 export function AdminSidebar({
   userEmail,
+  userRole,
   showLogout
 }: {
   userEmail?: string | null;
+  userRole?: AdminRole;
   showLogout?: boolean;
 }) {
   const pathname = usePathname();
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const visibleItems = adminNavItems.filter(
+    (item) => !item.allowedRoles || (userRole ? item.allowedRoles.includes(userRole) : false)
+  );
+  const primaryNavItems = visibleItems.filter((item) => !secondaryNavLabels.has(item.label));
+  const secondaryNavItems = visibleItems.filter((item) => secondaryNavLabels.has(item.label));
 
   return (
     <>

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { canProvisionStaffAccounts, requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import { createStaffUserActionSchema, manageStaffAccountActionSchema } from "@/lib/schemas/admin";
 import { createAdminSupabaseClient } from "@/lib/supabase/server";
+import { recordStaffActivity } from "@/lib/activity/log";
 import { RequestValidationError } from "@/lib/validation/http";
 import { parseFormData } from "@/lib/validation/form-data";
 
@@ -150,6 +151,15 @@ export async function createStaffUserAction(formData: FormData) {
     );
   }
 
+  await recordStaffActivity({
+    actor,
+    action: "staff.account_created",
+    entityType: "staff_profile",
+    entityId: userId,
+    summary: (actor.email ?? "An administrator") + " created staff account " + normalizedEmail + ".",
+    metadata: { target_email: normalizedEmail, target_role: input.role }
+  });
+
   revalidatePath("/staff");
   redirect(buildStaffRedirect("success", `${normalizedEmail} was created with the ${roleLabel} role.`));
 }
@@ -245,6 +255,15 @@ export async function manageStaffAccountAction(formData: FormData) {
       );
     }
 
+    await recordStaffActivity({
+      actor,
+      action: shouldDisable ? "staff.account_disabled" : "staff.account_enabled",
+      entityType: "staff_profile",
+      entityId: input.user_id,
+      summary: (actor.email ?? "An administrator") + (shouldDisable ? " disabled " : " enabled ") + email + ".",
+      metadata: { target_email: email, target_role: targetProfile.role }
+    });
+
     revalidatePath("/staff");
     redirect(
       buildStaffRedirect(
@@ -329,6 +348,15 @@ export async function manageStaffAccountAction(formData: FormData) {
       )
     );
   }
+
+  await recordStaffActivity({
+    actor,
+    action: "staff.role_changed",
+    entityType: "staff_profile",
+    entityId: input.user_id,
+    summary: (actor.email ?? "An administrator") + " changed " + email + " to " + targetRole + ".",
+    metadata: { target_email: email, previous_role: targetProfile.role, target_role: targetRole }
+  });
 
   revalidatePath("/staff");
   redirect(buildStaffRedirect("success", `${email} now has the ${targetRole === "chef" ? "Chef" : formatRoleLabel(targetRole)} role.`));

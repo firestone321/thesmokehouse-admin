@@ -205,6 +205,13 @@ export const menuItemActionSchema = z.object({
   is_available_today: checkboxSchema
 });
 
+export const menuPriceReviewActionSchema = z.object({
+  request_id: z.string().uuid(),
+  menu_item_id: idSchema,
+  decision: z.enum(["approve", "deny"]),
+  review_note: nullableText(500)
+});
+
 export const menuItemImageActionSchema = z.object({
   menu_item_id: idSchema
 });

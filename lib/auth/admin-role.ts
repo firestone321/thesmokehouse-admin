@@ -7,6 +7,7 @@ export type AdminRole = "admin" | "manager" | "chef" | "staff";
 
 const approvedAdminRoles = new Set<AdminRole>(["admin", "manager", "chef", "staff"]);
 const staffProvisioningRoles = new Set<AdminRole>(["admin", "manager"]);
+const approvalRoles = new Set<AdminRole>(["admin", "manager"]);
 
 export class AdminAuthorizationError extends Error {
   readonly status: 401 | 403;
@@ -20,6 +21,14 @@ export class AdminAuthorizationError extends Error {
 
 export function canProvisionStaffAccounts(role: AdminRole) {
   return staffProvisioningRoles.has(role);
+}
+
+export function canApproveOperationalChanges(role: AdminRole) {
+  return approvalRoles.has(role);
+}
+
+export function isRegularStaffRole(role: AdminRole) {
+  return role === "staff" || role === "chef";
 }
 
 export async function requireApprovedAdminRole(): Promise<{ userId: string; email: string | null; role: AdminRole }> {

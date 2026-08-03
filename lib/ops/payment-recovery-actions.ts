@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import { triggerStorefrontPendingPaymentRecovery } from "@/lib/ops/storefront-payment-recovery";
+import { recordStaffActivity } from "@/lib/activity/log";
 
 function buildOrdersFlashRedirect(returnTo: string, status: "success" | "error", message: string) {
   const url = new URL(returnTo, "http://smokehouse.local");
@@ -21,7 +22,7 @@ function parseReturnTo(formData: FormData) {
 }
 
 export async function processPendingPaymentRecoveriesAction(formData: FormData) {
-  await requireApprovedAdminRole();
+  const actor = await requireApprovedAdminRole();
 
   const returnTo = parseReturnTo(formData);
   const result = await triggerStorefrontPendingPaymentRecovery(10);
@@ -41,6 +42,13 @@ export async function processPendingPaymentRecoveriesAction(formData: FormData) 
   }
 
   const stats = result.stats;
+  await recordStaffActivity({
+    actor,
+    action: "orders.payment_recovery_run",
+    entityType: "payment_recovery",
+    summary: (actor.email ?? "A staff account") + " ran pending payment recovery.",
+    metadata: stats
+  });
   const message = `Payment recovery checked ${stats.trackedClaimed} claimed payments, completed ${stats.trackedCompleted}, rescheduled ${stats.trackedRescheduled}, provider-cancelled ${stats.trackedCancelled}, exhausted ${stats.trackedFailed}, errors ${stats.errors.length}.`;
   redirect(buildOrdersFlashRedirect(returnTo, stats.errors.length > 0 ? "error" : "success", message));
 }

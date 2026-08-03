@@ -8,6 +8,7 @@ import { getStorefrontSigningSecret, getValidatedStorefrontBaseUrl } from "@/lib
 import { reverifyOrderPaymentActionSchema } from "@/lib/schemas/admin";
 import { createAdminSupabaseClient } from "@/lib/supabase/server";
 import { parseFormData } from "@/lib/validation/form-data";
+import { recordStaffActivity } from "@/lib/activity/log";
 
 type PaymentAuthorityResponse =
   | {
@@ -65,7 +66,7 @@ async function askStorefrontToReverifyPayment(orderId: number) {
 }
 
 export async function reverifyOrderPaymentAction(formData: FormData) {
-  await requireApprovedAdminRole();
+  const actor = await requireApprovedAdminRole();
   const input = parseFormData(formData, reverifyOrderPaymentActionSchema);
   const supabase = createAdminSupabaseClient();
   const orderId = input.order_id;
@@ -95,6 +96,16 @@ export async function reverifyOrderPaymentAction(formData: FormData) {
     const message = error instanceof Error ? error.message : "Unable to reverify payment through the storefront.";
     redirect(`/orders/${orderId}?error=${encodeURIComponent(message)}`);
   }
+
+  await recordStaffActivity({
+    actor,
+    action: "order.payment_reverified",
+    entityType: "order",
+    entityId: orderId,
+    orderId,
+    summary: (actor.email ?? "A staff account") + " manually reverified payment for order " + orderId + ".",
+    metadata: { verification_state: verificationState }
+  });
 
   revalidateOrderPaths(orderId);
   redirect(`/orders/${orderId}?payment_reverified=${encodeURIComponent(verificationState)}`);

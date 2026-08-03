@@ -9,7 +9,8 @@ import {
   triggerStorefrontReadyNotification,
   triggerStorefrontReadyQueueProcessing
 } from "@/lib/ops/storefront-ready-notifications";
-import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
+import { isRegularStaffRole, requireApprovedAdminRole } from "@/lib/auth/admin-role";
+import { recordStaffActivity, type ActivityActor } from "@/lib/activity/log";
 import {
   processAdminPushDispatchQueue,
   runAdminPushDrainWithLock
@@ -24,6 +25,7 @@ import {
   menuItemComponentActionSchema,
   menuItemActionSchema,
   menuItemImageActionSchema,
+  menuPriceReviewActionSchema,
   portionTypeActionSchema,
   processProcurementReceiptToFinishedStockActionSchema,
   proteinIntakeItemActionSchema,
@@ -177,17 +179,18 @@ async function uploadMenuItemImage(menuItemId: number, file: File) {
   }
 }
 
-async function saveMenuItemRecord(formData: FormData) {
+async function saveMenuItemRecord(formData: FormData, actor: ActivityActor) {
   const input = parseFormData(formData, menuItemActionSchema);
   const supabase = createAdminSupabaseClient();
   const menuItemId = input.menu_item_id;
   const name = input.name;
   let code = toCode(name);
+  let existingMenuItem: { code: string; name: string; base_price: number } | null = null;
 
   if (menuItemId) {
-    const { data: existingMenuItem, error: existingMenuItemError } = await supabase
+    const { data: loadedExistingMenuItem, error: existingMenuItemError } = await supabase
       .from("menu_items")
-      .select("code")
+      .select("code,name,base_price")
       .eq("id", menuItemId)
       .maybeSingle();
 
@@ -195,18 +198,23 @@ async function saveMenuItemRecord(formData: FormData) {
       throw new Error(`Unable to load existing menu item: ${existingMenuItemError.message}`);
     }
 
-    if (!existingMenuItem) {
+    if (!loadedExistingMenuItem) {
       throw new Error(`Unable to find menu item ${menuItemId}`);
     }
 
+    existingMenuItem = loadedExistingMenuItem;
     code = existingMenuItem.code;
   }
+
+  const existingPrice = menuItemId ? Number(existingMenuItem?.base_price ?? input.base_price) : input.base_price;
+  const priceRequiresApproval =
+    Boolean(menuItemId) && isRegularStaffRole(actor.role) && input.base_price !== existingPrice;
 
   const payload = {
     code,
     name,
     description: input.description,
-    base_price: input.base_price,
+    base_price: priceRequiresApproval ? existingPrice : input.base_price,
     prep_type: input.prep_type,
     menu_category_id: input.menu_category_id,
     portion_type_id: input.portion_type_id,
@@ -253,12 +261,46 @@ async function saveMenuItemRecord(formData: FormData) {
       throw new Error(`Unable to update menu item: ${error.message}`);
     }
 
+    if (priceRequiresApproval) {
+      if (actor.userId === "local-auth-bypass") {
+        throw new Error("Price suggestions require a signed-in staff account.");
+      }
+
+      const { error: requestError } = await supabase.rpc("request_menu_price_change", {
+        p_menu_item_id: menuItemId,
+        p_requested_by_profile_id: actor.userId,
+        p_proposed_price: input.base_price
+      });
+
+      if (requestError) {
+        if (requestError.message.includes("menu_price_request_already_pending")) {
+          throw new Error("This item already has a price suggestion waiting for approval.");
+        }
+        throw new Error("Unable to submit the price suggestion: " + requestError.message);
+      }
+    } else {
+      await recordStaffActivity({
+        actor,
+        action: "menu.item_updated",
+        entityType: "menu_item",
+        entityId: menuItemId,
+        summary: (actor.email ?? "A staff account") + " updated " + (existingMenuItem?.name ?? name) + ".",
+        metadata: {
+          menu_item_name: existingMenuItem?.name ?? name,
+          previous_price: existingPrice,
+          current_price: input.base_price
+        }
+      });
+    }
+
     revalidateMenuPaths();
 
     return {
       ok: true as const,
       menuItemId,
-      mode: "updated" as const
+      mode: "updated" as const,
+      priceApprovalPending: priceRequiresApproval,
+      livePrice: payload.base_price
     };
   }
 
@@ -276,6 +318,15 @@ async function saveMenuItemRecord(formData: FormData) {
     throw new Error(`Unable to create menu item: ${error?.message ?? "Unknown error"}`);
   }
 
+  await recordStaffActivity({
+    actor,
+    action: "menu.item_created",
+    entityType: "menu_item",
+    entityId: data.id,
+    summary: (actor.email ?? "A staff account") + " created " + name + ".",
+    metadata: { menu_item_name: name, price: input.base_price }
+  });
+
   revalidateMenuPaths();
 
   return {
@@ -286,7 +337,7 @@ async function saveMenuItemRecord(formData: FormData) {
 }
 
 export async function saveInventoryItemAction(formData: FormData) {
-  await requireApprovedAdminRole();
+  const actor = await requireApprovedAdminRole();
   const input = parseFormData(formData, inventoryItemActionSchema);
   const supabase = createAdminSupabaseClient();
   const inventoryItemId = input.inventory_item_id;
@@ -308,6 +359,15 @@ export async function saveInventoryItemAction(formData: FormData) {
     if (error) {
       throw new Error(`Unable to update inventory item: ${error.message}`);
     }
+
+    await recordStaffActivity({
+      actor,
+      action: "inventory.item_updated",
+      entityType: "inventory_item",
+      entityId: inventoryItemId,
+      summary: (actor.email ?? "A staff account") + " updated inventory item " + input.name + ".",
+      metadata: { name: input.name, reorder_threshold: input.reorder_threshold, is_active: input.is_active }
+    });
 
     revalidateInventoryPaths();
     redirect(`/inventory?item=${inventoryItemId}`);
@@ -343,14 +403,31 @@ export async function saveInventoryItemAction(formData: FormData) {
     }
   }
 
+  await recordStaffActivity({
+    actor,
+    action: "inventory.item_created",
+    entityType: "inventory_item",
+    entityId: data.id,
+    summary: (actor.email ?? "A staff account") + " created inventory item " + input.name + ".",
+    metadata: { name: input.name, initial_quantity: input.initial_quantity }
+  });
+
   revalidateInventoryPaths();
   redirect(`/inventory?item=${data.id}`);
 }
 
 export async function processAdminPushQueueAction(formData: FormData) {
-  await requireApprovedAdminRole();
+  const actor = await requireApprovedAdminRole();
   const { return_to: returnTo } = parseFormData(formData, queueActionSchema);
   const stats = await processAdminPushDispatchQueue({ limit: 10 });
+
+  await recordStaffActivity({
+    actor,
+    action: "operations.admin_push_queue_run",
+    entityType: "notification_queue",
+    summary: (actor.email ?? "A staff account") + " manually processed the admin notification queue.",
+    metadata: stats
+  });
 
   revalidatePushQueuePaths();
   redirect(
@@ -363,7 +440,7 @@ export async function processAdminPushQueueAction(formData: FormData) {
 }
 
 export async function processStorefrontReadyQueueAction(formData: FormData) {
-  await requireApprovedAdminRole();
+  const actor = await requireApprovedAdminRole();
   const { return_to: returnTo } = parseFormData(formData, queueActionSchema);
   const result = await triggerStorefrontReadyQueueProcessing(10);
 
@@ -377,6 +454,14 @@ export async function processStorefrontReadyQueueAction(formData: FormData) {
     redirect(buildOrdersFlashRedirect(returnTo, "error", "Storefront Ready queue could not be processed right now."));
   }
 
+  await recordStaffActivity({
+    actor,
+    action: "operations.storefront_ready_queue_run",
+    entityType: "notification_queue",
+    summary: (actor.email ?? "A staff account") + " manually processed the customer Ready queue.",
+    metadata: result.stats
+  });
+
   redirect(
     buildOrdersFlashRedirect(
       returnTo,
@@ -387,7 +472,7 @@ export async function processStorefrontReadyQueueAction(formData: FormData) {
 }
 
 export async function createInventoryItemInlineAction(formData: FormData) {
-  await requireApprovedAdminRole();
+  const actor = await requireApprovedAdminRole();
   const input = parseFormData(formData, inventoryItemActionSchema);
   const supabase = createAdminSupabaseClient();
   const code = input.code ?? toCode(input.name);
@@ -414,6 +499,14 @@ export async function createInventoryItemInlineAction(formData: FormData) {
   revalidateInventoryPaths();
   revalidateMenuPaths();
 
+  await recordStaffActivity({
+    actor,
+    action: "inventory.item_created",
+    entityType: "inventory_item",
+    entityId: data.id,
+    summary: (actor.email ?? "A staff account") + " created inventory item " + data.name + "."
+  });
+
   return {
     ok: true as const,
     item: {
@@ -435,7 +528,7 @@ export async function createInventoryItemInlineAction(formData: FormData) {
 }
 
 export async function adjustInventoryItemAction(formData: FormData) {
-  await requireApprovedAdminRole();
+  const actor = await requireApprovedAdminRole();
   const input = parseFormData(formData, inventoryAdjustmentActionSchema);
   const supabase = createAdminSupabaseClient();
 
@@ -450,12 +543,25 @@ export async function adjustInventoryItemAction(formData: FormData) {
     throw new Error(`Unable to adjust inventory item: ${error.message}`);
   }
 
+  await recordStaffActivity({
+    actor,
+    action: "inventory.quantity_adjusted",
+    entityType: "inventory_item",
+    entityId: input.inventory_item_id,
+    summary: (actor.email ?? "A staff account") + " adjusted an inventory quantity.",
+    metadata: {
+      quantity_delta: input.quantity_delta,
+      movement_type: input.movement_type,
+      note: input.note
+    }
+  });
+
   revalidateInventoryPaths();
   redirect(`/inventory?item=${input.inventory_item_id}`);
 }
 
 export async function recordProteinProcurementAction(formData: FormData) {
-  await requireApprovedAdminRole();
+  const actor = await requireApprovedAdminRole();
   const input = parseFormData(formData, proteinProcurementActionSchema);
   const supabase = createAdminSupabaseClient();
   const { data: proteinItem, error: proteinItemError } = await supabase
@@ -496,12 +602,27 @@ export async function recordProteinProcurementAction(formData: FormData) {
     throw new Error(`Unable to record protein procurement: ${error.message}`);
   }
 
+  await recordStaffActivity({
+    actor,
+    action: "resupply.protein_recorded",
+    entityType: "procurement_receipt",
+    summary: (actor.email ?? "A staff account") + " recorded a protein resupply.",
+    metadata: {
+      protein_intake_item_id: input.protein_intake_item_id,
+      supplier_id: input.supplier_id,
+      quantity_received: input.quantity_received,
+      unit_name: input.unit_name,
+      delivery_date: input.delivery_date,
+      batch_number: batchNumber
+    }
+  });
+
   revalidateProcurementPaths();
   redirect("/procurement");
 }
 
 export async function createProteinIntakeItemInlineAction(formData: FormData) {
-  await requireApprovedAdminRole();
+  const actor = await requireApprovedAdminRole();
   const input = parseFormData(formData, proteinIntakeItemActionSchema);
   const supabase = createAdminSupabaseClient();
   const code = toCode(input.name);
@@ -677,6 +798,14 @@ export async function createProteinIntakeItemInlineAction(formData: FormData) {
     throw new Error("Unable to create protein intake item: Unknown error");
   }
 
+  await recordStaffActivity({
+    actor,
+    action: "resupply.protein_item_created",
+    entityType: "protein_intake_item",
+    entityId: item.id,
+    summary: (actor.email ?? "A staff account") + " created protein intake item " + item.name + "."
+  });
+
   return {
     ok: true as const,
     item: {
@@ -693,7 +822,7 @@ export async function createProteinIntakeItemInlineAction(formData: FormData) {
 }
 
 export async function recordSupplyProcurementAction(formData: FormData) {
-  await requireApprovedAdminRole();
+  const actor = await requireApprovedAdminRole();
   const input = parseFormData(formData, supplyProcurementActionSchema);
   const supabase = createAdminSupabaseClient();
   const batchNumber = buildProcurementBatchNumber(
@@ -730,12 +859,26 @@ export async function recordSupplyProcurementAction(formData: FormData) {
     throw new Error(`Unable to record supply procurement: ${error.message}`);
   }
 
+  await recordStaffActivity({
+    actor,
+    action: "resupply.supply_recorded",
+    entityType: "procurement_receipt",
+    summary: (actor.email ?? "A staff account") + " recorded a supply resupply.",
+    metadata: {
+      inventory_item_id: input.inventory_item_id,
+      supplier_id: input.supplier_id,
+      quantity_received: input.quantity_received,
+      delivery_date: input.delivery_date,
+      batch_number: batchNumber
+    }
+  });
+
   revalidateProcurementPaths();
   redirect(returnTo);
 }
 
 export async function recordIngredientProcurementAction(formData: FormData) {
-  await requireApprovedAdminRole();
+  const actor = await requireApprovedAdminRole();
   const input = parseFormData(formData, ingredientProcurementActionSchema);
   const supabase = createAdminSupabaseClient();
   const { data: inventoryItem, error: inventoryItemError } = await supabase
@@ -794,13 +937,36 @@ export async function recordIngredientProcurementAction(formData: FormData) {
     throw new Error(`Unable to record sides and drinks intake: ${error.message}`);
   }
 
+  await recordStaffActivity({
+    actor,
+    action: "resupply.ingredient_recorded",
+    entityType: "procurement_receipt",
+    summary: (actor.email ?? "A staff account") + " recorded a sides or drinks resupply.",
+    metadata: {
+      inventory_item_id: input.inventory_item_id,
+      supplier_id: input.supplier_id,
+      quantity_received: input.quantity_received,
+      delivery_date: input.delivery_date,
+      batch_number: batchNumber
+    }
+  });
+
   revalidateProcurementPaths();
   redirect("/procurement");
 }
 
 export async function saveSupplierAction(formData: FormData) {
-  await requireApprovedAdminRole();
+  const actor = await requireApprovedAdminRole();
   const result = await saveSupplierRecord(formData);
+
+  await recordStaffActivity({
+    actor,
+    action: result.mode === "created" ? "supplier.created" : "supplier.updated",
+    entityType: "supplier",
+    entityId: result.supplier.id,
+    summary: (actor.email ?? "A staff account") + " saved supplier " + result.supplier.name + ".",
+    metadata: { supplier_name: result.supplier.name }
+  });
 
   revalidateSupplierPaths();
 
@@ -871,8 +1037,17 @@ async function saveSupplierRecord(formData: FormData) {
 }
 
 export async function createSupplierInlineAction(formData: FormData) {
-  await requireApprovedAdminRole();
+  const actor = await requireApprovedAdminRole();
   const result = await saveSupplierRecord(formData);
+
+  await recordStaffActivity({
+    actor,
+    action: result.mode === "created" ? "supplier.created" : "supplier.updated",
+    entityType: "supplier",
+    entityId: result.supplier.id,
+    summary: (actor.email ?? "A staff account") + " saved supplier " + result.supplier.name + ".",
+    metadata: { supplier_name: result.supplier.name }
+  });
 
   revalidateSupplierPaths();
 
@@ -943,8 +1118,16 @@ async function savePortionTypeRecord(formData: FormData) {
 }
 
 export async function createPortionTypeInlineAction(formData: FormData) {
-  await requireApprovedAdminRole();
+  const actor = await requireApprovedAdminRole();
   const portionType = await savePortionTypeRecord(formData);
+
+  await recordStaffActivity({
+    actor,
+    action: "menu.portion_type_created",
+    entityType: "portion_type",
+    entityId: portionType.id,
+    summary: (actor.email ?? "A staff account") + " created portion type " + portionType.label + "."
+  });
 
   revalidateMenuPaths();
 
@@ -955,7 +1138,7 @@ export async function createPortionTypeInlineAction(formData: FormData) {
 }
 
 export async function processProcurementReceiptToFinishedStockAction(formData: FormData) {
-  await requireApprovedAdminRole();
+  const actor = await requireApprovedAdminRole();
   const input = parseFormData(formData, processProcurementReceiptToFinishedStockActionSchema);
   const supabase = createAdminSupabaseClient();
 
@@ -985,6 +1168,18 @@ export async function processProcurementReceiptToFinishedStockAction(formData: F
       throw new Error(`Unable to process whole chicken receipt allocation: ${error.message}`);
     }
 
+    await recordStaffActivity({
+      actor,
+      action: "resupply.receipt_processed",
+      entityType: "procurement_receipt",
+      entityId: input.procurement_receipt_id,
+      summary: (actor.email ?? "A staff account") + " processed a whole chicken receipt.",
+      metadata: {
+        birds_allocated_to_halves: input.birds_allocated_to_halves,
+        birds_allocated_to_quarters: input.birds_allocated_to_quarters
+      }
+    });
+
     revalidateProcurementPaths();
     redirect("/procurement");
   }
@@ -1005,12 +1200,21 @@ export async function processProcurementReceiptToFinishedStockAction(formData: F
     throw new Error(`Unable to process procurement receipt into finished stock: ${error.message}`);
   }
 
+  await recordStaffActivity({
+    actor,
+    action: "resupply.receipt_processed",
+    entityType: "procurement_receipt",
+    entityId: input.procurement_receipt_id,
+    summary: (actor.email ?? "A staff account") + " processed a procurement receipt into finished stock.",
+    metadata: { portion_type_id: input.portion_type_id, quantity_produced: input.quantity_produced }
+  });
+
   revalidateProcurementPaths();
   redirect("/procurement");
 }
 
 export async function saveMenuCategoryAction(formData: FormData) {
-  await requireApprovedAdminRole();
+  const actor = await requireApprovedAdminRole();
   const input = parseFormData(formData, menuCategoryActionSchema);
   const supabase = createAdminSupabaseClient();
   const code = toCode(input.name);
@@ -1054,14 +1258,23 @@ export async function saveMenuCategoryAction(formData: FormData) {
     throw new Error(`Unable to save menu category: ${error.message}`);
   }
 
+  await recordStaffActivity({
+    actor,
+    action: existingCategory ? "menu.category_updated" : "menu.category_created",
+    entityType: "menu_category",
+    entityId: existingCategory?.id ?? null,
+    summary: (actor.email ?? "A staff account") + " saved menu category " + input.name + ".",
+    metadata: { name: input.name }
+  });
+
   revalidateMenuPaths();
   redirect("/menu");
 }
 
 export async function saveMenuItemAction(formData: FormData) {
-  await requireApprovedAdminRole();
+  const actor = await requireApprovedAdminRole();
   const imageFile = getOptionalImageFile(formData, "image");
-  const result = await saveMenuItemRecord(formData);
+  const result = await saveMenuItemRecord(formData, actor);
 
   if (!result.ok) {
     redirect(buildMenuRedirectUrl({ editMenuItemId: result.menuItemId ? String(result.menuItemId) : null, error: result.error }));
@@ -1076,12 +1289,12 @@ export async function saveMenuItemAction(formData: FormData) {
 }
 
 export async function saveMenuItemDetailsAction(formData: FormData) {
-  await requireApprovedAdminRole();
-  return saveMenuItemRecord(formData);
+  const actor = await requireApprovedAdminRole();
+  return saveMenuItemRecord(formData, actor);
 }
 
 export async function uploadMenuItemImageAction(formData: FormData) {
-  await requireApprovedAdminRole();
+  const actor = await requireApprovedAdminRole();
   const { menu_item_id: menuItemId } = parseFormData(formData, menuItemImageActionSchema);
   const imageFile = getOptionalImageFile(formData, "image");
 
@@ -1092,6 +1305,13 @@ export async function uploadMenuItemImageAction(formData: FormData) {
   }
 
   await uploadMenuItemImage(menuItemId, imageFile);
+  await recordStaffActivity({
+    actor,
+    action: "menu.image_updated",
+    entityType: "menu_item",
+    entityId: menuItemId,
+    summary: (actor.email ?? "A staff account") + " updated the image for menu item " + menuItemId + "."
+  });
   revalidateMenuPaths();
 
   return {
@@ -1099,8 +1319,45 @@ export async function uploadMenuItemImageAction(formData: FormData) {
   };
 }
 
+export async function reviewMenuPriceChangeAction(formData: FormData) {
+  const actor = await requireApprovedAdminRole();
+  if (actor.role !== "admin" && actor.role !== "manager") {
+    throw new Error("Only administrators and managers can review suggested prices.");
+  }
+  if (actor.userId === "local-auth-bypass") {
+    throw new Error("Price reviews require a signed-in administrator or manager account.");
+  }
+
+  const input = parseFormData(formData, menuPriceReviewActionSchema);
+  const { data, error } = await createAdminSupabaseClient()
+    .rpc("review_menu_price_change", {
+      p_request_id: input.request_id,
+      p_reviewed_by_profile_id: actor.userId,
+      p_decision: input.decision,
+      p_review_note: input.review_note
+    })
+    .single<{ status: string }>();
+
+  if (error) throw new Error("Unable to review the suggested price: " + error.message);
+
+  revalidateMenuPaths();
+  revalidatePath("/activity");
+  const status = typeof data?.status === "string" ? data.status : input.decision === "approve" ? "approved" : "denied";
+  redirect(
+    "/menu?edit=" + input.menu_item_id +
+    "&price_request=" + encodeURIComponent(input.request_id) +
+    "&notice=" + encodeURIComponent(
+      status === "superseded"
+        ? "The live price changed before this review, so the suggestion was marked superseded."
+        : status === "approved"
+          ? "The suggested price was approved and is now live."
+          : "The suggested price was denied. The live price was not changed."
+    )
+  );
+}
+
 export async function deleteMenuItemAction(formData: FormData) {
-  await requireApprovedAdminRole();
+  const actor = await requireApprovedAdminRole();
   const { menu_item_id: menuItemId } = parseFormData(formData, menuItemImageActionSchema);
   const supabase = createAdminSupabaseClient();
 
@@ -1110,12 +1367,20 @@ export async function deleteMenuItemAction(formData: FormData) {
     throw new Error(`Unable to delete menu item: ${error.message}`);
   }
 
+  await recordStaffActivity({
+    actor,
+    action: "menu.item_deleted",
+    entityType: "menu_item",
+    entityId: menuItemId,
+    summary: (actor.email ?? "A staff account") + " deleted menu item " + menuItemId + "."
+  });
+
   revalidateMenuPaths();
   redirect("/menu");
 }
 
 export async function toggleMenuItemActiveAction(formData: FormData) {
-  await requireApprovedAdminRole();
+  const actor = await requireApprovedAdminRole();
   const { menu_item_id: menuItemId, next_value: nextValue } = parseFormData(formData, toggleMenuItemFlagActionSchema);
   const supabase = createAdminSupabaseClient();
 
@@ -1125,12 +1390,20 @@ export async function toggleMenuItemActiveAction(formData: FormData) {
     throw new Error(`Unable to update menu item status: ${error.message}`);
   }
 
+  await recordStaffActivity({
+    actor,
+    action: nextValue ? "menu.item_activated" : "menu.item_deactivated",
+    entityType: "menu_item",
+    entityId: menuItemId,
+    summary: (actor.email ?? "A staff account") + (nextValue ? " activated" : " deactivated") + " menu item " + menuItemId + "."
+  });
+
   revalidateMenuPaths();
   redirect("/menu");
 }
 
 export async function toggleMenuItemAvailabilityAction(formData: FormData) {
-  await requireApprovedAdminRole();
+  const actor = await requireApprovedAdminRole();
   const { menu_item_id: menuItemId, next_value: nextValue } = parseFormData(formData, toggleMenuItemFlagActionSchema);
   const supabase = createAdminSupabaseClient();
 
@@ -1140,12 +1413,21 @@ export async function toggleMenuItemAvailabilityAction(formData: FormData) {
     throw new Error(`Unable to update menu item availability: ${error.message}`);
   }
 
+  await recordStaffActivity({
+    actor,
+    action: nextValue ? "menu.item_made_available" : "menu.item_hidden_today",
+    entityType: "menu_item",
+    entityId: menuItemId,
+    summary: (actor.email ?? "A staff account") + " changed today availability for menu item " + menuItemId + ".",
+    metadata: { is_available_today: nextValue }
+  });
+
   revalidateMenuPaths();
   redirect(`/menu?edit=${menuItemId}`);
 }
 
 export async function addMenuItemComponentAction(formData: FormData) {
-  await requireApprovedAdminRole();
+  const actor = await requireApprovedAdminRole();
   const input = parseFormData(formData, menuItemComponentActionSchema);
   const supabase = createAdminSupabaseClient();
 
@@ -1164,12 +1446,21 @@ export async function addMenuItemComponentAction(formData: FormData) {
     throw new Error(`Unable to save menu item component: ${error.message}`);
   }
 
+  await recordStaffActivity({
+    actor,
+    action: "menu.component_saved",
+    entityType: "menu_item",
+    entityId: input.menu_item_id,
+    summary: (actor.email ?? "A staff account") + " changed a component for menu item " + input.menu_item_id + ".",
+    metadata: { inventory_item_id: input.inventory_item_id, quantity_required: input.quantity_required }
+  });
+
   revalidateMenuPaths();
   redirect(`/menu?edit=${input.menu_item_id}`);
 }
 
 export async function removeMenuItemComponentAction(formData: FormData) {
-  await requireApprovedAdminRole();
+  const actor = await requireApprovedAdminRole();
   const input = parseFormData(formData, removeMenuItemComponentActionSchema);
   const supabase = createAdminSupabaseClient();
 
@@ -1179,12 +1470,21 @@ export async function removeMenuItemComponentAction(formData: FormData) {
     throw new Error(`Unable to remove menu item component: ${error.message}`);
   }
 
+  await recordStaffActivity({
+    actor,
+    action: "menu.component_removed",
+    entityType: "menu_item",
+    entityId: input.menu_item_id,
+    summary: (actor.email ?? "A staff account") + " removed a component from menu item " + input.menu_item_id + ".",
+    metadata: { component_id: input.component_id }
+  });
+
   revalidateMenuPaths();
   redirect(`/menu?edit=${input.menu_item_id}`);
 }
 
 export async function updateOrderStatusAction(formData: FormData) {
-  await requireApprovedAdminRole();
+  const actor = await requireApprovedAdminRole();
   const input = parseFormData(formData, updateOrderStatusActionSchema);
   const supabase = createAdminSupabaseClient();
   const orderId = input.order_id;
@@ -1204,6 +1504,16 @@ export async function updateOrderStatusAction(formData: FormData) {
   if (error) {
     throw new Error(`Unable to update order status: ${error.message}`);
   }
+
+  await recordStaffActivity({
+    actor,
+    action: "order.status_changed",
+    entityType: "order",
+    entityId: orderId,
+    orderId,
+    summary: (actor.email ?? "A staff account") + " moved order " + orderId + " to " + nextStatus.replace("_", " ") + ".",
+    metadata: { next_status: nextStatus, note }
+  });
 
   if (nextStatus === "in_prep") {
     after(async () => {
@@ -1264,7 +1574,7 @@ function formatPickupLockoutTime(value: string): string {
 }
 
 export async function completeOrderWithPickupCodeAction(formData: FormData) {
-  await requireApprovedAdminRole();
+  const actor = await requireApprovedAdminRole();
   const input = parseFormData(formData, completeOrderWithPickupCodeActionSchema);
   const supabase = createAdminSupabaseClient();
   const orderId = input.order_id;
@@ -1333,12 +1643,22 @@ export async function completeOrderWithPickupCodeAction(formData: FormData) {
     throw new Error(`Unable to complete order: ${error.message}`);
   }
 
+  await recordStaffActivity({
+    actor,
+    action: "order.completed",
+    entityType: "order",
+    entityId: orderId,
+    orderId,
+    summary: (actor.email ?? "A staff account") + " completed order " + orderId + " after pickup verification.",
+    metadata: { pickup_verified: true }
+  });
+
   revalidateOrderPaths(orderId);
   redirect(`/orders/${orderId}`);
 }
 
 export async function addOrderNoteAction(formData: FormData) {
-  await requireApprovedAdminRole();
+  const actor = await requireApprovedAdminRole();
   const input = parseFormData(formData, addOrderNoteActionSchema);
   const supabase = createAdminSupabaseClient();
   const orderId = input.order_id;
@@ -1352,6 +1672,16 @@ export async function addOrderNoteAction(formData: FormData) {
   if (error) {
     throw new Error(`Unable to add order note: ${error.message}`);
   }
+
+  await recordStaffActivity({
+    actor,
+    action: "order.note_added",
+    entityType: "order",
+    entityId: orderId,
+    orderId,
+    summary: (actor.email ?? "A staff account") + " added a note to order " + orderId + ".",
+    metadata: { note }
+  });
 
   revalidateOrderPaths(orderId);
   redirect(`/orders/${orderId}`);

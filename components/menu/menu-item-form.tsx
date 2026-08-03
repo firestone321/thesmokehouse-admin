@@ -36,6 +36,7 @@ export function MenuItemForm({
   const router = useRouter();
   const [phase, setPhase] = useState<SavePhase>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [portionOptions, setPortionOptions] = useState(portionTypes);
   const [portionTypeId, setPortionTypeId] = useState<string>(selectedMenuItem?.portionTypeId ? String(selectedMenuItem.portionTypeId) : "");
   const [menuCategoryId, setMenuCategoryId] = useState<string>(selectedMenuItem?.categoryId ? String(selectedMenuItem.categoryId) : "");
@@ -54,6 +55,7 @@ export function MenuItemForm({
   useEffect(() => {
     setPhase("idle");
     setErrorMessage(null);
+    setSuccessMessage(null);
   }, [selectedMenuItem?.id]);
 
   useEffect(() => {
@@ -129,6 +131,7 @@ export function MenuItemForm({
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setErrorMessage(null);
+    setSuccessMessage(null);
 
     const form = event.currentTarget;
     const formData = new FormData(form);
@@ -165,6 +168,12 @@ export function MenuItemForm({
         setPhase("idle");
         router.refresh();
         return;
+      }
+
+      if (saveResult.priceApprovalPending) {
+        setSuccessMessage(
+          `Your other changes were saved. The suggested price was sent to a manager for approval. The live price remains UGX ${Number(saveResult.livePrice).toLocaleString("en-UG")}.`
+        );
       }
 
       if (hasImage && imageValue instanceof File) {
@@ -387,6 +396,12 @@ export function MenuItemForm({
         {errorMessage ? (
           <div className="rounded-[22px] border border-[#F4C7C7] bg-[#FFF8F8] px-4 py-3 text-sm leading-6 text-[#8A1C1C]">
             {errorMessage}
+          </div>
+        ) : null}
+
+        {successMessage ? (
+          <div className="rounded-[22px] border border-[#CDE7D8] bg-[#F2FBF5] px-4 py-3 text-sm leading-6 text-[#166534]">
+            {successMessage}
           </div>
         ) : null}
 

@@ -6,13 +6,16 @@ import {
   addMenuItemComponentAction,
   deleteMenuItemAction,
   removeMenuItemComponentAction,
+  reviewMenuPriceChangeAction,
   saveMenuCategoryAction,
   toggleMenuItemActiveAction,
   toggleMenuItemAvailabilityAction
 } from "@/lib/ops/actions";
+import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
+import { getMenuPriceChangeRequest } from "@/lib/menu/price-approvals";
 import { OperationsSchemaMissingError } from "@/lib/ops/errors";
 import { getMenuPageData } from "@/lib/ops/queries";
-import { formatCurrency } from "@/lib/ops/utils";
+import { formatCurrency, formatDateTime } from "@/lib/ops/utils";
 
 function getFirstValue(value?: string | string[]) {
   return Array.isArray(value) ? value[0] : value;
@@ -25,11 +28,18 @@ export default async function MenuPage({
 }) {
   const params = await searchParams;
   const editMenuItemId = getFirstValue(params.edit) ?? null;
+  const priceRequestId = getFirstValue(params.price_request) ?? null;
   const errorMessage = getFirstValue(params.error) ?? null;
+  const noticeMessage = getFirstValue(params.notice) ?? null;
+  const actor = await requireApprovedAdminRole();
   let data;
+  let priceRequest;
 
   try {
-    data = await getMenuPageData(editMenuItemId);
+    [data, priceRequest] = await Promise.all([
+      getMenuPageData(editMenuItemId),
+      getMenuPriceChangeRequest(priceRequestId, actor.role)
+    ]);
   } catch (error) {
     if (error instanceof OperationsSchemaMissingError) {
       return <SchemaSetupNotice title="Menu cannot load yet" error={error} />;
@@ -61,6 +71,12 @@ export default async function MenuPage({
       {errorMessage ? (
         <section className="rounded-[28px] border border-[#F4C7C7] bg-[#FFF8F8] px-5 py-4 text-sm leading-6 text-[#8A1C1C]">
           {errorMessage}
+        </section>
+      ) : null}
+
+      {noticeMessage ? (
+        <section className="rounded-[28px] border border-[#CDE7D8] bg-[#F2FBF5] px-5 py-4 text-sm leading-6 text-[#166534]">
+          {noticeMessage}
         </section>
       ) : null}
 
@@ -175,6 +191,52 @@ export default async function MenuPage({
                             selectedMenuItem={selectedMenuItem}
                             nextSortOrder={menuItems.length + 1}
                           />
+                          {priceRequest && priceRequest.menuItemId === selectedMenuItem.id ? (
+                            <section className="rounded-[24px] border border-[#E4D8C8] bg-[#FFFDF8] p-4 sm:p-5">
+                              <p className="text-[11px] uppercase tracking-[0.18em] text-[#8A6A45]">Price approval</p>
+                              <h3 className="mt-2 text-lg font-semibold text-[#111418]">
+                                {priceRequest.status === "pending" ? "Suggested price needs a decision" : "Suggested price reviewed"}
+                              </h3>
+                              <p className="mt-2 text-sm leading-6 text-[#6B7280]">
+                                {priceRequest.requesterEmail} submitted this suggestion on {formatDateTime(priceRequest.createdAt)}.
+                              </p>
+                              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                                <div className="rounded-[18px] bg-white px-4 py-3">
+                                  <p className="text-[10px] uppercase tracking-[0.16em] text-[#9CA3AF]">Current price</p>
+                                  <p className="mt-1 text-lg font-semibold">{formatCurrency(priceRequest.currentPrice)}</p>
+                                </div>
+                                <div className="rounded-[18px] bg-white px-4 py-3">
+                                  <p className="text-[10px] uppercase tracking-[0.16em] text-[#9CA3AF]">Suggested price</p>
+                                  <p className="mt-1 text-lg font-semibold">{formatCurrency(priceRequest.proposedPrice)}</p>
+                                </div>
+                              </div>
+                              {priceRequest.status === "pending" ? (
+                                <div className="mt-4 grid gap-3">
+                                  <form action={reviewMenuPriceChangeAction} className="grid gap-3">
+                                    <input type="hidden" name="request_id" value={priceRequest.id} />
+                                    <input type="hidden" name="menu_item_id" value={selectedMenuItem.id} />
+                                    <input type="hidden" name="decision" value="approve" />
+                                    <button type="submit" className="min-h-12 rounded-2xl bg-[#166534] px-4 py-3 text-sm font-semibold text-white">
+                                      Approve suggested price
+                                    </button>
+                                  </form>
+                                  <form action={reviewMenuPriceChangeAction} className="grid gap-3">
+                                    <input type="hidden" name="request_id" value={priceRequest.id} />
+                                    <input type="hidden" name="menu_item_id" value={selectedMenuItem.id} />
+                                    <input type="hidden" name="decision" value="deny" />
+                                    <button type="submit" className="min-h-12 rounded-2xl border border-[#D7DDE4] bg-white px-4 py-3 text-sm font-semibold text-[#9F2D2D]">
+                                      Deny suggested price
+                                    </button>
+                                  </form>
+                                </div>
+                              ) : (
+                                <p className="mt-4 rounded-[18px] bg-white px-4 py-3 text-sm font-semibold capitalize text-[#4B5563]">
+                                  Status: {priceRequest.status}
+                                  {priceRequest.reviewerEmail ? ` by ${priceRequest.reviewerEmail}` : ""}
+                                </p>
+                              )}
+                            </section>
+                          ) : null}
                           <div className="rounded-[20px] border border-[#EEF2F6] bg-[#F8FAFB] p-4">
                             <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Components</p>
                             <p className="mt-1 text-sm font-semibold text-[#111418]">Linked inventory items</p>

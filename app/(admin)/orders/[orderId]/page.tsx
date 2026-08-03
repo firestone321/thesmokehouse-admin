@@ -6,6 +6,8 @@ import { OperationsSchemaMissingError } from "@/lib/ops/errors";
 import { reverifyOrderPaymentAction } from "@/lib/ops/payment-reverify";
 import { getAllowedNextStatuses, getOrderDetail } from "@/lib/ops/queries";
 import { formatCurrency, formatDateTime } from "@/lib/ops/utils";
+import { canApproveOperationalChanges, requireApprovedAdminRole } from "@/lib/auth/admin-role";
+import { getStaffActivityForOrder } from "@/lib/activity/data";
 
 function getStatusClasses(status: string) {
   switch (status) {
@@ -50,6 +52,7 @@ export default async function OrderDetailPage({
   const paymentReverifiedParam = resolvedSearchParams.payment_reverified;
   const errorMessage = Array.isArray(errorParam) ? errorParam[0] : errorParam;
   const paymentReverified = Array.isArray(paymentReverifiedParam) ? paymentReverifiedParam[0] : paymentReverifiedParam;
+  const viewer = await requireApprovedAdminRole();
   let order;
 
   try {
@@ -65,6 +68,10 @@ export default async function OrderDetailPage({
   if (!order) {
     notFound();
   }
+
+  const handlingActivity = canApproveOperationalChanges(viewer.role)
+    ? await getStaffActivityForOrder(order.id)
+    : [];
 
   const allowedNextStatuses = order.fulfillmentReviewRequired ? [] : getAllowedNextStatuses(order.status);
 
@@ -143,6 +150,32 @@ export default async function OrderDetailPage({
             </div>
             <OrderItemsDetail items={order.items} />
           </section>
+
+          {canApproveOperationalChanges(viewer.role) ? (
+            <section className="surface-card rounded-[32px] p-5">
+              <div className="border-b border-[#EEF2F6] pb-4">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Admin and manager view</p>
+                <h2 className="mt-2 text-xl font-semibold">Who dealt with this order</h2>
+              </div>
+              <div className="mt-4 space-y-3">
+                {handlingActivity.length > 0 ? handlingActivity.map((entry) => (
+                  <article key={entry.id} className="rounded-[20px] border border-[#E4E7EB] bg-white px-4 py-3">
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="break-all text-sm font-semibold">{entry.actorEmail}</p>
+                        <p className="mt-1 text-sm leading-5 text-[#6B7280]">{entry.summary}</p>
+                      </div>
+                      <p className="shrink-0 text-xs text-[#6B7280]">{formatDateTime(entry.createdAt)}</p>
+                    </div>
+                  </article>
+                )) : (
+                  <p className="rounded-[20px] bg-[#F8FAFB] px-4 py-4 text-sm leading-6 text-[#6B7280]">
+                    No attributed staff action has been recorded for this order yet.
+                  </p>
+                )}
+              </div>
+            </section>
+          ) : null}
 
           <section className="surface-card rounded-[32px] p-5">
             <div className="border-b border-[#EEF2F6] pb-4">

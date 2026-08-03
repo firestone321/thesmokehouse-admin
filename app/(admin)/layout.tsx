@@ -3,11 +3,13 @@ import { AdminPushAutoEnrollment } from "@/components/pwa/admin-push-auto-enroll
 import { redirect } from "next/navigation";
 import { isLocalAuthBypassEnabled } from "@/lib/auth/local-bypass";
 import { AdminAuthorizationError, requireApprovedAdminRole } from "@/lib/auth/admin-role";
+import { AdminNotificationBanner } from "@/components/notifications/admin-notification-banner";
+import { getUnreadAdminNotifications } from "@/lib/notifications/data";
 
 export default async function AdminLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   if (await isLocalAuthBypassEnabled()) {
     return (
-      <DashboardShell authBypassEnabled userEmail="Localhost auth bypass">
+      <DashboardShell authBypassEnabled userEmail="Localhost auth bypass" userRole="admin">
         {children}
       </DashboardShell>
     );
@@ -32,9 +34,12 @@ export default async function AdminLayout({ children }: Readonly<{ children: Rea
     throw error;
   }
 
+  const notifications = await getUnreadAdminNotifications(adminProfile.userId, adminProfile.role);
+
   return (
-    <DashboardShell userEmail={adminProfile.email ?? undefined}>
+    <DashboardShell userEmail={adminProfile.email ?? undefined} userRole={adminProfile.role}>
       <AdminPushAutoEnrollment />
+      <AdminNotificationBanner notifications={notifications} />
       {children}
     </DashboardShell>
   );
