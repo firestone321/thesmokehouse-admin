@@ -22,6 +22,54 @@ function getStatusLabel(phase: SavePhase, isEditing: boolean) {
   }
 }
 
+const fieldClassName =
+  "min-h-11 rounded-2xl border border-[#CDD4DC] bg-[#FFFDF9] px-3 py-2.5 text-sm text-[#111418] shadow-sm transition hover:border-[#AEB8C3] hover:shadow-md focus:border-[#B85C38] focus:outline-none focus:ring-4 focus:ring-[#B85C38]/10";
+
+const selectClassName = fieldClassName + " w-full cursor-pointer appearance-none pr-10";
+
+const sectionClassName =
+  "grid gap-4 rounded-[22px] border border-[#E5DED6] border-l-[3px] border-l-[#B85C38] bg-[#FFFEFC] px-4 py-5 shadow-[0_8px_24px_rgba(45,34,25,0.045)] sm:px-5";
+
+function FormSectionHeading({ icon, title }: { icon: "details" | "portion" | "price" | "image" | "availability"; title: string }) {
+  const paths = {
+    details: <path d="M7 7h10M7 12h10M7 17h6" />,
+    portion: <path d="M7 4v5M5 4v3a2 2 0 0 0 4 0V4M7 9v11M15 4v16M15 4c2 1 3 3 3 6h-3" />,
+    price: (
+      <text x="12" y="14" textAnchor="middle" fill="currentColor" stroke="none" fontSize="7" fontWeight="800">
+        UGX
+      </text>
+    ),
+    image: <path d="M4 5h16v14H4zM4 15l4-4 4 4 3-3 5 5M15 9h.01" />,
+    availability: <path d="M20 11a8 8 0 1 1-4.6-7.25M9 11l2 2 7-8" />
+  } as const;
+
+  return (
+    <div className="flex items-center gap-3">
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[#F4ECE7] text-[#70412D]" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-[18px]">
+          {paths[icon]}
+        </svg>
+      </span>
+      <h3 className="text-sm font-bold tracking-[-0.01em] text-[#2D2219]">{title}</h3>
+    </div>
+  );
+}
+
+function SelectChevron() {
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-[#8B6754] transition-colors group-hover:text-[#B85C38] group-focus-within:text-[#B85C38]"
+      aria-hidden="true"
+    >
+      <path d="m6 8 4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export function MenuItemForm({
   categories,
   portionTypes,
@@ -200,54 +248,91 @@ export function MenuItemForm({
   return (
     <>
       <form id="menu-quick-add-portion-form" onSubmit={handleQuickAddPortionType}></form>
-      <form onSubmit={handleSubmit} className="mt-4 grid gap-3">
+      <form onSubmit={handleSubmit} className="mt-5 grid gap-5">
         {selectedMenuItem ? <input type="hidden" name="menu_item_id" value={selectedMenuItem.id} /> : null}
-        <input
-          name="name"
-          required
-          defaultValue={selectedMenuItem?.name}
-          placeholder="Display name"
-          className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
-        />
-        <p className="text-xs leading-5 text-[#6B7280]">Code is generated automatically from the name when the item is created.</p>
-        <textarea
-          name="description"
-          rows={3}
-          defaultValue={selectedMenuItem?.description ?? ""}
-          placeholder="Short description"
-          className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-3 text-sm text-[#111418]"
-        />
-        <select
-          name="menu_category_id"
-          value={menuCategoryId}
-          onChange={(event) => setMenuCategoryId(event.target.value)}
-          required
-          className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
-        >
-          <option value="">Select category</option>
-          {categories.map((category) => (
-            <option key={category.id} value={category.id}>
-              {category.name}
-            </option>
-          ))}
-        </select>
-        <label className="space-y-2 text-sm text-[#6B7280]">
-          <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Portion type</span>
-          <select
-            name="portion_type_id"
-            value={portionTypeId}
-            onChange={(event) => setPortionTypeId(event.target.value)}
-            required
-            className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
-          >
-            <option value="">Select portion type</option>
-            {portionOptions.map((portion) => (
-              <option key={portion.id} value={portion.id} disabled={portion.isAssigned}>
-                {portion.label}
-                {portion.isAssigned ? " - already linked" : ""}
-              </option>
-            ))}
-          </select>
+        <section className={sectionClassName} aria-labelledby="menu-item-details-heading">
+          <div id="menu-item-details-heading">
+            <FormSectionHeading icon="details" title="Item details" />
+          </div>
+          <div className="grid gap-2">
+            <label className="text-sm font-semibold text-[#111418]" htmlFor="menu-item-name">
+              Display name
+            </label>
+            <input
+              id="menu-item-name"
+              name="name"
+              required
+              defaultValue={selectedMenuItem?.name}
+              placeholder="Display name"
+              className={fieldClassName}
+            />
+            <p className="text-xs leading-5 text-[#6B7280]">Code is generated automatically from the name when the item is created.</p>
+          </div>
+          <div className="grid gap-2">
+            <label className="text-sm font-semibold text-[#111418]" htmlFor="menu-item-description">
+              Short description
+            </label>
+            <textarea
+              id="menu-item-description"
+              name="description"
+              rows={3}
+              defaultValue={selectedMenuItem?.description ?? ""}
+              placeholder="Short description"
+              className={fieldClassName}
+            />
+          </div>
+          <div className="grid gap-2">
+            <label className="text-sm font-semibold text-[#111418]" htmlFor="menu-item-category">
+              Category
+            </label>
+            <div className="group relative">
+              <select
+                id="menu-item-category"
+                name="menu_category_id"
+                value={menuCategoryId}
+                onChange={(event) => setMenuCategoryId(event.target.value)}
+                required
+                className={selectClassName}
+              >
+                <option value="">Select category</option>
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+              <SelectChevron />
+            </div>
+          </div>
+        </section>
+
+        <section className={sectionClassName} aria-labelledby="menu-portion-heading">
+          <div id="menu-portion-heading">
+            <FormSectionHeading icon="portion" title="Portion & preparation" />
+          </div>
+        <div className="grid gap-2">
+          <label className="text-sm font-semibold text-[#111418]" htmlFor="menu-portion-type">
+            Portion type
+          </label>
+          <div className="group relative">
+            <select
+              id="menu-portion-type"
+              name="portion_type_id"
+              value={portionTypeId}
+              onChange={(event) => setPortionTypeId(event.target.value)}
+              required
+              className={selectClassName}
+            >
+              <option value="">Select portion type</option>
+              {portionOptions.map((portion) => (
+                <option key={portion.id} value={portion.id} disabled={portion.isAssigned}>
+                  {portion.label}
+                  {portion.isAssigned ? " - already linked" : ""}
+                </option>
+              ))}
+            </select>
+            <SelectChevron />
+          </div>
           <button
             type="button"
             onClick={() => {
@@ -255,7 +340,7 @@ export function MenuItemForm({
               setQuickAddError(null);
               setQuickAddSuccess(null);
             }}
-            className="inline-flex w-fit items-center gap-1.5 rounded-xl border border-[#D7DDE4] bg-[#F8FAFB] px-2.5 py-1.5 text-xs font-semibold text-[#374151] transition hover:border-[#BFC7D1] hover:bg-white"
+            className="inline-flex min-h-[31px] w-fit items-center gap-[6.3px] rounded-xl border border-[#B85C38] bg-white px-[11.6px] py-[6.3px] text-[10.4px] font-semibold text-[#9A492D] shadow-sm transition hover:bg-[#FFF7F2] hover:shadow-md focus:outline-none focus:ring-4 focus:ring-[#B85C38]/10"
           >
             <span aria-hidden="true" className="text-sm leading-none">
               {isQuickAddOpen ? "×" : "+"}
@@ -265,10 +350,10 @@ export function MenuItemForm({
           <p className="text-xs leading-5 text-[#6B7280]">
             Portion code is generated from the name, and the size label follows the selected category.
           </p>
-        </label>
+        </div>
 
         {isQuickAddOpen ? (
-          <div className="grid gap-3 rounded-[22px] border border-[#E4E7EB] bg-[#F8FAFB] px-4 py-4">
+          <div className="grid gap-3 rounded-[20px] border border-[#E1D6CC] bg-[#FAF7F3] px-4 py-4">
             <div className="grid gap-3">
               <input
                 id="menu-quick-add-portion-name"
@@ -276,7 +361,7 @@ export function MenuItemForm({
                 name="name"
                 required
                 placeholder="Portion name, e.g. Kachumbari"
-                className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
+                className={fieldClassName}
               />
               <input
                 type="hidden"
@@ -293,7 +378,7 @@ export function MenuItemForm({
                 name="quantity"
                 required
                 placeholder={`${portionUnitLabel}, e.g. ${isDrinkCategory ? "500" : "250"}`}
-                className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
+                className={fieldClassName}
               />
             </div>
 
@@ -307,7 +392,7 @@ export function MenuItemForm({
               type="submit"
               form="menu-quick-add-portion-form"
               disabled={isCreatingPortionType}
-              className="rounded-2xl bg-[#111418] px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70"
+              className="min-h-11 rounded-2xl border border-[#D7DDE4] bg-[#2D2219] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#18130F] focus:outline-none focus:ring-4 focus:ring-[#2D2219]/10 disabled:cursor-not-allowed disabled:opacity-70"
             >
               {isCreatingPortionType ? "Creating portion..." : "Create portion and use it"}
             </button>
@@ -323,18 +408,27 @@ export function MenuItemForm({
           <label className="text-sm font-semibold text-[#111418]" htmlFor="menu-preparation-flow">
             Preparation type
           </label>
-          <select
-            id="menu-preparation-flow"
-            name="prep_type"
-            defaultValue={selectedMenuItem?.prepType ?? "smoked"}
-            className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
-          >
-            <option value="smoked">Roasted</option>
-            <option value="packed">Kitchen</option>
-            <option value="drink">Drink</option>
-          </select>
+          <div className="group relative">
+            <select
+              id="menu-preparation-flow"
+              name="prep_type"
+              defaultValue={selectedMenuItem?.prepType ?? "smoked"}
+              className={selectClassName}
+            >
+              <option value="smoked">Roasted</option>
+              <option value="packed">Kitchen</option>
+              <option value="drink">Drink</option>
+            </select>
+            <SelectChevron />
+          </div>
           <p className="text-xs leading-5 text-[#6B7280]">Choose how this item is prepared or handled.</p>
         </div>
+        </section>
+
+        <section className={sectionClassName} aria-labelledby="menu-pricing-heading">
+          <div id="menu-pricing-heading">
+            <FormSectionHeading icon="price" title="Pricing" />
+          </div>
         <div className="grid gap-2">
           <label className="text-sm font-semibold text-[#111418]" htmlFor="menu-base-price">
             Base price
@@ -346,10 +440,15 @@ export function MenuItemForm({
             required
             defaultValue={selectedMenuItem?.basePrice ?? 0}
             placeholder="Base price"
-            className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
+            className={fieldClassName}
           />
         </div>
+        </section>
         <input type="hidden" name="sort_order" value={selectedMenuItem?.sortOrder ?? nextSortOrder} />
+        <section className={sectionClassName} aria-labelledby="menu-image-heading">
+          <div id="menu-image-heading">
+            <FormSectionHeading icon="image" title="Menu image" />
+          </div>
         {selectedMenuItem?.imageUrl ? (
           <div className="overflow-hidden rounded-[24px] border border-[#E4E7EB] bg-white">
             <img src={selectedMenuItem.imageUrl} alt={selectedMenuItem.name} className="h-52 w-full object-cover" />
@@ -365,7 +464,7 @@ export function MenuItemForm({
             name="image"
             accept="image/png,image/jpeg,image/webp"
             onChange={isEditing ? undefined : handleImageSelection}
-            className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
+            className={fieldClassName}
           />
           <p className="text-xs leading-5 text-[#6B7280]">
             {isEditing
@@ -382,16 +481,25 @@ export function MenuItemForm({
             </div>
           </div>
         ) : null}
-        <label className="flex items-center gap-2 text-sm text-[#6B7280]">
-          <input type="hidden" name="is_active" value="false" />
-          <input type="checkbox" name="is_active" defaultChecked={selectedMenuItem?.isActive ?? true} />
-          Active
-        </label>
-        <label className="flex items-center gap-2 text-sm text-[#6B7280]">
-          <input type="hidden" name="is_available_today" value="false" />
-          <input type="checkbox" name="is_available_today" defaultChecked={selectedMenuItem?.isAvailableToday ?? true} />
-          Available today
-        </label>
+        </section>
+
+        <section className={sectionClassName} aria-labelledby="menu-availability-heading">
+          <div id="menu-availability-heading">
+            <FormSectionHeading icon="availability" title="Availability" />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex min-h-12 cursor-pointer items-center gap-3 rounded-2xl border border-[#DDD6CF] bg-[#FFFDF9] px-4 py-3 text-sm font-medium text-[#374151] transition hover:border-[#CBB8AA] hover:bg-white">
+              <input type="hidden" name="is_active" value="false" />
+              <input type="checkbox" name="is_active" defaultChecked={selectedMenuItem?.isActive ?? true} className="size-4 accent-[#B85C38]" />
+              Active
+            </label>
+            <label className="flex min-h-12 cursor-pointer items-center gap-3 rounded-2xl border border-[#DDD6CF] bg-[#FFFDF9] px-4 py-3 text-sm font-medium text-[#374151] transition hover:border-[#CBB8AA] hover:bg-white">
+              <input type="hidden" name="is_available_today" value="false" />
+              <input type="checkbox" name="is_available_today" defaultChecked={selectedMenuItem?.isAvailableToday ?? true} className="size-4 accent-[#B85C38]" />
+              Available today
+            </label>
+          </div>
+        </section>
 
         {errorMessage ? (
           <div className="rounded-[22px] border border-[#F4C7C7] bg-[#FFF8F8] px-4 py-3 text-sm leading-6 text-[#8A1C1C]">
@@ -408,7 +516,7 @@ export function MenuItemForm({
         <button
           type="submit"
           disabled={isPending}
-          className="rounded-2xl bg-[#111418] px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70"
+          className="min-h-12 rounded-2xl bg-[#B85C38] px-5 py-3 text-sm font-bold text-white shadow-[0_8px_18px_rgba(184,92,56,0.22)] transition hover:bg-[#A74F30] hover:shadow-[0_10px_22px_rgba(184,92,56,0.28)] focus:outline-none focus:ring-4 focus:ring-[#B85C38]/20 disabled:cursor-not-allowed disabled:opacity-70"
         >
           {getStatusLabel(phase, isEditing)}
         </button>

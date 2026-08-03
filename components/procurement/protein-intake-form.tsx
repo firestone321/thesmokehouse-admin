@@ -28,6 +28,46 @@ function formatSupplierType(value: ProcurementSupplierOption["supplierType"]) {
   }
 }
 
+const intakeFieldClassName =
+  "min-h-12 w-full rounded-2xl border border-[#CDD4DC] bg-[#FFFDF9] px-3 py-3 text-sm text-[#111418] shadow-sm transition hover:border-[#AEB8C3] hover:shadow-md focus:border-[#B85C38] focus:outline-none focus:ring-4 focus:ring-[#B85C38]/10";
+
+const intakeSelectClassName = intakeFieldClassName + " cursor-pointer appearance-none pr-11";
+
+const intakeLabelClassName = "block text-[11px] font-semibold uppercase tracking-[0.18em] text-[#707782]";
+
+const intakeSectionClassName = "grid gap-4 border-t border-[#E8E2DB] pt-6";
+
+function IntakeSelectChevron() {
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      className="pointer-events-none absolute right-3.5 top-1/2 size-5 -translate-y-1/2 text-[#76513E] transition-colors group-hover:text-[#B85C38] group-focus-within:text-[#B85C38]"
+      aria-hidden="true"
+    >
+      <path d="m5.5 7.5 4.5 4.5 4.5-4.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function SupplierSummaryIcon({ type }: { type: "supplier" | "contact" | "abattoir" }) {
+  const paths = {
+    supplier: <path d="M4 20h16M6 20V8l6-4 6 4v12M9 12h6M9 16h6" />,
+    contact: <path d="M7 3h3l1.5 4-2 1.5a14 14 0 0 0 6 6L17 12l4 1.5v3c0 1.4-1.1 2.5-2.5 2.5C11 19 5 13 5 5.5 5 4.1 6 3 7 3Z" />,
+    abattoir: <path d="M4 20h16M6 20V9h12v11M9 13h6M12 9V4M9 6h6" />
+  } as const;
+
+  return (
+    <span className="flex size-8 items-center justify-center rounded-xl border border-[#DED8D1] bg-white text-[#6B625B]" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+        {paths[type]}
+      </svg>
+    </span>
+  );
+}
+
 export function ProteinIntakeForm({
   defaultDeliveryDate,
   suppliers,
@@ -269,12 +309,12 @@ export function ProteinIntakeForm({
               name="name"
               required
               placeholder="Supplier name"
-              className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
+              className={intakeFieldClassName}
             />
             <select
               name="supplier_type"
               defaultValue="protein"
-              className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
+              className={intakeFieldClassName + " cursor-pointer"}
             >
               <option value="protein">Protein supplier</option>
               <option value="mixed">Mixed supplier</option>
@@ -282,23 +322,23 @@ export function ProteinIntakeForm({
             <input
               name="phone_number"
               placeholder="Phone number"
-              className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
+              className={intakeFieldClassName}
             />
             <input
               name="license_number"
               placeholder="License number"
-              className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
+              className={intakeFieldClassName}
             />
             <input
               name="default_abattoir_name"
               placeholder="Default abattoir name"
-              className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418] lg:col-span-2"
+              className={intakeFieldClassName + " lg:col-span-2"}
             />
             <textarea
               name="notes"
               rows={3}
               placeholder="Receiving notes or supplier context"
-              className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-3 text-sm text-[#111418] lg:col-span-2"
+              className={intakeFieldClassName + " lg:col-span-2"}
             />
             <label className="flex items-center gap-2 text-sm text-[#6B7280] lg:col-span-2">
               <input type="checkbox" name="is_active" defaultChecked />
@@ -340,7 +380,7 @@ export function ProteinIntakeForm({
               name="name"
               required
               placeholder="Protein item, e.g. Beef Oxtail"
-              className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
+              className={intakeFieldClassName}
             />
             <label className="space-y-2 text-sm text-[#6B7280]">
               <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Receiving unit</span>
@@ -348,7 +388,7 @@ export function ProteinIntakeForm({
                 key={quickAddUnitName}
                 name="default_unit_name"
                 defaultValue={quickAddUnitName}
-                className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
+                className={intakeFieldClassName + " cursor-pointer"}
               >
                 {quickAddUnitName === "bird" ? (
                   <option value="bird">Whole birds</option>
@@ -370,7 +410,7 @@ export function ProteinIntakeForm({
                 value={quickAddProteinFamilyId}
                 onChange={(event) => setQuickAddProteinFamilyId(event.target.value)}
                 disabled={proteinFamilies.length === 0}
-                className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
+                className={intakeFieldClassName + " cursor-pointer"}
               >
                 {proteinFamilies.map((protein) => (
                   <option key={protein.id} value={protein.id}>
@@ -386,7 +426,7 @@ export function ProteinIntakeForm({
                 required
                 defaultValue={portionOptions.find((portion) => portion.code === "oxtail_portions")?.id ?? portionOptions[0]?.id}
                 disabled={portionOptions.length === 0}
-                className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
+                className={intakeFieldClassName + " cursor-pointer"}
               >
                 {portionOptions.map((portion) => (
                   <option key={portion.id} value={portion.id}>
@@ -417,201 +457,247 @@ export function ProteinIntakeForm({
         </div>
       ) : null}
 
-      <form action={recordProteinProcurementAction} className="mt-4">
-        <div className="mt-4 grid gap-3 lg:grid-cols-2">
-          <label className="space-y-2 text-sm text-[#6B7280]">
-            <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Supplier</span>
-            <select
-              name="supplier_id"
-              value={supplierId}
-              onChange={(event) => setSupplierId(event.target.value)}
-              disabled={supplierOptions.length === 0}
-              className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
-            >
-              {supplierOptions.length === 0 ? <option value="">Create a supplier first</option> : null}
-              {supplierOptions.map((supplier) => (
-                <option key={supplier.id} value={supplier.id}>
-                  {supplier.name}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={() => {
-                setIsQuickAddOpen((currentValue) => !currentValue);
-                setQuickAddError(null);
-                setQuickAddSuccess(null);
-              }}
-              className="text-left text-xs font-semibold text-[#111418] underline underline-offset-4"
-            >
-              {isQuickAddOpen ? "Close quick add supplier" : "Quick add supplier"}
-            </button>
-          </label>
+      <form action={recordProteinProcurementAction} className="mt-6 grid gap-7">
+        <div className="grid gap-4">
+          <div>
+            <p className="text-xs font-semibold text-[#2D2219]">Supplier</p>
+            <p className="mt-1 text-xs leading-5 text-[#6B7280]">Choose who supplied the delivery and the protein received.</p>
+          </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <label className="grid gap-2 text-sm text-[#6B7280]">
+              <span className={intakeLabelClassName}>Supplier</span>
+              <div className="group relative">
+                <select
+                  name="supplier_id"
+                  value={supplierId}
+                  onChange={(event) => setSupplierId(event.target.value)}
+                  disabled={supplierOptions.length === 0}
+                  className={intakeSelectClassName}
+                >
+                  {supplierOptions.length === 0 ? <option value="">Create a supplier first</option> : null}
+                  {supplierOptions.map((supplier) => (
+                    <option key={supplier.id} value={supplier.id}>
+                      {supplier.name}
+                    </option>
+                  ))}
+                </select>
+                <IntakeSelectChevron />
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsQuickAddOpen((currentValue) => !currentValue);
+                  setQuickAddError(null);
+                  setQuickAddSuccess(null);
+                }}
+                className="inline-flex min-h-9 w-fit items-center rounded-xl border border-[#B85C38] bg-white px-3 py-2 text-xs font-semibold text-[#A24E31] transition hover:bg-[#B85C38] hover:text-white focus:outline-none focus:ring-4 focus:ring-[#B85C38]/10"
+              >
+                {isQuickAddOpen ? "− Close supplier" : "+ Supplier"}
+              </button>
+            </label>
 
-          <label className="space-y-2 text-sm text-[#6B7280]">
-            <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Protein</span>
-            <select
-              name="protein_intake_item_id"
-              value={proteinItemId}
-              onChange={(event) => {
-                const nextItemId = event.target.value;
-                const nextItem = proteinItemOptions.find((item) => String(item.id) === nextItemId);
-                setProteinItemId(nextItemId);
-                setUnitName(nextItem?.defaultUnitName ?? "kg");
-              }}
-              disabled={proteinItemOptions.length === 0}
-              className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
-            >
-              {proteinItemOptions.length === 0 ? <option value="">Create a protein item first</option> : null}
-              {proteinItemOptions.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={() => {
-                setIsQuickAddItemOpen((currentValue) => !currentValue);
-                setQuickAddItemError(null);
-                setQuickAddItemSuccess(null);
-              }}
-              className="text-left text-xs font-semibold text-[#111418] underline underline-offset-4"
-            >
-              {isQuickAddItemOpen ? "Close quick add protein" : "Quick add protein"}
-            </button>
-          </label>
+            <label className="grid gap-2 text-sm text-[#6B7280]">
+              <span className={intakeLabelClassName}>Protein</span>
+              <div className="group relative">
+                <select
+                  name="protein_intake_item_id"
+                  value={proteinItemId}
+                  onChange={(event) => {
+                    const nextItemId = event.target.value;
+                    const nextItem = proteinItemOptions.find((item) => String(item.id) === nextItemId);
+                    setProteinItemId(nextItemId);
+                    setUnitName(nextItem?.defaultUnitName ?? "kg");
+                  }}
+                  disabled={proteinItemOptions.length === 0}
+                  className={intakeSelectClassName}
+                >
+                  {proteinItemOptions.length === 0 ? <option value="">Create a protein item first</option> : null}
+                  {proteinItemOptions.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+                <IntakeSelectChevron />
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsQuickAddItemOpen((currentValue) => !currentValue);
+                  setQuickAddItemError(null);
+                  setQuickAddItemSuccess(null);
+                }}
+                className="inline-flex min-h-9 w-fit items-center rounded-xl border border-[#B85C38] bg-white px-3 py-2 text-xs font-semibold text-[#A24E31] transition hover:bg-[#B85C38] hover:text-white focus:outline-none focus:ring-4 focus:ring-[#B85C38]/10"
+              >
+                {isQuickAddItemOpen ? "− Close protein" : "+ Protein"}
+              </button>
+            </label>
+          </div>
+        </div>
 
-          <label className="space-y-2 text-sm text-[#6B7280]">
-            <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Batch number</span>
-            <input
-              value={batchPreviewValue}
-              readOnly
-              disabled
-              className="w-full rounded-2xl border border-[#D7DDE4] bg-[#F8FAFB] px-3 py-2.5 text-[#111418] opacity-100"
-            />
-            <p className="text-xs leading-5 text-[#6B7280]">
-              Generated automatically when the receipt is saved using the protein code, delivery date, and Kampala time.
-            </p>
-          </label>
+        <div className={intakeSectionClassName}>
+          <div>
+            <p className="text-xs font-semibold text-[#2D2219]">Receipt information</p>
+            <p className="mt-1 text-xs leading-5 text-[#6B7280]">Record the delivery and inspection details from the receipt.</p>
+          </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <label className="grid gap-2 text-sm text-[#6B7280]">
+              <span className="flex items-center justify-between gap-3">
+                <span className={intakeLabelClassName}>Batch number</span>
+                <span className="rounded-full border border-[#D8DDE3] bg-[#F7F8F9] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-[#737B86]">Auto</span>
+              </span>
+              <input
+                value={batchPreviewValue}
+                readOnly
+                disabled
+                className="min-h-12 w-full rounded-2xl border border-[#D7DDE4] bg-[#F5F6F7] px-3 py-3 text-sm text-[#4B5563] opacity-100"
+              />
+              <p className="text-xs leading-5 text-[#6B7280]">
+                Generated automatically when the receipt is saved using the protein code, delivery date, and Kampala time.
+              </p>
+            </label>
 
-          <label className="space-y-2 text-sm text-[#6B7280]">
-            <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Date received</span>
-            <input
-              type="date"
-              name="delivery_date"
-              required
-              value={deliveryDate}
-              onChange={(event) => setDeliveryDate(event.target.value)}
-              className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
-            />
-          </label>
+            <label className="grid gap-2 text-sm text-[#6B7280]">
+              <span className={intakeLabelClassName}>Date received</span>
+              <input
+                type="date"
+                name="delivery_date"
+                required
+                value={deliveryDate}
+                onChange={(event) => setDeliveryDate(event.target.value)}
+                className={intakeFieldClassName + " cursor-pointer pr-4 [&::-webkit-calendar-picker-indicator]:size-5 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-70"}
+              />
+            </label>
 
-          <label className="space-y-2 text-sm text-[#6B7280]">
-            <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Butchered date</span>
-            <input
-              type="date"
-              name="butchered_on"
-              required
-              defaultValue={defaultDeliveryDate}
-              className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
-            />
-          </label>
+            <label className="grid gap-2 text-sm text-[#6B7280]">
+              <span className={intakeLabelClassName}>Butchered date</span>
+              <input
+                type="date"
+                name="butchered_on"
+                required
+                defaultValue={defaultDeliveryDate}
+                className={intakeFieldClassName + " cursor-pointer pr-4 [&::-webkit-calendar-picker-indicator]:size-5 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-70"}
+              />
+            </label>
 
-          <label className="space-y-2 text-sm text-[#6B7280]">
-            <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Abattoir name</span>
-            <input
-              name="abattoir_name"
-              required
-              value={abattoirName}
-              onChange={(event) => setAbattoirName(event.target.value)}
-              placeholder="Processing or slaughter location"
-              className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
-            />
-          </label>
+            <label className="grid gap-2 text-sm text-[#6B7280]">
+              <span className={intakeLabelClassName}>Abattoir name</span>
+              <input
+                name="abattoir_name"
+                required
+                value={abattoirName}
+                onChange={(event) => setAbattoirName(event.target.value)}
+                placeholder="Processing or slaughter location"
+                className={intakeFieldClassName}
+              />
+            </label>
 
-          <label className="space-y-2 text-sm text-[#6B7280]">
-            <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Vet stamp number</span>
-            <input
-              name="vet_stamp_number"
-              required
-              placeholder="Inspection stamp reference"
-              className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
-            />
-          </label>
+            <label className="grid gap-2 text-sm text-[#6B7280]">
+              <span className={intakeLabelClassName}>Vet stamp number</span>
+              <input
+                name="vet_stamp_number"
+                required
+                placeholder="Inspection stamp reference"
+                className={intakeFieldClassName}
+              />
+            </label>
 
-          <label className="space-y-2 text-sm text-[#6B7280]">
-            <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Inspection officer</span>
-            <input
-              name="inspection_officer_name"
-              required
-              placeholder="Officer who signed off the meat"
-              className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
-            />
-          </label>
+            <label className="grid gap-2 text-sm text-[#6B7280]">
+              <span className={intakeLabelClassName}>Inspection officer</span>
+              <input
+                name="inspection_officer_name"
+                required
+                placeholder="Officer who signed off the meat"
+                className={intakeFieldClassName}
+              />
+            </label>
+          </div>
+        </div>
 
-          <label className="space-y-2 text-sm text-[#6B7280]">
-            <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Quantity received</span>
-            <input
-              type="number"
-              min="0"
-              step={selectedProteinItem?.processingMode === "whole_bird" ? "1" : "0.01"}
-              name="quantity_received"
-              required
-              value={quantityReceived}
-              onChange={(event) => setQuantityReceived(event.target.value)}
-              className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
-            />
-          </label>
+        <div className={intakeSectionClassName}>
+          <div>
+            <p className="text-xs font-semibold text-[#2D2219]">Quantity & cost</p>
+            <p className="mt-1 text-xs leading-5 text-[#6B7280]">Enter the amount received, its unit, and the purchase cost if available.</p>
+          </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <label className="grid gap-2 text-sm text-[#6B7280]">
+              <span className={intakeLabelClassName + " text-[#4B515A]"}>Quantity received</span>
+              <input
+                type="number"
+                min="0"
+                step={selectedProteinItem?.processingMode === "whole_bird" ? "1" : "0.01"}
+                name="quantity_received"
+                required
+                value={quantityReceived}
+                onChange={(event) => setQuantityReceived(event.target.value)}
+                className={intakeFieldClassName + " min-h-[52px] border-[#BBC4CE] font-medium"}
+              />
+            </label>
 
-          <label className="space-y-2 text-sm text-[#6B7280]">
-            <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Unit label</span>
-            <input
-              name="unit_name"
-              required
-              value={unitName}
-              onChange={(event) => setUnitName(event.target.value)}
-              className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
-            />
-          </label>
+            <label className="grid gap-2 text-sm text-[#6B7280]">
+              <span className={intakeLabelClassName + " text-[#4B515A]"}>Unit label</span>
+              <input
+                name="unit_name"
+                required
+                value={unitName}
+                onChange={(event) => setUnitName(event.target.value)}
+                className={intakeFieldClassName + " border-[#BBC4CE] font-medium"}
+              />
+            </label>
 
-          <label className="space-y-2 text-sm text-[#6B7280]">
-            <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Unit cost</span>
-            <UgxAmountInput
-              allowDecimals
-              min="0"
-              step="0.01"
-              name="unit_cost"
-              placeholder="Optional"
-              className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
-            />
-          </label>
+            <label className="grid gap-2 text-sm text-[#6B7280] lg:col-span-2">
+              <span className={intakeLabelClassName + " text-[#4B515A]"}>Unit cost</span>
+              <UgxAmountInput
+                allowDecimals
+                min="0"
+                step="0.01"
+                name="unit_cost"
+                placeholder="Optional"
+                className={intakeFieldClassName + " border-[#BBC4CE]"}
+              />
+            </label>
+          </div>
+        </div>
 
-          <label className="space-y-2 text-sm text-[#6B7280] lg:col-span-2">
-            <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Notes</span>
+        <div className={intakeSectionClassName}>
+          <label className="grid gap-2 text-sm text-[#6B7280]">
+            <span className={intakeLabelClassName}>Notes</span>
             <textarea
               name="note"
-              rows={3}
+              rows={4}
               placeholder={`Receiving notes for this ${(selectedProteinItem?.name ?? "protein").toLowerCase()} batch`}
-              className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-3 text-[#111418]"
+              className={intakeFieldClassName + " min-h-28 resize-y"}
             />
           </label>
         </div>
 
         {selectedSupplier ? (
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
-            <article className="rounded-[22px] bg-[#F8FAFB] px-4 py-4">
-              <p className="text-[10px] uppercase tracking-[0.18em] text-[#9CA3AF]">Supplier details</p>
+          <div className="grid gap-3 border-t border-[#E8E2DB] pt-6 md:grid-cols-3">
+            <div className="md:col-span-3">
+              <p className="text-xs font-semibold text-[#2D2219]">Supplier summary</p>
+              <p className="mt-1 text-xs leading-5 text-[#6B7280]">Review the saved supplier details before recording the intake.</p>
+            </div>
+            <article className="rounded-[22px] border border-[#E5E1DC] bg-[#FAFAF9] px-4 py-4">
+              <div className="flex items-center gap-3">
+                <SupplierSummaryIcon type="supplier" />
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#707782]">Supplier details</p>
+              </div>
               <p className="mt-2 text-base font-semibold text-[#111418]">{selectedSupplier.name}</p>
               <p className="mt-1 text-sm leading-6 text-[#6B7280]">{formatSupplierType(selectedSupplier.supplierType)}</p>
             </article>
-            <article className="rounded-[22px] bg-[#F8FAFB] px-4 py-4">
-              <p className="text-[10px] uppercase tracking-[0.18em] text-[#9CA3AF]">Phone / license</p>
+            <article className="rounded-[22px] border border-[#E5E1DC] bg-[#FAFAF9] px-4 py-4">
+              <div className="flex items-center gap-3">
+                <SupplierSummaryIcon type="contact" />
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#707782]">Phone / license</p>
+              </div>
               <p className="mt-2 text-sm leading-6 text-[#6B7280]">{selectedSupplier.phoneNumber ?? "No phone recorded"}</p>
               <p className="mt-1 text-sm leading-6 text-[#6B7280]">{selectedSupplier.licenseNumber ?? "No license recorded"}</p>
             </article>
-            <article className="rounded-[22px] bg-[#F8FAFB] px-4 py-4">
-              <p className="text-[10px] uppercase tracking-[0.18em] text-[#9CA3AF]">Default abattoir</p>
+            <article className="rounded-[22px] border border-[#E5E1DC] bg-[#FAFAF9] px-4 py-4">
+              <div className="flex items-center gap-3">
+                <SupplierSummaryIcon type="abattoir" />
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#707782]">Default abattoir</p>
+              </div>
               <p className="mt-2 text-sm leading-6 text-[#6B7280]">
                 {selectedSupplier.defaultAbattoirName ?? "No default abattoir saved yet"}
               </p>
@@ -619,15 +705,15 @@ export function ProteinIntakeForm({
           </div>
         ) : null}
 
-        <div className="mt-4 flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3 border-t border-[#E8E2DB] pt-6">
           <button
             type="submit"
             disabled={supplierOptions.length === 0 || proteinItemOptions.length === 0}
-            className="rounded-2xl bg-[#111418] px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70"
+            className="min-h-12 rounded-2xl bg-[#111418] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#2D2219] hover:shadow-md focus:outline-none focus:ring-4 focus:ring-[#111418]/10 disabled:cursor-not-allowed disabled:opacity-70"
           >
             Record protein intake
           </button>
-          <Link href="/suppliers" className="rounded-2xl border border-[#D7DDE4] bg-white px-4 py-2.5 text-sm font-semibold text-[#111418]">
+          <Link href="/suppliers" className="inline-flex min-h-12 items-center rounded-2xl border border-[#C9D0D8] bg-white px-5 py-3 text-sm font-semibold text-[#374151] transition hover:border-[#AEB8C3] hover:bg-[#F8FAFB] focus:outline-none focus:ring-4 focus:ring-[#111418]/5">
             Manage suppliers
           </Link>
         </div>

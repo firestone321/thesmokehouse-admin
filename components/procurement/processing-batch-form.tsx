@@ -44,6 +44,44 @@ function parsePortionWeightKg(portionLabel: string | null | undefined) {
   return Number.isFinite(numericValue) && numericValue > 0 ? numericValue / 1000 : null;
 }
 
+const processingFieldClassName =
+  "min-h-12 w-full rounded-2xl border border-[#CDD4DC] bg-[#FFFDF9] px-3 py-3 text-sm text-[#111418] shadow-sm transition hover:border-[#B85C38] hover:shadow-md focus:border-[#B85C38] focus:outline-none focus:ring-4 focus:ring-[#B85C38]/10";
+
+const processingSelectClassName = processingFieldClassName + " cursor-pointer appearance-none pr-11";
+
+const processingLabelClassName = "block text-[11px] font-semibold uppercase tracking-[0.18em] text-[#707782]";
+
+const processingSectionClassName = "grid gap-4 border-t border-[#E8E2DB] pt-6";
+
+function ProcessingSelectChevron() {
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      className="pointer-events-none absolute right-3.5 top-1/2 size-5 -translate-y-1/2 text-[#76513E] transition-colors group-hover:text-[#B85C38] group-focus-within:text-[#B85C38]"
+      aria-hidden="true"
+    >
+      <path d="m5.5 7.5 4.5 4.5 4.5-4.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function ProcessingSummaryIcon({ type }: { type: "receipt" | "guidance" }) {
+  return (
+    <span className="flex size-8 items-center justify-center rounded-xl border border-[#DED8D1] bg-white text-[#6B625B]" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+        {type === "receipt" ? (
+          <path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3ZM9 8h6M9 12h6M9 16h3" />
+        ) : (
+          <path d="M9 18h6M10 22h4M8.5 14.5A7 7 0 1 1 15.5 14.5C14.5 15.3 14 16 14 18h-4c0-2-.5-2.7-1.5-3.5Z" />
+        )}
+      </svg>
+    </span>
+  );
+}
+
 export function ProcessingBatchForm({
   portionOptions,
   proteinIntakeItems,
@@ -191,43 +229,58 @@ export function ProcessingBatchForm({
       </div>
 
       {proteinReceipts.length > 0 ? (
-        <form action={processProcurementReceiptToFinishedStockAction} className="mt-4 space-y-4">
-          <div className="grid gap-3 lg:grid-cols-2">
-            <label className="space-y-2 text-sm text-[#6B7280]">
-              <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Protein receipt</span>
-              <select
-                name="procurement_receipt_id"
-                value={selectedReceiptId}
-                onChange={(event) => setSelectedReceiptId(event.target.value)}
-                className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
-              >
-                {proteinReceipts.map((receipt) => (
-                  <option key={receipt.id} value={receipt.id} disabled={receipt.hasProcessingBatch}>
-                    {formatReceiptOptionLabel(receipt)}
-                  </option>
-                ))}
-              </select>
-            </label>
+        <form action={processProcurementReceiptToFinishedStockAction} className="mt-6 grid gap-7">
+          <div className="grid gap-4">
+            <div>
+              <p className="text-xs font-semibold text-[#2D2219]">Protein receipt</p>
+              <p className="mt-1 text-xs leading-5 text-[#6B7280]">Choose the raw delivery that is ready to be converted into finished stock.</p>
+            </div>
+            <div className="grid gap-4 lg:grid-cols-2">
+              <label className="grid gap-2 text-sm text-[#6B7280]">
+                <span className={processingLabelClassName}>Protein receipt</span>
+                <div className="group relative">
+                  <select
+                    name="procurement_receipt_id"
+                    value={selectedReceiptId}
+                    onChange={(event) => setSelectedReceiptId(event.target.value)}
+                    className={processingSelectClassName}
+                  >
+                    {proteinReceipts.map((receipt) => (
+                      <option key={receipt.id} value={receipt.id} disabled={receipt.hasProcessingBatch}>
+                        {formatReceiptOptionLabel(receipt)}
+                      </option>
+                    ))}
+                  </select>
+                  <ProcessingSelectChevron />
+                </div>
+              </label>
 
-            <label className="space-y-2 text-sm text-[#6B7280]">
-              <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">
-                {isWholeChicken ? "Whole birds received" : "Raw receipt weight"}
-              </span>
-              <input
-                value={
-                  selectedReceipt
-                    ? `${selectedReceipt.quantityReceived.toFixed(isWholeChicken ? 0 : 2)} ${selectedReceipt.unitName}`
-                    : ""
-                }
-                readOnly
-                className="w-full rounded-2xl border border-[#D7DDE4] bg-[#F8FAFB] px-3 py-2.5 text-[#111418]"
-              />
-            </label>
+              <label className="grid gap-2 text-sm text-[#6B7280]">
+                <span className={processingLabelClassName}>
+                  {isWholeChicken ? "Whole birds received" : "Raw receipt weight"}
+                </span>
+                <input
+                  value={
+                    selectedReceipt
+                      ? `${selectedReceipt.quantityReceived.toFixed(isWholeChicken ? 0 : 2)} ${selectedReceipt.unitName}`
+                      : ""
+                  }
+                  readOnly
+                  className="min-h-12 w-full rounded-2xl border border-[#CDD4DC] bg-[#F5F6F7] px-3 py-3 text-sm font-medium text-[#4B5563] shadow-sm"
+                />
+              </label>
+            </div>
+          </div>
 
-            {isWholeChicken ? (
-              <div className="grid gap-3 md:grid-cols-2 lg:col-span-2">
-                <label className="space-y-2 text-sm text-[#6B7280]">
-                  <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Birds allocated to halves</span>
+          {isWholeChicken ? (
+            <div className={processingSectionClassName}>
+              <div>
+                <p className="text-xs font-semibold text-[#2D2219]">Production output</p>
+                <p className="mt-1 text-xs leading-5 text-[#6B7280]">Allocate the received birds between finished halves and quarters.</p>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="grid gap-2 text-sm text-[#6B7280]">
+                  <span className={processingLabelClassName}>Birds allocated to halves</span>
                   <input
                     type="number"
                     min="0"
@@ -238,12 +291,12 @@ export function ProcessingBatchForm({
                     value={birdsAllocatedToHalves}
                     onChange={(event) => handleHalvesAllocationChange(event.target.value)}
                     placeholder="Birds going to halves"
-                    className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
+                    className={processingFieldClassName}
                   />
                 </label>
 
-                <label className="space-y-2 text-sm text-[#6B7280]">
-                  <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Birds allocated to quarters</span>
+                <label className="grid gap-2 text-sm text-[#6B7280]">
+                  <span className={processingLabelClassName}>Birds allocated to quarters</span>
                   <input
                     type="number"
                     min="0"
@@ -254,45 +307,62 @@ export function ProcessingBatchForm({
                     value={birdsAllocatedToQuarters}
                     onChange={(event) => handleQuartersAllocationChange(event.target.value)}
                     placeholder="Birds going to quarters"
-                    className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
+                    className={processingFieldClassName}
                   />
                 </label>
               </div>
-            ) : (
-              <>
-                <label className="space-y-2 text-sm text-[#6B7280]">
-                  <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Finished product</span>
-                  <select
-                    name="portion_type_id"
-                    value={selectedPortionId}
-                    onChange={(event) => setSelectedPortionId(event.target.value)}
-                    className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
-                  >
-                    {filteredPortionOptions.map((option) => (
-                      <option key={option.id} value={option.id}>
-                        {formatPortionLabel(option)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+            </div>
+          ) : (
+            <>
+              <div className={processingSectionClassName}>
+                <div>
+                  <p className="text-xs font-semibold text-[#2D2219]">Finished product</p>
+                  <p className="mt-1 text-xs leading-5 text-[#6B7280]">Choose what you produced and enter its packed weight after roasting.</p>
+                </div>
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <label className="grid gap-2 text-sm text-[#6B7280]">
+                    <span className={processingLabelClassName}>Finished product</span>
+                    <div className="group relative">
+                      <select
+                        name="portion_type_id"
+                        value={selectedPortionId}
+                        onChange={(event) => setSelectedPortionId(event.target.value)}
+                        className={processingSelectClassName}
+                      >
+                        {filteredPortionOptions.map((option) => (
+                          <option key={option.id} value={option.id}>
+                            {formatPortionLabel(option)}
+                          </option>
+                        ))}
+                      </select>
+                      <ProcessingSelectChevron />
+                    </div>
+                  </label>
 
-                <label className="space-y-2 text-sm text-[#6B7280]">
-                  <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Post-roast packed weight (kg)</span>
-                  <input
-                    type="number"
-                    min="0.001"
-                    step="0.001"
-                    name="post_roast_packed_weight_kg"
-                    disabled={!selectedReceipt || selectedReceipt.hasProcessingBatch}
-                    value={postRoastPackedWeightKg}
-                    onChange={(event) => setPostRoastPackedWeightKg(event.target.value)}
-                    placeholder="Packed weight after roasting and vacuum sealing"
-                    className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
-                  />
-                </label>
+                  <label className="grid gap-2 text-sm text-[#6B7280]">
+                    <span className={processingLabelClassName}>Post-roast packed weight (kg)</span>
+                    <input
+                      type="number"
+                      min="0.001"
+                      step="0.001"
+                      name="post_roast_packed_weight_kg"
+                      disabled={!selectedReceipt || selectedReceipt.hasProcessingBatch}
+                      value={postRoastPackedWeightKg}
+                      onChange={(event) => setPostRoastPackedWeightKg(event.target.value)}
+                      placeholder="Packed weight after roasting and vacuum sealing"
+                      className={processingFieldClassName}
+                    />
+                  </label>
+                </div>
+              </div>
 
-                <label className="space-y-2 text-sm text-[#6B7280]">
-                  <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Quantity produced</span>
+              <div className={processingSectionClassName}>
+                <div>
+                  <p className="text-xs font-semibold text-[#2D2219]">Production output</p>
+                  <p className="mt-1 text-xs leading-5 text-[#6B7280]">Confirm how many finished portions will be added to frozen stock.</p>
+                </div>
+                <label className="grid gap-2 text-sm text-[#6B7280]">
+                  <span className={processingLabelClassName + " text-[#4B515A]"}>Quantity produced</span>
                   <input
                     type="number"
                     min="1"
@@ -303,17 +373,24 @@ export function ProcessingBatchForm({
                     value={quantityProduced}
                     onChange={(event) => setQuantityProduced(event.target.value)}
                     placeholder="Finished portions added to frozen stock"
-                    className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
+                    className={processingFieldClassName + " min-h-[52px] border-[#BBC4CE] text-base font-medium"}
                   />
                 </label>
-              </>
-            )}
-          </div>
+              </div>
+            </>
+          )}
 
           {selectedReceipt ? (
-            <div className="grid gap-3 md:grid-cols-2">
-              <article className="rounded-[22px] bg-[#F8FAFB] px-4 py-4">
-                <p className="text-[10px] uppercase tracking-[0.18em] text-[#9CA3AF]">Raw receipt</p>
+            <div className="grid gap-3 border-t border-[#E8E2DB] pt-6 md:grid-cols-2">
+              <div className="md:col-span-2">
+                <p className="text-xs font-semibold text-[#2D2219]">Processing summary</p>
+                <p className="mt-1 text-xs leading-5 text-[#6B7280]">Review the selected receipt and expected production result.</p>
+              </div>
+              <article className="rounded-[22px] border border-[#E5E1DC] bg-[#FAFAF9] px-4 py-5">
+                <div className="flex items-center gap-3">
+                  <ProcessingSummaryIcon type="receipt" />
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#707782]">Raw receipt</p>
+                </div>
                 <p className="mt-2 text-xl font-semibold text-[#111418]">
                   {selectedReceipt.quantityReceived.toFixed(2)} {selectedReceipt.unitName}
                 </p>
@@ -325,8 +402,11 @@ export function ProcessingBatchForm({
                   <p className="mt-1 text-sm leading-6 text-[#6B7280]">{selectedReceipt.abattoirName}</p>
                 ) : null}
               </article>
-              <article className="rounded-[22px] bg-[#F8FAFB] px-4 py-4">
-                <p className="text-[10px] uppercase tracking-[0.18em] text-[#9CA3AF]">Processing guidance</p>
+              <article className="rounded-[22px] border border-[#E5E1DC] bg-[#FAFAF9] px-4 py-5">
+                <div className="flex items-center gap-3">
+                  <ProcessingSummaryIcon type="guidance" />
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#707782]">Processing guidance</p>
+                </div>
                 {isWholeChicken ? (
                   <>
                     <p className="mt-2 text-xl font-semibold text-[#111418]">Chicken split allocation</p>
@@ -353,7 +433,7 @@ export function ProcessingBatchForm({
                   </>
                 ) : expectedPortionsFromPackedWeight !== null && portionSizeKg ? (
                   <>
-                    <p className="mt-2 text-xl font-semibold text-[#111418]">{expectedPortionsFromPackedWeight} expected portions</p>
+                    <p className="mt-3 text-2xl font-bold tracking-[-0.02em] text-[#2D2219]">{expectedPortionsFromPackedWeight} expected portions</p>
                     <p className="mt-2 text-sm leading-6 text-[#6B7280]">
                       Calculated as floor({postRoastPackedWeightKg || "0"} kg / {portionSizeKg.toFixed(3)} kg per portion).
                     </p>
@@ -363,7 +443,7 @@ export function ProcessingBatchForm({
                   </>
                 ) : expectedYield ? (
                   <>
-                    <p className="mt-2 text-xl font-semibold text-[#111418]">{expectedYield.quantity} expected portions</p>
+                    <p className="mt-3 text-2xl font-bold tracking-[-0.02em] text-[#2D2219]">{expectedYield.quantity} expected portions</p>
                     <p className="mt-2 text-sm leading-6 text-[#6B7280]">Calculated from {expectedYield.detail}.</p>
                     <p className="mt-2 text-sm leading-6 text-[#6B7280]">
                       The quantity field is prefilled with this estimate, and staff can still edit it to match the real output.
@@ -396,24 +476,28 @@ export function ProcessingBatchForm({
             <input type="hidden" name="quantity_produced" value="" />
           ) : null}
 
-          <label className="space-y-2 text-sm text-[#6B7280]">
-            <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Note</span>
-            <textarea
-              name="note"
-              rows={3}
-              disabled={!selectedReceipt || selectedReceipt.hasProcessingBatch}
-              placeholder="Batch note, freezer note, or processing remark"
-              className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-3 text-[#111418]"
-            />
-          </label>
+          <div className={processingSectionClassName}>
+            <label className="grid gap-2 text-sm text-[#6B7280]">
+              <span className={processingLabelClassName}>Note</span>
+              <textarea
+                name="note"
+                rows={4}
+                disabled={!selectedReceipt || selectedReceipt.hasProcessingBatch}
+                placeholder="Batch note, freezer note, or processing remark"
+                className={processingFieldClassName + " min-h-28 resize-y"}
+              />
+            </label>
+          </div>
 
-          <button
-            type="submit"
-            disabled={!selectedReceipt || selectedReceipt.hasProcessingBatch || (isWholeChicken && !wholeChickenCountIsValid)}
-            className="rounded-2xl bg-[#111418] px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Add to finished stock
-          </button>
+          <div className="border-t border-[#E8E2DB] pt-6">
+            <button
+              type="submit"
+              disabled={!selectedReceipt || selectedReceipt.hasProcessingBatch || (isWholeChicken && !wholeChickenCountIsValid)}
+              className="min-h-12 rounded-2xl bg-[#111418] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#2D2219] hover:shadow-md focus:outline-none focus:ring-4 focus:ring-[#111418]/10 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Add to finished stock
+            </button>
+          </div>
         </form>
       ) : (
         <div className="mt-4 rounded-[24px] bg-[#F8FAFB] px-4 py-5 text-sm leading-6 text-[#6B7280]">
