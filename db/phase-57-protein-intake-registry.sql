@@ -191,6 +191,8 @@ declare
   v_code text := lower(btrim(coalesce(p_code, '')));
   v_name text := btrim(coalesce(p_name, ''));
   v_unit_name text := lower(btrim(coalesce(p_default_unit_name, '')));
+  v_processing_mode text;
+  v_protein public.proteins%rowtype;
   v_item public.protein_intake_items%rowtype;
   v_portion public.portion_types%rowtype;
 begin
@@ -202,14 +204,21 @@ begin
     raise exception 'Protein item name is required';
   end if;
 
-  if v_unit_name <> 'kg' then
-    raise exception 'Quick-added protein items must be received in kg';
+  select * into v_protein
+  from public.proteins p
+  where p.id = p_protein_id
+    and p.is_active = true;
+
+  if not found then
+    raise exception 'Protein family % is missing or inactive', p_protein_id;
   end if;
 
-  if not exists (
-    select 1 from public.proteins p where p.id = p_protein_id and p.is_active = true
-  ) then
-    raise exception 'Protein family % is missing or inactive', p_protein_id;
+  v_processing_mode := case when v_protein.code = 'chicken' then 'whole_bird' else 'standard_weight' end;
+
+  if v_protein.code = 'chicken' and v_unit_name <> 'bird' then
+    raise exception 'Chicken protein items must be received as whole birds';
+  elsif v_protein.code <> 'chicken' and v_unit_name <> 'kg' then
+    raise exception 'Non-chicken protein items must be received in kg';
   end if;
 
   select * into v_portion
@@ -245,7 +254,7 @@ begin
   end if;
 
   if v_item.id is not null then
-    if v_item.protein_id <> p_protein_id or v_item.processing_mode <> 'standard_weight' then
+    if v_item.protein_id <> p_protein_id or v_item.processing_mode <> v_processing_mode then
       raise exception 'Protein item % already exists with a different family or processing mode', v_item.name;
     end if;
 
@@ -265,7 +274,7 @@ begin
       processing_mode,
       is_active
     )
-    values (v_code, v_name, v_unit_name, p_protein_id, 'standard_weight', true)
+    values (v_code, v_name, v_unit_name, p_protein_id, v_processing_mode, true)
     returning * into v_item;
   end if;
 

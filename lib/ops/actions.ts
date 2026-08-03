@@ -505,6 +505,31 @@ export async function createProteinIntakeItemInlineAction(formData: FormData) {
   const input = parseFormData(formData, proteinIntakeItemActionSchema);
   const supabase = createAdminSupabaseClient();
   const code = toCode(input.name);
+  const { data: proteinFamily, error: proteinFamilyError } = await supabase
+    .from("proteins")
+    .select("code")
+    .eq("id", input.protein_id)
+    .eq("is_active", true)
+    .maybeSingle();
+
+  if (proteinFamilyError) {
+    throw new Error(`Unable to load protein family: ${proteinFamilyError.message}`);
+  }
+
+  if (!proteinFamily) {
+    throw new Error("Choose an active protein family.");
+  }
+
+  const expectedUnitName = proteinFamily.code === "chicken" ? "bird" : "kg";
+  const expectedProcessingMode = proteinFamily.code === "chicken" ? "whole_bird" : "standard_weight";
+
+  if (input.default_unit_name !== expectedUnitName) {
+    throw new Error(
+      proteinFamily.code === "chicken"
+        ? "Chicken protein items must be received as whole birds."
+        : "Beef and goat protein items must be received in kilograms."
+    );
+  }
 
   const { data, error } = await supabase.rpc("create_protein_intake_item", {
     p_code: code,
@@ -516,7 +541,94 @@ export async function createProteinIntakeItemInlineAction(formData: FormData) {
 
   let item = Array.isArray(data) ? data[0] : data;
 
-  if (error?.code === "23505" || error?.message.toLowerCase().includes("duplicate key")) {
+  if (
+    error &&
+    expectedProcessingMode === "whole_bird" &&
+    error.message.toLowerCase().includes("must be received in kg")
+  ) {
+    const { data: existingWholeBirdItem, error: existingWholeBirdItemError } = await supabase
+      .from("protein_intake_items")
+      .select(
+        `
+          id,
+          code,
+          name,
+          default_unit_name,
+          protein_id,
+          processing_mode,
+          is_active,
+          protein_intake_item_portions (portion_type_id)
+        `
+      )
+      .eq("code", code)
+      .maybeSingle();
+
+    if (existingWholeBirdItemError) {
+      throw new Error(`Unable to load existing chicken intake item: ${existingWholeBirdItemError.message}`);
+    }
+
+    const existingPortionTypeIds = (existingWholeBirdItem?.protein_intake_item_portions ?? []).map((mapping: any) =>
+      Number(mapping.portion_type_id)
+    );
+
+    if (existingWholeBirdItem) {
+      if (
+        !existingWholeBirdItem.is_active ||
+        Number(existingWholeBirdItem.protein_id) !== input.protein_id ||
+        existingWholeBirdItem.default_unit_name !== "bird" ||
+        existingWholeBirdItem.processing_mode !== "whole_bird" ||
+        !existingPortionTypeIds.includes(input.portion_type_id)
+      ) {
+        throw new Error(
+          `A chicken item with code "${code}" already exists with different setup. Apply the latest protein intake registry migration before retrying.`
+        );
+      }
+
+      item = {
+        ...existingWholeBirdItem,
+        portion_type_id: input.portion_type_id
+      };
+    } else {
+      const { data: legacyData, error: legacyError } = await supabase.rpc("create_protein_intake_item", {
+        p_code: code,
+        p_name: input.name,
+        p_default_unit_name: "kg",
+        p_protein_id: input.protein_id,
+        p_portion_type_id: input.portion_type_id
+      });
+
+      if (legacyError) {
+        throw new Error(`Unable to create chicken intake item using the deployed registry: ${legacyError.message}`);
+      }
+
+      const legacyItem = Array.isArray(legacyData) ? legacyData[0] : legacyData;
+
+      if (!legacyItem?.id) {
+        throw new Error("Unable to create chicken intake item: Unknown legacy registry response");
+      }
+
+      const { data: upgradedItem, error: upgradeError } = await supabase
+        .from("protein_intake_items")
+        .update({
+          default_unit_name: "bird",
+          processing_mode: "whole_bird",
+          is_active: true
+        })
+        .eq("id", legacyItem.id)
+        .eq("protein_id", input.protein_id)
+        .select("id, code, name, default_unit_name, protein_id, processing_mode, is_active")
+        .single();
+
+      if (upgradeError) {
+        throw new Error(`Unable to finish chicken intake setup: ${upgradeError.message}`);
+      }
+
+      item = {
+        ...upgradedItem,
+        portion_type_id: input.portion_type_id
+      };
+    }
+  } else if (error?.code === "23505" || error?.message.toLowerCase().includes("duplicate key")) {
     const { data: existingItem, error: existingItemError } = await supabase
       .from("protein_intake_items")
       .select(
@@ -545,7 +657,7 @@ export async function createProteinIntakeItemInlineAction(formData: FormData) {
     if (
       !existingItem?.is_active ||
       Number(existingItem.protein_id) !== input.protein_id ||
-      existingItem.processing_mode !== "standard_weight" ||
+      existingItem.processing_mode !== expectedProcessingMode ||
       !portionTypeIds.includes(input.portion_type_id)
     ) {
       throw new Error(

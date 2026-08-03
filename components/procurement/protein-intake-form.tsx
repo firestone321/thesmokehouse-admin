@@ -58,6 +58,11 @@ export function ProteinIntakeForm({
   const [quickAddItemError, setQuickAddItemError] = useState<string | null>(null);
   const [quickAddItemSuccess, setQuickAddItemSuccess] = useState<string | null>(null);
   const [isCreatingItem, startCreateItemTransition] = useTransition();
+  const defaultQuickAddProteinFamilyId =
+    proteinFamilies.find((protein) => protein.code === "beef")?.id ?? proteinFamilies[0]?.id;
+  const [quickAddProteinFamilyId, setQuickAddProteinFamilyId] = useState(
+    defaultQuickAddProteinFamilyId ? String(defaultQuickAddProteinFamilyId) : ""
+  );
   const [batchPreviewTime, setBatchPreviewTime] = useState(() => {
     const now = new Date();
     const timeFormatter = new Intl.DateTimeFormat("en-GB", {
@@ -78,6 +83,11 @@ export function ProteinIntakeForm({
     () => proteinItemOptions.find((item) => String(item.id) === proteinItemId) ?? null,
     [proteinItemId, proteinItemOptions]
   );
+  const selectedQuickAddProteinFamily = useMemo(
+    () => proteinFamilies.find((protein) => String(protein.id) === quickAddProteinFamilyId) ?? null,
+    [proteinFamilies, quickAddProteinFamilyId]
+  );
+  const quickAddUnitName = selectedQuickAddProteinFamily?.code === "chicken" ? "bird" : "kg";
   const batchPreviewValue = `${(selectedProteinItem?.code ?? "PROTEIN").toUpperCase()}-${deliveryDate.replaceAll("-", "")}-${batchPreviewTime}`;
 
   useEffect(() => {
@@ -90,6 +100,17 @@ export function ProteinIntakeForm({
     setProteinItemOptions(activeProteinItems);
     setProteinItemId((currentItemId) => currentItemId || (activeProteinItems[0] ? String(activeProteinItems[0].id) : ""));
   }, [proteinIntakeItems]);
+
+  useEffect(() => {
+    setQuickAddProteinFamilyId((currentFamilyId) => {
+      if (proteinFamilies.some((protein) => String(protein.id) === currentFamilyId)) {
+        return currentFamilyId;
+      }
+
+      const nextFamilyId = proteinFamilies.find((protein) => protein.code === "beef")?.id ?? proteinFamilies[0]?.id;
+      return nextFamilyId ? String(nextFamilyId) : "";
+    });
+  }, [proteinFamilies]);
 
   useEffect(() => {
     setAbattoirName(selectedSupplier?.defaultAbattoirName ?? "");
@@ -321,19 +342,33 @@ export function ProteinIntakeForm({
               placeholder="Protein item, e.g. Beef Oxtail"
               className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
             />
-            <select
-              name="default_unit_name"
-              defaultValue="kg"
-              className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
-            >
-              <option value="kg">Kilograms (kg)</option>
-            </select>
+            <label className="space-y-2 text-sm text-[#6B7280]">
+              <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Receiving unit</span>
+              <select
+                key={quickAddUnitName}
+                name="default_unit_name"
+                defaultValue={quickAddUnitName}
+                className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
+              >
+                {quickAddUnitName === "bird" ? (
+                  <option value="bird">Whole birds</option>
+                ) : (
+                  <option value="kg">Kilograms (kg)</option>
+                )}
+              </select>
+              <p className="text-xs leading-5 text-[#6B7280]">
+                {quickAddUnitName === "bird"
+                  ? "Chicken deliveries are counted as whole birds."
+                  : "Beef and goat deliveries are received by weight."}
+              </p>
+            </label>
             <label className="space-y-2 text-sm text-[#6B7280]">
               <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Protein family</span>
               <select
                 name="protein_id"
                 required
-                defaultValue={proteinFamilies.find((protein) => protein.code === "beef")?.id ?? proteinFamilies[0]?.id}
+                value={quickAddProteinFamilyId}
+                onChange={(event) => setQuickAddProteinFamilyId(event.target.value)}
                 disabled={proteinFamilies.length === 0}
                 className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
               >
