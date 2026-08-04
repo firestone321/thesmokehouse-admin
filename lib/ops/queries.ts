@@ -587,6 +587,7 @@ function mapProcessingBatch(row: any): ProcessingBatchRecord {
     quantityProduced: normalizeNumber(row.quantity_produced),
     postRoastPackedWeightKg:
       row.post_roast_packed_weight_kg === null ? null : normalizeNumber(row.post_roast_packed_weight_kg),
+    trimWeightKg: normalizeNumber(row.trim_weight_kg),
     yieldPercent: row.yield_percent === null ? null : normalizeNumber(row.yield_percent),
     note: row.note,
     createdAt: row.created_at
@@ -1265,6 +1266,7 @@ export async function getInventoryPageData(selectedItemId?: string | null) {
         portion_type_id,
         quantity_produced,
         post_roast_packed_weight_kg,
+        trim_weight_kg,
         yield_percent,
         note,
         created_at,
@@ -1485,6 +1487,7 @@ export async function getProcurementPageData(): Promise<ProcurementPageData> {
         portion_type_id,
         quantity_produced,
         post_roast_packed_weight_kg,
+        trim_weight_kg,
         yield_percent,
         note,
         created_at,

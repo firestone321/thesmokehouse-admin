@@ -1184,6 +1184,38 @@ export async function processProcurementReceiptToFinishedStockAction(formData: F
     redirect("/procurement");
   }
 
+  if (["beef_ribs", "beef_oxtail", "goat_ribs", "goat_chunks"].includes(receipt.protein_code ?? "")) {
+    if (input.post_roast_packed_weight_kg === null || input.country_platter_weight_kg === null) {
+      throw new Error("Post-roast packed weight and Country Platter allocation are required.");
+    }
+
+    const { error } = await supabase.rpc("process_standard_weight_meat_receipt_allocation", {
+      p_procurement_receipt_id: input.procurement_receipt_id,
+      p_post_roast_packed_weight_kg: input.post_roast_packed_weight_kg,
+      p_country_platter_weight_kg: input.country_platter_weight_kg,
+      p_note: input.note
+    });
+
+    if (error) {
+      throw new Error(`Unable to process Meat Allocator receipt: ${error.message}`);
+    }
+
+    await recordStaffActivity({
+      actor,
+      action: "resupply.receipt_processed",
+      entityType: "procurement_receipt",
+      entityId: input.procurement_receipt_id,
+      summary: (actor.email ?? "A staff account") + " processed a meat receipt with the Meat Allocator.",
+      metadata: {
+        post_roast_packed_weight_kg: input.post_roast_packed_weight_kg,
+        country_platter_weight_kg: input.country_platter_weight_kg
+      }
+    });
+
+    revalidateProcurementPaths();
+    redirect("/procurement");
+  }
+
   if (input.portion_type_id === null || input.quantity_produced === null) {
     throw new Error("Portion type and quantity produced are required.");
   }

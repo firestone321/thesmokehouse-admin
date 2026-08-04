@@ -95,6 +95,11 @@ export default async function InventoryPage({
                     ) : null}
                   </div>
                 ) : null}
+                {batch.trimWeightKg > 0 ? (
+                  <p className="mt-2 text-sm leading-6 text-[#6B7280]">
+                    Trim / hold: {batch.trimWeightKg.toFixed(3)} kg (not sellable stock)
+                  </p>
+                ) : null}
                 {batch.note ? (
                   <p className="mt-3 text-sm leading-6 text-[#6B7280]">{batch.note}</p>
                 ) : null}

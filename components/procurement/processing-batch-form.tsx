@@ -5,7 +5,7 @@ import { processProcurementReceiptToFinishedStockAction } from "@/lib/ops/action
 import { ProcurementActivityRecord, ProcurementPortionOption, ProteinIntakeItemOption } from "@/lib/ops/types";
 import { getExpectedYieldEstimate } from "@/lib/ops/yield";
 
-function formatPortionLabel(option: ProcurementPortionOption) {
+function formatPortionLabel(option: Pick<ProcurementPortionOption, "name" | "portionLabel">) {
   return option.portionLabel ? `${option.name} (${option.portionLabel})` : option.name;
 }
 
@@ -42,6 +42,29 @@ function parsePortionWeightKg(portionLabel: string | null | undefined) {
 
   const numericValue = Number(normalized.slice(0, -1));
   return Number.isFinite(numericValue) && numericValue > 0 ? numericValue / 1000 : null;
+}
+
+const meatAllocatorPortionCodes = {
+  beef_ribs: {
+    standalone: "beef_ribs",
+    countryPlatter: "country_platter_beef_ribs"
+  },
+  beef_oxtail: {
+    standalone: "oxtail_portion",
+    countryPlatter: "country_platter_oxtail"
+  },
+  goat_ribs: {
+    standalone: "goat_rib_portions",
+    countryPlatter: "country_platter_goat_ribs"
+  },
+  goat_chunks: {
+    standalone: "goat_chunks_portions",
+    countryPlatter: "country_platter_goat_chops"
+  }
+} as const;
+
+function formatWeightKg(weight: number) {
+  return `${weight.toFixed(3).replace(/\.?0+$/, "")} kg`;
 }
 
 const processingFieldClassName =
@@ -98,6 +121,7 @@ export function ProcessingBatchForm({
   );
   const [selectedPortionId, setSelectedPortionId] = useState<string>("");
   const [postRoastPackedWeightKg, setPostRoastPackedWeightKg] = useState<string>("");
+  const [countryPlatterWeightKg, setCountryPlatterWeightKg] = useState<string>("0");
   const [quantityProduced, setQuantityProduced] = useState<string>("");
   const [birdsAllocatedToHalves, setBirdsAllocatedToHalves] = useState<string>("0");
   const [birdsAllocatedToQuarters, setBirdsAllocatedToQuarters] = useState<string>("0");
@@ -112,6 +136,10 @@ export function ProcessingBatchForm({
     [proteinIntakeItems, selectedReceipt?.proteinIntakeItemId]
   );
   const isWholeChicken = selectedReceipt?.processingMode === "whole_bird";
+  const meatAllocatorCodes = selectedReceipt?.proteinCode
+    ? meatAllocatorPortionCodes[selectedReceipt.proteinCode as keyof typeof meatAllocatorPortionCodes] ?? null
+    : null;
+  const isMeatAllocator = Boolean(meatAllocatorCodes);
   const totalBirds = selectedReceipt && isWholeChicken ? selectedReceipt.quantityReceived : 0;
   const wholeChickenCountIsValid = !isWholeChicken || (Number.isInteger(totalBirds) && totalBirds > 0);
 
@@ -131,6 +159,53 @@ export function ProcessingBatchForm({
   }, [filteredPortionOptions, selectedPortionId]);
 
   const selectedPortion = filteredPortionOptions.find((option) => String(option.id) === selectedPortionId) ?? null;
+  const meatAllocatorStandalonePortion = meatAllocatorCodes
+    ? filteredPortionOptions.find((option) => option.code === meatAllocatorCodes.standalone) ?? null
+    : null;
+  const meatAllocatorCountryPlatterPortion = meatAllocatorCodes
+    ? filteredPortionOptions.find((option) => option.code === meatAllocatorCodes.countryPlatter) ?? null
+    : null;
+  const meatAllocation = useMemo(() => {
+    const packedWeightKg = Number(postRoastPackedWeightKg);
+    const countryPlatterWeight = Number(countryPlatterWeightKg);
+    const standalonePortionWeightKg = parsePortionWeightKg(meatAllocatorStandalonePortion?.portionLabel);
+    const countryPlatterPortionWeightKg = parsePortionWeightKg(meatAllocatorCountryPlatterPortion?.portionLabel);
+
+    if (
+      !Number.isFinite(packedWeightKg) ||
+      packedWeightKg <= 0 ||
+      !Number.isFinite(countryPlatterWeight) ||
+      countryPlatterWeight < 0 ||
+      countryPlatterWeight > packedWeightKg ||
+      !standalonePortionWeightKg ||
+      !countryPlatterPortionWeightKg
+    ) {
+      return null;
+    }
+
+    const countryPlatterQuantity = Math.floor(countryPlatterWeight / countryPlatterPortionWeightKg);
+    const standaloneWeightKg = packedWeightKg - countryPlatterWeight;
+    const standaloneQuantity = Math.floor(standaloneWeightKg / standalonePortionWeightKg);
+    const trimWeightKg = Number(
+      (
+        packedWeightKg -
+        countryPlatterQuantity * countryPlatterPortionWeightKg -
+        standaloneQuantity * standalonePortionWeightKg
+      ).toFixed(3)
+    );
+
+    return {
+      countryPlatterQuantity,
+      standaloneQuantity,
+      standaloneWeightKg,
+      trimWeightKg
+    };
+  }, [
+    countryPlatterWeightKg,
+    meatAllocatorCountryPlatterPortion?.portionLabel,
+    meatAllocatorStandalonePortion?.portionLabel,
+    postRoastPackedWeightKg
+  ]);
   const portionSizeKg = useMemo(() => parsePortionWeightKg(selectedPortion?.portionLabel), [selectedPortion?.portionLabel]);
   const expectedYield = useMemo(
     () =>
@@ -166,6 +241,7 @@ export function ProcessingBatchForm({
 
   useEffect(() => {
     setPostRoastPackedWeightKg("");
+    setCountryPlatterWeightKg("0");
     if (selectedReceipt?.processingMode === "whole_bird") {
       const initialBirds = wholeChickenCountIsValid ? String(totalBirds) : "0";
       setBirdsAllocatedToHalves(initialBirds);
@@ -178,7 +254,7 @@ export function ProcessingBatchForm({
   }, [selectedReceiptId]);
 
   useEffect(() => {
-    if (isWholeChicken) {
+    if (isWholeChicken || isMeatAllocator) {
       setQuantityProduced("");
       return;
     }
@@ -189,7 +265,7 @@ export function ProcessingBatchForm({
     }
 
     setQuantityProduced(expectedYield ? String(expectedYield.quantity) : "");
-  }, [expectedPortionsFromPackedWeight, expectedYield, isWholeChicken, selectedReceiptId, selectedPortionId]);
+  }, [expectedPortionsFromPackedWeight, expectedYield, isMeatAllocator, isWholeChicken, selectedReceiptId, selectedPortionId]);
 
   function clampWholeChickenBirds(value: string) {
     const parsed = Number.parseInt(value, 10);
@@ -312,6 +388,87 @@ export function ProcessingBatchForm({
                 </label>
               </div>
             </div>
+          ) : isMeatAllocator ? (
+            <>
+              <div className={processingSectionClassName}>
+                <div>
+                  <p className="text-xs font-semibold text-[#2D2219]">Meat Allocator</p>
+                  <p className="mt-1 text-xs leading-5 text-[#6B7280]">
+                    Set aside the cooked weight for Country Platter packs. The rest stays with the usual standalone packs.
+                  </p>
+                </div>
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <label className="grid gap-2 text-sm text-[#6B7280]">
+                    <span className={processingLabelClassName}>Total usable meat after roasting (kg)</span>
+                    <input
+                      type="number"
+                      min="0.001"
+                      step="0.001"
+                      name="post_roast_packed_weight_kg"
+                      required
+                      disabled={!selectedReceipt || selectedReceipt.hasProcessingBatch}
+                      value={postRoastPackedWeightKg}
+                      onChange={(event) => setPostRoastPackedWeightKg(event.target.value)}
+                      placeholder="Usable cooked weight after roasting"
+                      className={processingFieldClassName}
+                    />
+                  </label>
+
+                  <label className="grid gap-2 text-sm text-[#6B7280]">
+                    <span className={processingLabelClassName}>Set aside for Country Platter (kg)</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max={postRoastPackedWeightKg || undefined}
+                      step="0.001"
+                      name="country_platter_weight_kg"
+                      required
+                      disabled={!selectedReceipt || selectedReceipt.hasProcessingBatch}
+                      value={countryPlatterWeightKg}
+                      onChange={(event) => setCountryPlatterWeightKg(event.target.value)}
+                      placeholder="For example: 5"
+                      className={processingFieldClassName}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div className={processingSectionClassName}>
+                <div>
+                  <p className="text-xs font-semibold text-[#2D2219]">Production output</p>
+                  <p className="mt-1 text-xs leading-5 text-[#6B7280]">
+                    The Meat Allocator makes full packs only and shows any remainder to hold as trim.
+                  </p>
+                </div>
+                <div className="grid gap-3 md:grid-cols-3">
+                  <article className="rounded-[22px] border border-[#E5E1DC] bg-[#FAFAF9] px-4 py-4">
+                    <p className={processingLabelClassName}>Country Platter packs</p>
+                    <p className="mt-2 text-xl font-semibold text-[#111418]">
+                      {meatAllocation?.countryPlatterQuantity ?? 0}
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-[#6B7280]">
+                      {formatPortionLabel(meatAllocatorCountryPlatterPortion ?? { name: "Country Platter portion", portionLabel: null })}
+                    </p>
+                  </article>
+                  <article className="rounded-[22px] border border-[#E5E1DC] bg-[#FAFAF9] px-4 py-4">
+                    <p className={processingLabelClassName}>Standalone packs</p>
+                    <p className="mt-2 text-xl font-semibold text-[#111418]">
+                      {meatAllocation?.standaloneQuantity ?? 0}
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-[#6B7280]">
+                      {formatPortionLabel(meatAllocatorStandalonePortion ?? { name: "Standalone portion", portionLabel: null })}
+                    </p>
+                  </article>
+                  <article className="rounded-[22px] border border-[#E5E1DC] bg-[#FAFAF9] px-4 py-4">
+                    <p className={processingLabelClassName}>Trim / hold</p>
+                    <p className="mt-2 text-xl font-semibold text-[#111418]">
+                      {meatAllocation ? formatWeightKg(meatAllocation.trimWeightKg) : "—"}
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-[#6B7280]">Recorded, but not added to sellable stock.</p>
+                  </article>
+                </div>
+              </div>
+            </>
           ) : (
             <>
               <div className={processingSectionClassName}>
@@ -431,6 +588,24 @@ export function ProcessingBatchForm({
                       </p>
                     )}
                   </>
+                ) : isMeatAllocator ? (
+                  <>
+                    <p className="mt-2 text-xl font-semibold text-[#111418]">Meat split allocation</p>
+                    {meatAllocation ? (
+                      <>
+                        <p className="mt-2 text-sm leading-6 text-[#6B7280]">
+                          {formatWeightKg(meatAllocation.standaloneWeightKg)} remains for standalone packs after the Country Platter allocation.
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-[#6B7280]">
+                          Full packs are added to stock. {formatWeightKg(meatAllocation.trimWeightKg)} is recorded as trim / hold and is not sellable stock.
+                        </p>
+                      </>
+                    ) : (
+                      <p className="mt-2 text-sm leading-6 text-[#6B7280]">
+                        Enter the usable cooked weight and the amount to set aside for Country Platter packs to see the split.
+                      </p>
+                    )}
+                  </>
                 ) : expectedPortionsFromPackedWeight !== null && portionSizeKg ? (
                   <>
                     <p className="mt-3 text-2xl font-bold tracking-[-0.02em] text-[#2D2219]">{expectedPortionsFromPackedWeight} expected portions</p>
@@ -472,7 +647,7 @@ export function ProcessingBatchForm({
             </div>
           ) : null}
 
-          {isWholeChicken ? (
+          {isWholeChicken || isMeatAllocator ? (
             <input type="hidden" name="quantity_produced" value="" />
           ) : null}
 
@@ -492,10 +667,15 @@ export function ProcessingBatchForm({
           <div className="border-t border-[#E8E2DB] pt-6">
             <button
               type="submit"
-              disabled={!selectedReceipt || selectedReceipt.hasProcessingBatch || (isWholeChicken && !wholeChickenCountIsValid)}
+              disabled={
+                !selectedReceipt ||
+                selectedReceipt.hasProcessingBatch ||
+                (isWholeChicken && !wholeChickenCountIsValid) ||
+                (isMeatAllocator && (!meatAllocation || meatAllocation.countryPlatterQuantity + meatAllocation.standaloneQuantity <= 0))
+              }
               className="min-h-12 rounded-2xl bg-[#111418] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#2D2219] hover:shadow-md focus:outline-none focus:ring-4 focus:ring-[#111418]/10 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Add to finished stock
+              {isMeatAllocator ? "Allocate meat stock" : "Add to finished stock"}
             </button>
           </div>
         </form>

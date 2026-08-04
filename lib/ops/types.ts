@@ -136,6 +136,7 @@ export interface ProcessingBatchRecord {
   portionName: string;
   quantityProduced: number;
   postRoastPackedWeightKg: number | null;
+  trimWeightKg: number;
   yieldPercent: number | null;
   note: string | null;
   createdAt: string;
