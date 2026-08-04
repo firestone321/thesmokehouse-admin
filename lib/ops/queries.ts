@@ -1772,7 +1772,7 @@ export async function getMenuPageData(editMenuItemId?: string | null) {
           id,
           name
         ),
-        portion_types (
+        portion_types!menu_items_portion_type_id_fkey (
           id,
           name,
           portion_label
