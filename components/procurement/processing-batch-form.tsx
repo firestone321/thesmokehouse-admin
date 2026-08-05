@@ -390,16 +390,25 @@ export function ProcessingBatchForm({
             </div>
           ) : isMeatAllocator ? (
             <>
-              <div className={processingSectionClassName}>
-                <div>
-                  <p className="text-xs font-semibold text-[#2D2219]">Meat Allocator</p>
-                  <p className="mt-1 text-xs leading-5 text-[#6B7280]">
-                    Set aside the cooked weight for Country Platter packs. The rest stays with the usual standalone packs.
-                  </p>
-                </div>
-                <div className="grid gap-4 lg:grid-cols-2">
-                  <label className="grid gap-2 text-sm text-[#6B7280]">
-                    <span className={processingLabelClassName}>Total usable meat after roasting (kg)</span>
+              <div className="grid gap-5 border-t border-[#E8E2DB] pt-6">
+                <div className="rounded-[28px] border-2 border-[#D4A373] bg-[#FFF5E8] p-4 shadow-sm sm:p-5">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="inline-flex rounded-full bg-[#F2D4B3] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-[#70452C]">
+                        Step 1 · Country Platter allocation
+                      </p>
+                      <h3 className="mt-3 text-lg font-semibold text-[#2D2219]">Set aside platter meat first</h3>
+                      <p className="mt-1 max-w-xl text-sm leading-6 text-[#6B625B]">
+                        Put the cooked meat for Country Platter packs aside before the remaining meat is packed for normal orders.
+                      </p>
+                    </div>
+                    <span className="flex size-10 items-center justify-center rounded-2xl border border-[#D4A373] bg-[#FFFDF9] text-xl" aria-hidden="true">
+                      📦
+                    </span>
+                  </div>
+
+                  <label className="mt-5 grid gap-2 text-sm text-[#6B7280]">
+                    <span className={processingLabelClassName + " text-[#70452C]"}>1. Total usable meat after roasting (kg)</span>
                     <input
                       type="number"
                       min="0.001"
@@ -410,26 +419,51 @@ export function ProcessingBatchForm({
                       value={postRoastPackedWeightKg}
                       onChange={(event) => setPostRoastPackedWeightKg(event.target.value)}
                       placeholder="Usable cooked weight after roasting"
-                      className={processingFieldClassName}
+                      className={processingFieldClassName + " border-[#C89263] bg-[#FFFDF9] text-base font-semibold"}
                     />
                   </label>
 
-                  <label className="grid gap-2 text-sm text-[#6B7280]">
-                    <span className={processingLabelClassName}>Set aside for Country Platter (kg)</span>
-                    <input
-                      type="number"
-                      min="0"
-                      max={postRoastPackedWeightKg || undefined}
-                      step="0.001"
-                      name="country_platter_weight_kg"
-                      required
-                      disabled={!selectedReceipt || selectedReceipt.hasProcessingBatch}
-                      value={countryPlatterWeightKg}
-                      onChange={(event) => setCountryPlatterWeightKg(event.target.value)}
-                      placeholder="For example: 5"
-                      className={processingFieldClassName}
-                    />
-                  </label>
+                  <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:items-stretch">
+                    <label className="grid gap-2 rounded-[22px] border-2 border-[#B85C38] bg-[#FFFDF9] p-4 text-sm text-[#6B7280] shadow-sm">
+                      <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#9B4B2F]">2. Country Platter</span>
+                      <span className="text-base font-semibold text-[#2D2219]">Weight to set aside (kg)</span>
+                      <input
+                        type="number"
+                        min="0"
+                        max={postRoastPackedWeightKg || undefined}
+                        step="0.001"
+                        name="country_platter_weight_kg"
+                        required
+                        disabled={!selectedReceipt || selectedReceipt.hasProcessingBatch}
+                        value={countryPlatterWeightKg}
+                        onChange={(event) => setCountryPlatterWeightKg(event.target.value)}
+                        placeholder="For example: 5"
+                        className={processingFieldClassName + " border-[#B85C38] bg-white text-xl font-bold text-[#2D2219]"}
+                      />
+                      <span className="text-xs leading-5 text-[#6B625B]">This meat is reserved for Country Platter packs.</span>
+                    </label>
+
+                    <div className="hidden items-center justify-center text-2xl font-semibold text-[#9B4B2F] lg:flex" aria-hidden="true">→</div>
+
+                    <div className="grid gap-2 rounded-[22px] border border-[#D8C7B5] bg-[#FFFDF9]/70 p-4 text-sm text-[#6B7280]">
+                      <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#76513E]">3. Standalone orders</p>
+                      <p className="text-base font-semibold text-[#2D2219]">Weight left for usual packs</p>
+                      <output className="flex min-h-12 items-center rounded-2xl border border-[#D8C7B5] bg-[#F5EEE5] px-3 py-3 text-xl font-bold text-[#4C372A]">
+                        {meatAllocation ? formatWeightKg(meatAllocation.standaloneWeightKg) : "Enter total weight first"}
+                      </output>
+                      <p className="text-xs leading-5 text-[#6B625B]">This is filled automatically. No typing is needed here.</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 rounded-2xl border border-[#E3C4A5] bg-[#FFFDF9] px-4 py-3 text-sm leading-6 text-[#4C372A]">
+                    {meatAllocation ? (
+                      <>
+                        You are setting aside <strong>{countryPlatterWeightKg || "0"} kg</strong> for Country Platter and leaving <strong>{formatWeightKg(meatAllocation.standaloneWeightKg)}</strong> for standalone orders.
+                      </>
+                    ) : (
+                      <>Enter the usable cooked weight, then decide how much to set aside for Country Platter.</>
+                    )}
+                  </div>
                 </div>
               </div>
 
