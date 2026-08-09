@@ -1521,10 +1521,24 @@ export async function updateOrderStatusAction(formData: FormData) {
   const supabase = createAdminSupabaseClient();
   const orderId = input.order_id;
   const nextStatus = input.next_status;
-  const note = input.note ?? null;
+  let note = input.note ?? null;
 
   if (nextStatus === "completed") {
-    redirect(`/orders/${orderId}?error=${encodeURIComponent("Use the pickup code form to complete this order.")}`);
+    const { data: order, error: orderError } = await supabase
+      .from("orders")
+      .select("order_source")
+      .eq("id", orderId)
+      .maybeSingle();
+
+    if (orderError) {
+      throw new Error(`Unable to confirm the order source: ${orderError.message}`);
+    }
+
+    if (!order || order.order_source !== "pos") {
+      redirect(`/orders/${orderId}?error=${encodeURIComponent("Use the pickup code form to complete this order.")}`);
+    }
+
+    note = note ?? "Walk-in POS order handed over at the counter.";
   }
 
   const { error } = await supabase.rpc("transition_order_status", {

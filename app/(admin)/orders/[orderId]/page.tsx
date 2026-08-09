@@ -210,6 +210,21 @@ export default async function OrderDetailPage({
               {allowedNextStatuses.length > 0 ? (
                 allowedNextStatuses.map((status) => (
                   status === "completed" ? (
+                    order.orderSource === "pos" ? (
+                      <form key={status} action={updateOrderStatusAction} className="space-y-3 rounded-[22px] border border-[#E4E7EB] bg-[#F8FAFB] px-4 py-4">
+                        <input type="hidden" name="order_id" value={order.id} />
+                        <input type="hidden" name="next_status" value="completed" />
+                        <div>
+                          <p className="text-sm font-semibold text-[#111418]">Complete counter sale</p>
+                          <p className="mt-1 text-sm leading-6 text-[#6B7280]">
+                            This walk-in POS order was paid at the counter and does not require a pickup code.
+                          </p>
+                        </div>
+                        <button type="submit" className="w-full rounded-2xl bg-[#111418] px-4 py-3 text-sm font-semibold text-white">
+                          Mark handed over and complete
+                        </button>
+                      </form>
+                    ) : (
                     <form key={status} action={completeOrderWithPickupCodeAction} className="space-y-3 rounded-[22px] border border-[#E4E7EB] bg-[#F8FAFB] px-4 py-4">
                       <input type="hidden" name="order_id" value={order.id} />
                       <div>
@@ -244,6 +259,7 @@ export default async function OrderDetailPage({
                         Verify code and complete
                       </button>
                     </form>
+                    )
                   ) : (
                     <form key={status} action={updateOrderStatusAction}>
                       <input type="hidden" name="order_id" value={order.id} />

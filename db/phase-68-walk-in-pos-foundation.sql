@@ -20,11 +20,13 @@ alter table public.orders
 
 alter table public.orders
   drop constraint if exists orders_order_source_chk,
-  drop constraint if exists orders_pos_cashier_chk;
+  drop constraint if exists orders_pos_cashier_chk,
+  drop constraint if exists orders_pos_pickup_code_chk;
 
 alter table public.orders
   add constraint orders_order_source_chk check (order_source in ('storefront', 'pos')),
-  add constraint orders_pos_cashier_chk check (order_source <> 'pos' or cashier_profile_id is not null);
+  add constraint orders_pos_cashier_chk check (order_source <> 'pos' or cashier_profile_id is not null),
+  add constraint orders_pos_pickup_code_chk check (order_source <> 'pos' or pickup_code is null);
 
 create index if not exists orders_source_created_idx
   on public.orders (order_source, created_at desc);

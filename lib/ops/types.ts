@@ -331,6 +331,7 @@ export interface OrderStatusEventRecord {
 export interface OrderDetailRecord {
   id: number;
   orderNumber: string;
+  orderSource: "storefront" | "pos";
   customerName: string | null;
   customerPhone: string | null;
   status: OrderStatus;

@@ -1152,6 +1152,7 @@ export async function getOrderDetail(orderId: number | string): Promise<OrderDet
         `
         id,
         order_number,
+        order_source,
         customer_name,
         customer_phone,
         status,
@@ -1216,6 +1217,7 @@ export async function getOrderDetail(orderId: number | string): Promise<OrderDet
   return {
     id: normalizeNumber(orderResponse.data.id),
     orderNumber: orderResponse.data.order_number,
+    orderSource: orderResponse.data.order_source === "pos" ? "pos" : "storefront",
     customerName: orderResponse.data.customer_name,
     customerPhone: orderResponse.data.customer_phone,
     status: orderResponse.data.status as OrderStatus,
