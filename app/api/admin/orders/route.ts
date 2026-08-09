@@ -13,6 +13,8 @@ export async function GET(request: Request) {
     const data = await getOrdersPageData({
       status: query.status,
       search: query.search,
+      createdAtGte: query.createdAtGte,
+      createdAtLt: query.createdAtLt,
       limit: query.limit,
       page: query.page
     });

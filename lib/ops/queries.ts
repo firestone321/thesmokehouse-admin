@@ -309,20 +309,33 @@ async function fetchOrderListRows(
   options: {
     statusValues: string[];
     search: string;
+    createdAtGte?: string;
+    createdAtLt?: string;
     limit: number;
     offset: number;
   }
 ) {
   const { limit, offset } = options;
 
-  const buildBaseQuery = () =>
-    applyOrderStatusFilter(
+  const buildBaseQuery = () => {
+    let query = applyOrderStatusFilter(
       supabase
         .from("orders")
         .select(orderListSelection)
         .order("created_at", { ascending: false }),
       options.statusValues
     );
+
+    if (options.createdAtGte) {
+      query = query.gte("created_at", options.createdAtGte);
+    }
+
+    if (options.createdAtLt) {
+      query = query.lt("created_at", options.createdAtLt);
+    }
+
+    return query;
+  };
 
   if (options.search.length === 0) {
     // Fetch limit+1 rows so callers can detect whether a next page exists.
@@ -704,6 +717,8 @@ export function getAllowedNextStatuses(status: OrderStatus) {
 export async function getOrdersPageData(options?: {
   status?: string | string[] | null;
   search?: string | null;
+  createdAtGte?: string | null;
+  createdAtLt?: string | null;
   limit?: number | null;
   page?: number | null;
 }) {
@@ -725,6 +740,8 @@ export async function getOrdersPageData(options?: {
   const { data, error } = await fetchOrderListRows(supabase, {
     statusValues,
     search,
+    createdAtGte: options?.createdAtGte ?? undefined,
+    createdAtLt: options?.createdAtLt ?? undefined,
     limit,
     offset
   });

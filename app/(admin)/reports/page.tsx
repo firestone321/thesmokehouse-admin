@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { AnalyticsBarChart } from "@/components/dashboard/analytics-bar-chart";
+import { OrdersCreatedDrilldown } from "@/components/reports/orders-created-drilldown";
 import { requireDashboardRole } from "@/lib/auth/admin-role";
 import { getAnalyticsSeries, getRevenueAnalyticsSeries } from "@/lib/analytics/queries";
 import { getInventoryPageData, getProcurementPageData } from "@/lib/ops/queries";
@@ -50,7 +51,7 @@ export default async function ReportsPage() {
 
       <div className="grid gap-4 xl:grid-cols-2">
         <section className="surface-card rounded-[32px] p-5"><div className="flex items-baseline justify-between gap-3"><div><p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Sales trend</p><h2 className="mt-2 text-xl font-semibold">Completed paid revenue</h2></div><p className="text-sm font-semibold">{revenueSeries.range.label}</p></div><div className="mt-5 rounded-[22px] border border-[#E4E7EB] bg-white p-4"><AnalyticsBarChart buckets={revenueSeries.buckets} formatValue={formatCurrency} /></div></section>
-        <section className="surface-card rounded-[32px] p-5"><div className="flex items-baseline justify-between gap-3"><div><p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Order flow</p><h2 className="mt-2 text-xl font-semibold">Orders created</h2></div><p className="text-sm font-semibold">{orderSeries.range.label}</p></div><div className="mt-5 rounded-[22px] border border-[#E4E7EB] bg-white p-4"><AnalyticsBarChart buckets={orderSeries.buckets} formatValue={formatCount} /></div></section>
+        <OrdersCreatedDrilldown buckets={orderSeries.buckets} rangeLabel={orderSeries.range.label} />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
