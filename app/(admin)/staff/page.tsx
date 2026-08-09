@@ -74,7 +74,7 @@ export default async function StaffPage({
           <div>
             <h1 className="text-2xl font-semibold sm:text-3xl">Staff account management</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6B7280]">
-              Accounts created here are confirmed Auth users and are assigned a Staff or Chef role.
+              Accounts created here are confirmed Auth users and are assigned a Staff, Chef, or Cashier role.
               Storefront signups remain customer accounts.
             </p>
           </div>
@@ -112,8 +112,8 @@ export default async function StaffPage({
                 profile.hasAuthUser &&
                 (actor.role === "admin"
                   ? profile.role !== "admin"
-                  : profile.role === "staff" || profile.role === "chef");
-              const availableRoles = (["staff", "chef", "manager"] as const).filter(
+                  : profile.role === "staff" || profile.role === "chef" || profile.role === "cashier");
+              const availableRoles = (["staff", "chef", "cashier", "manager"] as const).filter(
                 (role) => role !== profile.role
               );
 
@@ -218,7 +218,7 @@ export default async function StaffPage({
             <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Provision account</p>
             <h2 className="mt-2 text-xl font-semibold">Create team user</h2>
             <p className="mt-2 text-sm leading-6 text-[#6B7280]">
-              Choose Staff for general operations or Chef for the same access plus In Prep order alerts.
+              Choose Cashier for POS-only access, Staff for general operations, or Chef for the same access plus In Prep order alerts.
               Share the temporary password securely with the intended user.
             </p>
           </div>
@@ -273,6 +273,7 @@ export default async function StaffPage({
               >
                 <option value="staff">Staff</option>
                 <option value="chef">Chef</option>
+                <option value="cashier">Cashier</option>
               </select>
             </label>
 

@@ -3,8 +3,10 @@ import { SchemaSetupNotice } from "@/components/admin/schema-setup-notice";
 import { getRevenueAnalyticsSeries } from "@/lib/analytics/queries";
 import { OperationsSchemaMissingError } from "@/lib/ops/errors";
 import { getDashboardSnapshot } from "@/lib/ops/queries";
+import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 
 export default async function DashboardPage() {
+  await requireApprovedAdminRole();
   let snapshot;
   let initialRevenueSeries;
 

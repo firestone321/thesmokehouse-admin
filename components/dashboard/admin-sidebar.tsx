@@ -8,9 +8,8 @@ import { LogoutButton } from "@/components/auth/logout-button";
 import { adminNavItems } from "@/lib/admin/nav";
 import type { AdminRole } from "@/lib/auth/admin-role";
 
-const quickAccessLabels = new Set(["Dashboard", "Orders", "Menu", "Resupplies", "Suppliers", "Inventory", "Kitchen Queue"]);
+const quickAccessLabels = new Set(["Dashboard", "Orders", "POS", "Menu", "Resupplies", "Suppliers", "Inventory", "Kitchen Queue"]);
 const secondaryNavLabels = new Set(["Activity", "Staff", "Settings"]);
-const quickAccessItems = adminNavItems.filter((item) => quickAccessLabels.has(item.label));
 
 function SidebarNav({
   items,
@@ -65,6 +64,7 @@ export function AdminSidebar({
   const visibleItems = adminNavItems.filter(
     (item) => !item.allowedRoles || (userRole ? item.allowedRoles.includes(userRole) : false)
   );
+  const quickAccessItems = visibleItems.filter((item) => quickAccessLabels.has(item.label));
   const primaryNavItems = visibleItems.filter((item) => !secondaryNavLabels.has(item.label));
   const secondaryNavItems = visibleItems.filter((item) => secondaryNavLabels.has(item.label));
 

@@ -1,6 +1,8 @@
 import { SectionPlaceholder } from "@/components/dashboard/section-placeholder";
+import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 
-export default function KitchenQueuePage() {
+export default async function KitchenQueuePage() {
+  await requireApprovedAdminRole();
   return (
     <SectionPlaceholder
       title="Kitchen Queue"

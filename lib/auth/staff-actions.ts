@@ -72,7 +72,7 @@ export async function createStaffUserAction(formData: FormData) {
   }
 
   const supabase = createAdminSupabaseClient();
-  const roleLabel = input.role === "chef" ? "Chef" : "Staff";
+  const roleLabel = input.role === "chef" ? "Chef" : input.role === "cashier" ? "Cashier" : "Staff";
   const provisionedAt = new Date().toISOString();
   const { data, error: createError } = await supabase.auth.admin.createUser({
     email: input.email,
@@ -197,13 +197,13 @@ export async function manageStaffAccountAction(formData: FormData) {
     redirect(buildStaffRedirect("error", `Unable to load the selected staff profile: ${profileError.message}`));
   }
 
-  if (!targetProfile || !["staff", "chef", "manager", "admin"].includes(targetProfile.role)) {
+  if (!targetProfile || !["staff", "chef", "cashier", "manager", "admin"].includes(targetProfile.role)) {
     redirect(buildStaffRedirect("error", "The selected account is not an approved dashboard profile."));
   }
 
   const actorCanManageTarget = actor.role === "admin"
     ? targetProfile.role !== "admin"
-    : targetProfile.role === "staff" || targetProfile.role === "chef";
+    : targetProfile.role === "staff" || targetProfile.role === "chef" || targetProfile.role === "cashier";
 
   if (!actorCanManageTarget) {
     redirect(
@@ -362,6 +362,6 @@ export async function manageStaffAccountAction(formData: FormData) {
   redirect(buildStaffRedirect("success", `${email} now has the ${targetRole === "chef" ? "Chef" : formatRoleLabel(targetRole)} role.`));
 }
 
-function formatRoleLabel(role: "staff" | "manager") {
+function formatRoleLabel(role: "staff" | "cashier" | "manager") {
   return role.charAt(0).toUpperCase() + role.slice(1);
 }

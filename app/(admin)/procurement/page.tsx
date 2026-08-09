@@ -8,6 +8,7 @@ import { SupplyIntakeForm } from "@/components/procurement/supply-intake-form";
 import { OperationsSchemaMissingError } from "@/lib/ops/errors";
 import { getProcurementPageData } from "@/lib/ops/queries";
 import { formatCurrency, formatDateTime, formatServiceDate } from "@/lib/ops/utils";
+import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 
 function formatQuantity(value: number, unitName: string) {
   return `${value.toFixed(2)} ${unitName}`;
@@ -26,6 +27,7 @@ function getIntakeBadgeClasses(intakeType: "protein" | "ingredient" | "supply") 
 }
 
 export default async function ProcurementPage() {
+  await requireApprovedAdminRole();
   let data;
 
   try {

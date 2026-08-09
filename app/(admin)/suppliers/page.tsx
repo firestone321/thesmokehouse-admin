@@ -6,6 +6,7 @@ import { saveSupplierAction } from "@/lib/ops/actions";
 import { OperationsSchemaMissingError } from "@/lib/ops/errors";
 import { getSuppliersPageData } from "@/lib/ops/queries";
 import { supplierTypes, SupplierType } from "@/lib/ops/types";
+import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 
 function getFirstValue(value?: string | string[]) {
   return Array.isArray(value) ? value[0] : value;
@@ -101,6 +102,7 @@ export default async function SuppliersPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await requireApprovedAdminRole();
   const params = await searchParams;
   const selectedSupplierId = getFirstValue(params.supplier) ?? null;
   let data;

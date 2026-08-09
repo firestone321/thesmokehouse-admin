@@ -6,6 +6,7 @@ import { OperationsSchemaMissingError } from "@/lib/ops/errors";
 import { getInventoryPageData } from "@/lib/ops/queries";
 import { DailyStockRow, ProcessingBatchRecord } from "@/lib/ops/types";
 import { formatDateTime, formatServiceDate, getDailyStockWarningLevel } from "@/lib/ops/utils";
+import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 
 function getFirstValue(value?: string | string[]) {
   return Array.isArray(value) ? value[0] : value;
@@ -28,6 +29,7 @@ export default async function InventoryPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await requireApprovedAdminRole();
   const params = await searchParams;
   const selectedItemId = getFirstValue(params.item) ?? null;
   let data;

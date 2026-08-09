@@ -10,6 +10,7 @@ export interface AdminNavItem {
 export const adminNavItems: AdminNavItem[] = [
   { label: "Dashboard", href: "/dashboard", description: "Live operational read model" },
   { label: "Orders", href: "/orders", description: "Tickets, status flow, and timeline" },
+  { label: "POS", href: "/pos", description: "Walk-in counter sales", allowedRoles: ["admin", "manager", "cashier"] },
   { label: "Menu", href: "/menu", description: "Sellable items and availability" },
   { label: "Resupplies", href: "/procurement", description: "Protein receiving and processing" },
   { label: "Suppliers", href: "/suppliers", description: "Supplier master records and traceability" },

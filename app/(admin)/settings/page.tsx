@@ -1,6 +1,8 @@
 import { SectionPlaceholder } from "@/components/dashboard/section-placeholder";
+import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
+  await requireApprovedAdminRole();
   return (
     <SectionPlaceholder
       title="Settings"

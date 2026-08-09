@@ -111,10 +111,26 @@ export const adminPaidOrderPushProcessSchema = z.object({
   orderId: idSchema
 });
 
+export const posSaleRequestSchema = z.object({
+  idempotencyKey: z.string().uuid(),
+  tenderType: z.enum(["cash", "mobile_money", "card"]),
+  amountReceived: z.number().int().nonnegative(),
+  paymentReference: z.string().trim().max(120).optional(),
+  items: z
+    .array(
+      z.object({
+        menuItemId: idSchema,
+        quantity: z.number().int().min(1).max(20)
+      })
+    )
+    .min(1)
+    .max(30)
+});
+
 export const createStaffUserActionSchema = z
   .object({
     email: z.string().trim().toLowerCase().email().max(254),
-    role: z.enum(["staff", "chef"]).default("staff"),
+    role: z.enum(["staff", "chef", "cashier"]).default("staff"),
     password: z.string().min(12).max(128),
     confirm_password: z.string().min(12).max(128)
   })
@@ -126,7 +142,7 @@ export const createStaffUserActionSchema = z
 export const manageStaffAccountActionSchema = z.object({
   user_id: z.string().uuid(),
   operation: z.enum(["disable", "enable", "set_role"]),
-  target_role: z.enum(["staff", "chef", "manager"]).optional()
+  target_role: z.enum(["staff", "chef", "cashier", "manager"]).optional()
 }).superRefine((value, ctx) => {
   if (value.operation === "set_role" && !value.target_role) {
     ctx.addIssue({

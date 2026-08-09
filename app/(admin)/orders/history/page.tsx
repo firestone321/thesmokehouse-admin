@@ -4,6 +4,7 @@ import { OrderItemsSummary } from "@/components/orders/order-items-display";
 import { OperationsSchemaMissingError } from "@/lib/ops/errors";
 import { getOrderHistoryPageData } from "@/lib/ops/queries";
 import { formatCurrency, formatDateTime } from "@/lib/ops/utils";
+import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 
 function getFirstValue(value?: string | string[]) {
   return Array.isArray(value) ? value[0] : value;
@@ -74,6 +75,7 @@ export default async function OrderHistoryPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await requireApprovedAdminRole();
   const params = await searchParams;
   const search = getFirstValue(params.search) ?? "";
   const page = Math.max(1, parseInt(getFirstValue(params.page) ?? "1", 10) || 1);

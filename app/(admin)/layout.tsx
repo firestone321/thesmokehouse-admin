@@ -2,7 +2,7 @@ import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { AdminPushAutoEnrollment } from "@/components/pwa/admin-push-auto-enrollment";
 import { redirect } from "next/navigation";
 import { isLocalAuthBypassEnabled } from "@/lib/auth/local-bypass";
-import { AdminAuthorizationError, requireApprovedAdminRole } from "@/lib/auth/admin-role";
+import { AdminAuthorizationError, requireDashboardRole } from "@/lib/auth/admin-role";
 import { AdminNotificationBanner } from "@/components/notifications/admin-notification-banner";
 import { getUnreadAdminNotifications } from "@/lib/notifications/data";
 
@@ -15,9 +15,9 @@ export default async function AdminLayout({ children }: Readonly<{ children: Rea
     );
   }
 
-  let adminProfile: Awaited<ReturnType<typeof requireApprovedAdminRole>>;
+  let adminProfile: Awaited<ReturnType<typeof requireDashboardRole>>;
   try {
-    adminProfile = await requireApprovedAdminRole();
+    adminProfile = await requireDashboardRole();
   } catch (error) {
     if (error instanceof AdminAuthorizationError && error.status === 401) {
       redirect("/login");

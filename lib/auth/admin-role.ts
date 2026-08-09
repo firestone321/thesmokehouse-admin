@@ -3,11 +3,13 @@ import "server-only";
 import { createAdminSupabaseClient, createServerSupabaseClient } from "@/lib/supabase/server";
 import { isLocalAuthBypassEnabled } from "@/lib/auth/local-bypass";
 
-export type AdminRole = "admin" | "manager" | "chef" | "staff";
+export type AdminRole = "admin" | "manager" | "chef" | "staff" | "cashier";
 
 const approvedAdminRoles = new Set<AdminRole>(["admin", "manager", "chef", "staff"]);
+const dashboardRoles = new Set<AdminRole>(["admin", "manager", "chef", "staff", "cashier"]);
 const staffProvisioningRoles = new Set<AdminRole>(["admin", "manager"]);
 const approvalRoles = new Set<AdminRole>(["admin", "manager"]);
+const posRoles = new Set<AdminRole>(["admin", "manager", "cashier"]);
 
 export class AdminAuthorizationError extends Error {
   readonly status: 401 | 403;
@@ -31,7 +33,7 @@ export function isRegularStaffRole(role: AdminRole) {
   return role === "staff" || role === "chef";
 }
 
-export async function requireApprovedAdminRole(): Promise<{ userId: string; email: string | null; role: AdminRole }> {
+async function requireRoleFromSet(allowedRoles: Set<AdminRole>): Promise<{ userId: string; email: string | null; role: AdminRole }> {
   if (await isLocalAuthBypassEnabled()) {
     return {
       userId: "local-auth-bypass",
@@ -61,8 +63,8 @@ export async function requireApprovedAdminRole(): Promise<{ userId: string; emai
   }
 
   const role = typeof profile?.role === "string" ? profile.role : null;
-  if (!role || !approvedAdminRoles.has(role as AdminRole)) {
-    throw new AdminAuthorizationError("This account is not approved for the Smokehouse admin.", 403);
+  if (!role || !allowedRoles.has(role as AdminRole)) {
+    throw new AdminAuthorizationError("This account is not approved for the requested Smokehouse admin area.", 403);
   }
 
   return {
@@ -70,6 +72,18 @@ export async function requireApprovedAdminRole(): Promise<{ userId: string; emai
     email: typeof profile?.email === "string" ? profile.email : user.email ?? null,
     role: role as AdminRole
   };
+}
+
+export async function requireApprovedAdminRole(): Promise<{ userId: string; email: string | null; role: AdminRole }> {
+  return requireRoleFromSet(approvedAdminRoles);
+}
+
+export async function requireDashboardRole(): Promise<{ userId: string; email: string | null; role: AdminRole }> {
+  return requireRoleFromSet(dashboardRoles);
+}
+
+export async function requirePosAccess(): Promise<{ userId: string; email: string | null; role: AdminRole }> {
+  return requireRoleFromSet(posRoles);
 }
 
 const ALLOWED_REQUEST_ORIGINS = new Set<string>(
