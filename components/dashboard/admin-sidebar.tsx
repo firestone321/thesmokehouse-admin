@@ -8,8 +8,8 @@ import { LogoutButton } from "@/components/auth/logout-button";
 import { adminNavItems } from "@/lib/admin/nav";
 import type { AdminRole } from "@/lib/auth/admin-role";
 
-const quickAccessLabels = new Set(["Dashboard", "Orders", "POS", "Menu", "Resupplies", "Suppliers", "Inventory", "Kitchen Queue"]);
-const secondaryNavLabels = new Set(["Activity", "Staff", "Settings"]);
+const quickAccessLabels = new Set(["Dashboard", "Orders", "POS", "Menu", "Resupplies", "Suppliers", "Inventory", "Kitchen Queue", "Reports"]);
+const secondaryNavLabels = new Set(["Activity", "Reports", "Staff", "Settings"]);
 
 function SidebarNav({
   items,

@@ -1,105 +1,7 @@
--- Walk-in POS foundation.
--- POS sales use the existing paid-order reservation function, so a sale can
--- consume only stock that remains after earlier paid online reservations.
-
-alter type public.app_role add value if not exists 'cashier';
+-- Phase 69: Repair the POS sale RPC's ambiguous output-column reference.
+-- Apply after Phase 68 in every environment where the POS foundation is live.
 
 begin;
-
-alter table public.orders
-  add column if not exists order_source text,
-  add column if not exists cashier_profile_id uuid references public.profiles(id) on update cascade on delete restrict;
-
-update public.orders
-set order_source = 'storefront'
-where order_source is null;
-
-alter table public.orders
-  alter column order_source set default 'storefront',
-  alter column order_source set not null;
-
-alter table public.orders
-  drop constraint if exists orders_order_source_chk,
-  drop constraint if exists orders_pos_cashier_chk;
-
-alter table public.orders
-  add constraint orders_order_source_chk check (order_source in ('storefront', 'pos')),
-  add constraint orders_pos_cashier_chk check (order_source <> 'pos' or cashier_profile_id is not null);
-
-create index if not exists orders_source_created_idx
-  on public.orders (order_source, created_at desc);
-
-create index if not exists orders_cashier_created_idx
-  on public.orders (cashier_profile_id, created_at desc)
-  where cashier_profile_id is not null;
-
-create table if not exists public.pos_sale_requests (
-  idempotency_key uuid primary key,
-  request_hash text not null,
-  cashier_profile_id uuid not null references public.profiles(id) on update cascade on delete restrict,
-  order_id bigint references public.orders(id) on update cascade on delete restrict,
-  created_at timestamptz not null default now(),
-  completed_at timestamptz,
-  constraint pos_sale_requests_hash_not_blank_chk check (btrim(request_hash) <> '')
-);
-
-create index if not exists pos_sale_requests_order_idx
-  on public.pos_sale_requests (order_id)
-  where order_id is not null;
-
-create table if not exists public.pos_tenders (
-  id bigint generated always as identity primary key,
-  order_id bigint not null unique references public.orders(id) on update cascade on delete restrict,
-  tender_type text not null,
-  amount integer not null,
-  amount_received integer not null,
-  change_given integer generated always as (amount_received - amount) stored,
-  payment_reference text,
-  captured_by_profile_id uuid not null references public.profiles(id) on update cascade on delete restrict,
-  captured_at timestamptz not null default now(),
-  created_at timestamptz not null default now(),
-  constraint pos_tenders_type_chk check (tender_type in ('cash', 'mobile_money', 'card')),
-  constraint pos_tenders_amount_chk check (amount > 0 and amount_received >= amount),
-  constraint pos_tenders_non_cash_exact_amount_chk check (tender_type = 'cash' or amount_received = amount),
-  constraint pos_tenders_non_cash_reference_chk check (
-    tender_type = 'cash' or nullif(btrim(coalesce(payment_reference, '')), '') is not null
-  )
-);
-
-create index if not exists pos_tenders_type_captured_idx
-  on public.pos_tenders (tender_type, captured_at desc);
-
-alter table public.pos_sale_requests enable row level security;
-alter table public.pos_tenders enable row level security;
-revoke all on public.pos_sale_requests, public.pos_tenders from public, anon, authenticated;
-grant all on public.pos_sale_requests, public.pos_tenders to service_role;
-grant usage, select on sequence public.pos_tenders_id_seq to service_role;
-
-create or replace function public.enqueue_admin_paid_order_push_dispatch()
-returns trigger
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  previous_payment_status text := lower(trim(coalesce(old.payment_status, '')));
-  next_payment_status text := lower(trim(coalesce(new.payment_status, '')));
-begin
-  if tg_op = 'INSERT' then
-    previous_payment_status := '';
-  end if;
-
-  if next_payment_status = 'paid'
-    and previous_payment_status <> 'paid'
-    and coalesce(new.order_source, 'storefront') <> 'pos' then
-    insert into public.admin_push_dispatches (order_id, notification_type)
-    values (new.id, 'new_paid_order')
-    on conflict (notification_type, order_id) do nothing;
-  end if;
-
-  return new;
-end;
-$$;
 
 create or replace function public.create_pos_sale(
   p_idempotency_key uuid,
@@ -286,12 +188,5 @@ $$;
 
 revoke all on function public.create_pos_sale(uuid, text, uuid, text, integer, text, jsonb) from public, anon, authenticated;
 grant execute on function public.create_pos_sale(uuid, text, uuid, text, integer, text, jsonb) to service_role;
-
-comment on column public.orders.order_source is
-  'Immutable sales channel: storefront or walk-in POS.';
-comment on table public.pos_tenders is
-  'One initial tender per walk-in sale. Split tender is intentionally deferred.';
-comment on function public.create_pos_sale(uuid, text, uuid, text, integer, text, jsonb) is
-  'Creates one paid walk-in sale and reserves only the residual locked stock after earlier paid-order reservations.';
 
 commit;
