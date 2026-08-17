@@ -117,7 +117,7 @@ export function AdminSidebar({
         </div>
       </div>
 
-      <aside className="wood-surface hidden flex h-screen flex-col overflow-hidden rounded-[28px] border border-white/5 p-4 text-[#E6E8EB] shadow-[0_18px_36px_rgba(15,23,42,0.14)] lg:flex">
+      <aside className="wood-surface sticky top-5 hidden h-[calc(100dvh-2.5rem)] overflow-y-auto overscroll-contain rounded-[28px] border border-white/5 p-4 text-[#E6E8EB] shadow-[0_18px_36px_rgba(15,23,42,0.14)] lg:flex lg:flex-col">
         <div className="sidebar-header shrink-0 border-b border-white/5 pb-5">
           <div className="brand-row flex items-center gap-3">
             <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-[20px]">
@@ -160,7 +160,7 @@ export function AdminSidebar({
             onClick={() => setIsDrawerOpen(false)}
             className="fixed inset-0 z-40 bg-[#111418]/45 backdrop-blur-[2px]"
           />
-          <div className="wood-surface fixed inset-y-0 right-0 z-50 flex h-screen w-[min(88vw,340px)] flex-col overflow-hidden border-l border-white/10 px-4 py-5 text-[#E6E8EB] shadow-[-20px_0_48px_rgba(15,23,42,0.28)]">
+          <div className="wood-surface fixed inset-y-0 right-0 z-50 h-screen w-[min(88vw,340px)] overflow-y-auto overscroll-contain border-l border-white/10 px-4 py-5 text-[#E6E8EB] shadow-[-20px_0_48px_rgba(15,23,42,0.28)]">
             <div className="shrink-0 border-b border-white/5 pb-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex min-w-0 items-start gap-3">
