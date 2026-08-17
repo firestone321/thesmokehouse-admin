@@ -13,7 +13,25 @@ type Receipt = {
   tenderType: string;
   amountReceived: number;
   changeGiven: number;
+  hardware: HardwareInstructions | HardwareUnavailable | null;
 };
+
+type HardwareInstructions = {
+  status: "ready";
+  bridgeUrl: string;
+  receipt: {
+    saleId: string;
+    date: string;
+    items: Array<{ name: string; quantity: number; unitPrice: number; total: number }>;
+    subtotal: number;
+    total: number;
+    paymentMethod: "cash" | "mobile_money" | "card";
+  };
+  printAuthorization: string;
+  drawerAuthorization?: string;
+};
+
+type HardwareUnavailable = { status: "unavailable"; message: string };
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-UG", {
@@ -59,6 +77,7 @@ export function PosSaleWorkspace({ cashierEmail, menuItems }: { cashierEmail: st
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const [hardwareNotice, setHardwareNotice] = useState<string | null>(null);
 
   const total = useMemo(
     () => basket.reduce((sum, item) => sum + item.basePrice * item.quantity, 0),
@@ -76,6 +95,7 @@ export function PosSaleWorkspace({ cashierEmail, menuItems }: { cashierEmail: st
 
   function addItem(item: PosMenuItem) {
     setReceipt(null);
+    setHardwareNotice(null);
     setError(null);
     setIdempotencyKey(null);
     setBasket((current) => {
@@ -88,6 +108,7 @@ export function PosSaleWorkspace({ cashierEmail, menuItems }: { cashierEmail: st
 
   function changeQuantity(menuItemId: number, nextQuantity: number) {
     setReceipt(null);
+    setHardwareNotice(null);
     setError(null);
     setIdempotencyKey(null);
     setBasket((current) =>
@@ -102,6 +123,7 @@ export function PosSaleWorkspace({ cashierEmail, menuItems }: { cashierEmail: st
   async function takePayment() {
     setError(null);
     setReceipt(null);
+    setHardwareNotice(null);
     if (basket.length === 0) {
       setError("Add at least one available item before taking payment.");
       return;
@@ -138,7 +160,13 @@ export function PosSaleWorkspace({ cashierEmail, menuItems }: { cashierEmail: st
         throw new Error(result.message ?? "Unable to create the POS sale.");
       }
 
-      setReceipt(result.data as Receipt);
+      const completedReceipt = result.data as Receipt;
+      setReceipt(completedReceipt);
+      if (completedReceipt.hardware?.status === "ready") {
+        void sendReceiptToLocalBridge(completedReceipt.hardware);
+      } else if (completedReceipt.hardware?.status === "unavailable") {
+        setHardwareNotice(completedReceipt.hardware.message);
+      }
       setBasket([]);
       setCashReceived("");
       setPaymentReference("");
@@ -148,6 +176,36 @@ export function PosSaleWorkspace({ cashierEmail, menuItems }: { cashierEmail: st
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  async function sendReceiptToLocalBridge(hardware: HardwareInstructions) {
+    const notices: string[] = [];
+    try {
+      const response = await fetch(`${hardware.bridgeUrl}/receipt/print`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${hardware.printAuthorization}` },
+        body: JSON.stringify(hardware.receipt)
+      });
+      if (!response.ok) throw new Error("Receipt printer rejected the request.");
+      notices.push("Receipt sent to printer.");
+    } catch {
+      notices.push("SALE COMPLETE — RECEIPT PRINT FAILED");
+    }
+
+    if (hardware.drawerAuthorization) {
+      try {
+        const response = await fetch(`${hardware.bridgeUrl}/drawer/open`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${hardware.drawerAuthorization}` },
+          body: JSON.stringify({ saleId: hardware.receipt.saleId })
+        });
+        if (!response.ok) throw new Error("Cash drawer rejected the request.");
+        notices.push("Cash drawer opened.");
+      } catch {
+        notices.push("SALE COMPLETE — DRAWER OPEN FAILED");
+      }
+    }
+    setHardwareNotice(notices.join(" "));
   }
 
   return (
@@ -180,9 +238,10 @@ export function PosSaleWorkspace({ cashierEmail, menuItems }: { cashierEmail: st
             <p className="text-xl font-semibold">{formatCurrency(receipt.totalAmount)}</p>
           </div>
           {receipt.changeGiven > 0 ? <p className="mt-3 text-sm font-semibold">Change due: {formatCurrency(receipt.changeGiven)}</p> : null}
-          <button type="button" onClick={() => window.print()} className="mt-4 rounded-2xl border border-[#A8D3B5] bg-white px-4 py-2.5 text-sm font-semibold text-[#166534] print:hidden">
+          {hardwareNotice ? <p className="mt-3 text-sm font-semibold text-[#166534]">{hardwareNotice}</p> : null}
+          {!receipt.hardware ? <button type="button" onClick={() => window.print()} className="mt-4 rounded-2xl border border-[#A8D3B5] bg-white px-4 py-2.5 text-sm font-semibold text-[#166534] print:hidden">
             Print receipt
-          </button>
+          </button> : null}
         </section>
       ) : null}
 
