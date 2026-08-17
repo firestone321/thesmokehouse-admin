@@ -66,7 +66,15 @@ function categoryIcon(category: string) {
   return categoryIcons[category.trim().toLowerCase()] ?? "🍽️";
 }
 
-export function PosSaleWorkspace({ cashierEmail, menuItems }: { cashierEmail: string | null; menuItems: PosMenuItem[] }) {
+export function PosSaleWorkspace({
+  cashierEmail,
+  menuItems,
+  canRecordSales
+}: {
+  cashierEmail: string | null;
+  menuItems: PosMenuItem[];
+  canRecordSales: boolean;
+}) {
   const [basket, setBasket] = useState<BasketLine[]>([]);
   const [query, setQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
@@ -124,6 +132,10 @@ export function PosSaleWorkspace({ cashierEmail, menuItems }: { cashierEmail: st
     setError(null);
     setReceipt(null);
     setHardwareNotice(null);
+    if (!canRecordSales) {
+      setError("POS view only. Ask a cashier, manager, or admin to record a sale.");
+      return;
+    }
     if (basket.length === 0) {
       setError("Add at least one available item before taking payment.");
       return;
@@ -303,7 +315,8 @@ export function PosSaleWorkspace({ cashierEmail, menuItems }: { cashierEmail: st
           <fieldset className="mt-5"><legend className="text-sm font-semibold">Payment method</legend><div className="mt-2 grid grid-cols-3 gap-2">{(["cash", "mobile_money", "card"] as const).map((method) => <button key={method} type="button" onClick={() => { setTenderType(method); setError(null); }} className={`min-h-20 rounded-2xl border px-2 text-sm font-bold transition ${tenderType === method ? method === "cash" ? "border-[#287241] bg-[#EAF8EF] text-[#166534] ring-2 ring-[#287241]/20" : method === "mobile_money" ? "border-[#6D4CC7] bg-[#F2EEFF] text-[#5637AC] ring-2 ring-[#6D4CC7]/20" : "border-[#286AA6] bg-[#EDF7FF] text-[#1D5B91] ring-2 ring-[#286AA6]/20" : "border-[#D7DDE4] bg-white text-[#4B5563]"}`}>{method === "cash" ? "💵" : method === "mobile_money" ? "📱" : "💳"}<span className="mt-1 block text-xs">{tenderLabel(method)}</span></button>)}</div></fieldset>
           {tenderType === "cash" ? <label className="mt-4 grid gap-2 text-sm font-semibold">Cash received <span className="text-xs font-normal text-[#6B7280]">Type numbers normally; commas are added automatically.</span><div className="relative"><span className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-sm font-bold text-[#4B5563]">UGX</span><UgxAmountInput value={cashReceived} onValueChange={setCashReceived} placeholder="0" className="w-full rounded-2xl border-2 border-[#287241] bg-[#F2FBF5] py-3 pl-14 pr-4 text-lg font-bold" aria-label="Cash received in Ugandan shillings" /></div></label> : <label className="mt-4 grid gap-2 text-sm font-semibold">{tenderLabel(tenderType)} reference<input value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} maxLength={120} placeholder="Confirmation or terminal reference" className="rounded-2xl border-2 border-[#4267B2] bg-[#F3F6FF] px-4 py-3 text-sm font-normal" /></label>}
           {tenderType === "cash" && cashReceived !== "" ? <p className={`mt-2 rounded-xl px-3 py-2 text-sm font-semibold ${Number(cashReceived) >= total ? "bg-[#EAF8EF] text-[#166534]" : "bg-[#FFF4E5] text-[#B45309]"}`}>{Number(cashReceived) >= total ? `Change: ${formatCurrency(change)}` : `Still needed: ${formatCurrency(total - Number(cashReceived))}`}</p> : null}
-          <button type="button" disabled={isSubmitting || basket.length === 0} onClick={takePayment} className="mt-5 w-full rounded-2xl bg-[#166534] px-4 py-4 text-base font-bold text-white shadow-[0_10px_22px_rgba(22,101,52,0.22)] disabled:cursor-not-allowed disabled:bg-[#9CA3AF]">{isSubmitting ? "Recording sale…" : "Take payment and create sale"}</button>
+          {!canRecordSales ? <p className="mt-5 rounded-2xl bg-[#F3F4F6] px-4 py-3 text-sm font-semibold text-[#6B7280]">POS view only. A cashier, manager, or admin records sales.</p> : null}
+          <button type="button" disabled={!canRecordSales || isSubmitting || basket.length === 0} onClick={takePayment} className="mt-5 w-full rounded-2xl bg-[#166534] px-4 py-4 text-base font-bold text-white shadow-[0_10px_22px_rgba(22,101,52,0.22)] disabled:cursor-not-allowed disabled:bg-[#9CA3AF]">{!canRecordSales ? "View only" : isSubmitting ? "Recording sale…" : "Take payment and create sale"}</button>
           <p className="mt-3 text-xs leading-5 text-[#6B7280]">One payment method per sale for now. Split payments remain pending proprietor approval.</p>
         </aside>
       </div>

@@ -10,6 +10,7 @@ const dashboardRoles = new Set<AdminRole>(["admin", "manager", "chef", "staff", 
 const staffProvisioningRoles = new Set<AdminRole>(["admin", "manager"]);
 const approvalRoles = new Set<AdminRole>(["admin", "manager"]);
 const posRoles = new Set<AdminRole>(["admin", "manager", "cashier"]);
+const posViewRoles = new Set<AdminRole>(["admin", "manager", "cashier", "staff"]);
 
 export class AdminAuthorizationError extends Error {
   readonly status: 401 | 403;
@@ -84,6 +85,10 @@ export async function requireDashboardRole(): Promise<{ userId: string; email: s
 
 export async function requirePosAccess(): Promise<{ userId: string; email: string | null; role: AdminRole }> {
   return requireRoleFromSet(posRoles);
+}
+
+export async function requirePosViewAccess(): Promise<{ userId: string; email: string | null; role: AdminRole }> {
+  return requireRoleFromSet(posViewRoles);
 }
 
 const ALLOWED_REQUEST_ORIGINS = new Set<string>(
