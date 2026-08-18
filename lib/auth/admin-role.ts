@@ -9,7 +9,7 @@ const approvedAdminRoles = new Set<AdminRole>(["admin", "manager", "chef", "staf
 const dashboardRoles = new Set<AdminRole>(["admin", "manager", "chef", "staff", "cashier"]);
 const staffProvisioningRoles = new Set<AdminRole>(["admin", "manager"]);
 const approvalRoles = new Set<AdminRole>(["admin", "manager"]);
-const posRoles = new Set<AdminRole>(["admin", "manager", "cashier"]);
+const posRoles = new Set<AdminRole>(["admin", "manager", "cashier", "staff"]);
 const posViewRoles = new Set<AdminRole>(["admin", "manager", "cashier", "staff"]);
 
 export class AdminAuthorizationError extends Error {
@@ -36,8 +36,14 @@ export function isRegularStaffRole(role: AdminRole) {
 
 async function requireRoleFromSet(allowedRoles: Set<AdminRole>): Promise<{ userId: string; email: string | null; role: AdminRole }> {
   if (await isLocalAuthBypassEnabled()) {
+    const localProfileId = process.env.LOCAL_AUTH_BYPASS_PROFILE_ID?.trim();
+
+    if (!localProfileId) {
+      throw new Error("LOCAL_AUTH_BYPASS_PROFILE_ID is required when localhost auth bypass performs database mutations.");
+    }
+
     return {
-      userId: "local-auth-bypass",
+      userId: localProfileId,
       email: "Localhost auth bypass",
       role: "admin"
     };
