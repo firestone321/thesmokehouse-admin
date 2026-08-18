@@ -69,8 +69,9 @@ export function UgxAmountInput({
       {...props}
       type="text"
       inputMode={allowDecimals ? "decimal" : "numeric"}
-      defaultValue={formatDefaultValue(defaultValue)}
-      value={controlledValue}
+      {...(value === undefined
+        ? { defaultValue: formatDefaultValue(defaultValue) }
+        : { value: controlledValue })}
       onChange={(event) => {
         const sanitized = sanitizeUgxInput(event.currentTarget.value, allowDecimals, decimalScale);
         event.currentTarget.value = formatUgxInput(sanitized);

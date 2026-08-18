@@ -23,14 +23,21 @@ function normalizeForHash(input: {
 async function loadCanonicalPosReceipt(orderId: number, cashierProfileId: string): Promise<CanonicalPosReceipt> {
   const { data, error } = await createAdminSupabaseClient()
     .from("orders")
-    .select("order_number,paid_at,total_amount,payment_provider,order_items(menu_item_name,quantity,unit_price,line_total)")
+    .select("order_number,paid_at,total_amount,order_items(menu_item_name,quantity,unit_price,line_total)")
     .eq("id", orderId)
     .eq("order_source", "pos")
     .eq("cashier_profile_id", cashierProfileId)
     .single();
 
   if (error || !data) throw new Error("Unable to load the committed POS receipt for the hardware bridge.");
-  const tender = data.payment_provider;
+  const { data: tenderData, error: tenderError } = await createAdminSupabaseClient()
+    .from("pos_tenders")
+    .select("tender_type")
+    .eq("order_id", orderId)
+    .single();
+
+  if (tenderError || !tenderData) throw new Error("Unable to load the committed POS tender for the hardware bridge.");
+  const tender = tenderData.tender_type;
   if (tender !== "cash" && tender !== "mobile_money" && tender !== "card") {
     throw new Error("Committed POS receipt has an unsupported tender type.");
   }
@@ -79,8 +86,14 @@ export async function POST(request: Request) {
       throw new Error("The POS sale did not return a receipt.");
     }
 
-    let hardware: Awaited<ReturnType<typeof issuePosHardwareInstructions>> | { status: "unavailable"; message: string } = null;
-    if (isPosHardwareBridgeEnabled()) {
+    const committedTender = String(sale.tender_type);
+    let hardware: Awaited<ReturnType<typeof issuePosHardwareInstructions>> | { status: "unavailable" | "external_terminal"; message: string } = null;
+    if (committedTender === "mobile_money" || committedTender === "card") {
+      hardware = {
+        status: "external_terminal",
+        message: "Visa POS terminal receipt applies. Local receipt printer and cash drawer were not triggered."
+      };
+    } else if (isPosHardwareBridgeEnabled()) {
       try {
         const receipt = await loadCanonicalPosReceipt(Number(sale.id), actor.userId);
         hardware = await issuePosHardwareInstructions(receipt);
@@ -97,7 +110,7 @@ export async function POST(request: Request) {
         orderNumber: String(sale.order_number),
         status: String(sale.status),
         totalAmount: Number(sale.total_amount),
-        tenderType: String(sale.tender_type),
+        tenderType: committedTender,
         amountReceived: Number(sale.amount_received),
         changeGiven: Number(sale.change_given),
         hardware

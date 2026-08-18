@@ -107,17 +107,17 @@ async function signHardwareAction(config: HardwareConfig, action: "print_receipt
 
 /** Called after a committed POS sale; null preserves existing behaviour while disabled. */
 export async function issuePosHardwareInstructions(receipt: CanonicalPosReceipt): Promise<PosHardwareInstructions | null> {
+  if (receipt.paymentMethod !== "cash") return null;
+
   const config = readConfig();
   if (!config) return null;
   const printAuthorization = await signHardwareAction(config, "print_receipt", receipt.saleId);
-  const drawerAuthorization = receipt.paymentMethod === "cash"
-    ? await signHardwareAction(config, "open_drawer", receipt.saleId)
-    : undefined;
+  const drawerAuthorization = await signHardwareAction(config, "open_drawer", receipt.saleId);
   return {
     status: "ready",
     bridgeUrl: config.bridgeUrl,
     receipt,
     printAuthorization,
-    ...(drawerAuthorization ? { drawerAuthorization } : {})
+    drawerAuthorization
   };
 }

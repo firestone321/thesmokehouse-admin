@@ -12,3 +12,5 @@ protein-quick-add-audit-2026-07-20.md
 tsconfig.tsbuildinfo
 /.security-audit-local/
 /.pos-audit-local/
+/order-reset-backups/
+.env.example
