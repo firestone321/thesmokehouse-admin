@@ -37,6 +37,16 @@ export async function POST(request: Request) {
 
     const timestamp = new Date().toISOString();
     const supabaseAdmin = createAdminSupabaseClient();
+    if (body.isPosPrintStation) {
+      const { error: clearStationError } = await supabaseAdmin
+        .from("admin_push_subscriptions")
+        .update({ is_pos_print_station: false, updated_at: timestamp })
+        .eq("is_pos_print_station", true)
+        .neq("endpoint", body.endpoint);
+      if (clearStationError) {
+        throw new Error(`Unable to update the previous POS print station: ${clearStationError.message}`);
+      }
+    }
     const { data, error } = await supabaseAdmin
       .from("admin_push_subscriptions")
       .upsert(
@@ -45,6 +55,7 @@ export async function POST(request: Request) {
           endpoint: body.endpoint,
           p256dh: body.keys.p256dh,
           auth: body.keys.auth,
+          is_pos_print_station: body.isPosPrintStation,
           last_seen_at: timestamp,
           updated_at: timestamp
         },
@@ -52,7 +63,7 @@ export async function POST(request: Request) {
           onConflict: "endpoint"
         }
       )
-      .select("id,endpoint,last_seen_at")
+      .select("id,endpoint,last_seen_at,is_pos_print_station")
       .single();
 
     if (error) {
@@ -74,7 +85,8 @@ export async function POST(request: Request) {
       ok: true,
       subscriptionId: data.id,
       endpoint: data.endpoint,
-      lastSeenAt: data.last_seen_at
+      lastSeenAt: data.last_seen_at,
+      isPosPrintStation: data.is_pos_print_station
     });
   } catch (error) {
     if (error instanceof RequestBodyTooLargeError) {

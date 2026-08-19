@@ -1,7 +1,7 @@
 import "server-only";
 
 import { Buffer } from "node:buffer";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { calculateJwkThumbprint, importJWK, SignJWT, type JWK } from "jose";
 
 export type CanonicalPosReceipt = {
@@ -10,7 +10,7 @@ export type CanonicalPosReceipt = {
   items: Array<{ name: string; quantity: number; unitPrice: number; total: number }>;
   subtotal: number;
   total: number;
-  paymentMethod: "cash" | "mobile_money" | "card";
+  paymentMethod: "cash" | "mobile_money" | "card" | "other";
 };
 
 export type PosHardwareInstructions = {
@@ -92,10 +92,35 @@ export async function getPosHardwareJwks(): Promise<{ keys: JWK[] } | null> {
   return { keys: [{ ...config.publicJwk, kid: keyId }] };
 }
 
-async function signHardwareAction(config: HardwareConfig, action: "print_receipt" | "open_drawer", saleId: string): Promise<string> {
+function getReceiptFingerprint(receipt: CanonicalPosReceipt): string {
+  // Keep this field order in sync with the bridge's receiptFingerprint helper.
+  // JSONB does not promise key order, so hashing the raw object would not bind
+  // the same receipt consistently across the database, browser, and bridge.
+  const canonicalReceipt = {
+    saleId: receipt.saleId,
+    date: receipt.date,
+    items: receipt.items.map((item) => ({
+      name: item.name,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      total: item.total
+    })),
+    subtotal: receipt.subtotal,
+    total: receipt.total,
+    paymentMethod: receipt.paymentMethod
+  };
+  return createHash("sha256").update(JSON.stringify(canonicalReceipt), "utf8").digest("base64url");
+}
+
+async function signHardwareAction(
+  config: HardwareConfig,
+  action: "print_receipt" | "open_drawer",
+  saleId: string,
+  extraClaims: Record<string, string> = {}
+): Promise<string> {
   const keyId = config.keyId || (await calculateJwkThumbprint(config.publicJwk));
   const privateKey = await importJWK(config.privateJwk, "EdDSA");
-  return new SignJWT({ action, sale_id: saleId })
+  return new SignJWT({ action, sale_id: saleId, ...extraClaims })
     .setProtectedHeader({ alg: "EdDSA", kid: keyId, typ: "JWT" })
     .setIssuedAt()
     .setIssuer(config.issuer)
@@ -120,4 +145,27 @@ export async function issuePosHardwareInstructions(receipt: CanonicalPosReceipt)
     printAuthorization,
     drawerAuthorization
   };
+}
+
+/**
+ * Issues a receipt-only authorization for a canonical paid online-order job.
+ * The JWT binds the physical print to both the immutable receipt snapshot and
+ * the database job; the browser receives only this short-lived bearer token.
+ */
+export async function issueOnlineReceiptPrintInstructions(input: {
+  printJobId: string;
+  orderId: number;
+  receipt: CanonicalPosReceipt;
+}): Promise<{ bridgeUrl: string; printAuthorization: string; receiptFingerprint: string } | null> {
+  const config = readConfig();
+  if (!config) return null;
+
+  const receiptFingerprint = getReceiptFingerprint(input.receipt);
+  const printAuthorization = await signHardwareAction(config, "print_receipt", input.receipt.saleId, {
+    order_id: String(input.orderId),
+    print_job_id: input.printJobId,
+    receipt_hash: receiptFingerprint
+  });
+
+  return { bridgeUrl: config.bridgeUrl, printAuthorization, receiptFingerprint };
 }

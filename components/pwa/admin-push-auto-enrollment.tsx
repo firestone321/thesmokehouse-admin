@@ -8,6 +8,17 @@ import {
   supportsPushNotifications
 } from "@/lib/pwa/service-worker";
 
+const POS_PRINT_STATION_STORAGE_KEY = "smokehouse-pos-print-station";
+
+export function isThisDevicePosPrintStation() {
+  return typeof window !== "undefined" && window.localStorage.getItem(POS_PRINT_STATION_STORAGE_KEY) === "true";
+}
+
+export function setThisDevicePosPrintStation(enabled: boolean) {
+  window.localStorage.setItem(POS_PRINT_STATION_STORAGE_KEY, enabled ? "true" : "false");
+  window.dispatchEvent(new Event("smokehouse-pos-print-station-changed"));
+}
+
 function encodeVapidPublicKey(value: ArrayBuffer | null) {
   if (!value) {
     return "";
@@ -22,7 +33,7 @@ function subscriptionMatchesVapidKey(subscription: PushSubscription, publicKey: 
   return subscriptionKey === publicKey;
 }
 
-async function saveAdminPushSubscription(subscription: PushSubscription) {
+async function saveAdminPushSubscription(subscription: PushSubscription, isPosPrintStation: boolean) {
   const serialized = subscription.toJSON();
   const p256dh = serialized.keys?.p256dh;
   const auth = serialized.keys?.auth;
@@ -43,7 +54,8 @@ async function saveAdminPushSubscription(subscription: PushSubscription) {
       keys: {
         p256dh,
         auth
-      }
+      },
+      isPosPrintStation
     })
   });
 
@@ -122,7 +134,8 @@ export function AdminPushAutoEnrollment() {
       }
 
       const subscription = await createOrRefreshSubscription(registration);
-      await saveAdminPushSubscription(subscription);
+      await saveAdminPushSubscription(subscription, isThisDevicePosPrintStation());
+      registration.active?.postMessage({ type: "smokehouse-retry-online-receipt-prints" });
       void fetch("/api/admin/push/process", { method: "POST" }).catch((error) => {
         console.warn("admin_push_queue_kick_failed", error);
       });
@@ -137,6 +150,11 @@ export function AdminPushAutoEnrollment() {
 
   useEffect(() => {
     void enroll({ requestPermission: false });
+    const refreshForStationChange = () => {
+      void enroll({ requestPermission: false });
+    };
+    window.addEventListener("smokehouse-pos-print-station-changed", refreshForStationChange);
+    return () => window.removeEventListener("smokehouse-pos-print-station-changed", refreshForStationChange);
   }, []);
 
   if (status === "active" || status === "checking") {

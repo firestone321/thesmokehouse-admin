@@ -37,6 +37,7 @@ type AdminPushSubscriptionRow = {
   endpoint: string;
   p256dh: string;
   auth: string;
+  is_pos_print_station: boolean;
 };
 
 type AdminPushDispatchRow = {
@@ -167,7 +168,8 @@ function getOrderActorLabel(order: AdminPushOrderSummary) {
 
 function buildAdminOrderNotificationPayload(
   order: AdminPushOrderSummary,
-  notificationType: AdminPushNotificationType
+  notificationType: AdminPushNotificationType,
+  onlineReceiptPrintJobId?: string | null
 ) {
   const actorLabel = getOrderActorLabel(order);
 
@@ -186,15 +188,25 @@ function buildAdminOrderNotificationPayload(
     };
   }
 
+  const data: {
+    orderId: number;
+    url: string;
+    eventType: typeof ADMIN_PAID_ORDER_NOTIFICATION_TYPE;
+    onlineReceiptPrintJobId?: string;
+  } = {
+    orderId: order.id,
+    url: `/orders/${order.id}`,
+    eventType: ADMIN_PAID_ORDER_NOTIFICATION_TYPE
+  };
+  if (onlineReceiptPrintJobId) {
+    data.onlineReceiptPrintJobId = onlineReceiptPrintJobId;
+  }
+
   return {
     title: "New paid order received",
     body: actorLabel ? `${order.order_number} from ${actorLabel}` : `${order.order_number} is ready for review`,
     tag: `admin-new-paid-order:${order.id}`,
-    data: {
-      orderId: order.id,
-      url: `/orders/${order.id}`,
-      eventType: ADMIN_PAID_ORDER_NOTIFICATION_TYPE
-    }
+    data
   };
 }
 
@@ -235,7 +247,7 @@ async function listAdminPushSubscriptions(notificationType: AdminPushNotificatio
 
   const query = supabaseAdmin
     .from("admin_push_subscriptions")
-    .select("id,endpoint,p256dh,auth")
+    .select("id,endpoint,p256dh,auth,is_pos_print_station")
     .in("owner_profile_id", recipientProfileIds)
     .order("last_seen_at", { ascending: false })
     .order("updated_at", { ascending: false })
@@ -248,6 +260,21 @@ async function listAdminPushSubscriptions(notificationType: AdminPushNotificatio
   }
 
   return (data ?? []) as AdminPushSubscriptionRow[];
+}
+
+async function loadOnlineReceiptPrintJobId(orderId: number): Promise<string | null> {
+  const supabaseAdmin = createAdminSupabaseClient();
+  const { data, error } = await supabaseAdmin
+    .from("online_receipt_print_jobs")
+    .select("id")
+    .eq("order_id", orderId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Unable to load paid-order receipt print job: ${error.message}`);
+  }
+
+  return typeof data?.id === "string" ? data.id : null;
 }
 
 async function listDispatchReceipts(dispatchId: string) {
@@ -401,12 +428,19 @@ async function processDispatch(dispatch: AdminPushDispatchRow) {
     return { ...createEmptyProcessDispatchResult(), succeeded: 1 };
   }
 
-  const payload = buildAdminOrderNotificationPayload(order, dispatch.notification_type);
+  const onlineReceiptPrintJobId = dispatch.notification_type === ADMIN_PAID_ORDER_NOTIFICATION_TYPE
+    ? await loadOnlineReceiptPrintJobId(order.id)
+    : null;
   const deliveryResults = await runLimited(
     pendingSubscriptions,
     SEND_CONCURRENCY,
     async (subscription): Promise<SubscriptionDeliveryResult> => {
       try {
+        const payload = buildAdminOrderNotificationPayload(
+          order,
+          dispatch.notification_type,
+          subscription.is_pos_print_station ? onlineReceiptPrintJobId : null
+        );
         const result = await sendPushNotification(subscription, payload);
 
         if (result.status === "sent") {

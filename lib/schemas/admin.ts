@@ -186,7 +186,25 @@ export const adminPushSubscriptionSchema = z.object({
   keys: z.object({
     p256dh: z.string().trim().min(1).max(maxTextLength),
     auth: z.string().trim().min(1).max(maxTextLength)
-  })
+  }),
+  isPosPrintStation: z.boolean().optional().default(false)
+});
+
+export const onlineReceiptPrintJobResultSchema = z.object({
+  status: z.enum(["queued", "failed"]),
+  bridgeResult: z.object({
+    status: z.string().trim().min(1).max(80),
+    detail: z.string().trim().max(500).optional()
+  }).optional(),
+  error: z.string().trim().min(1).max(500).optional()
+}).superRefine((value, context) => {
+  if (value.status === "failed" && !value.error) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["error"], message: "A failed print result needs an error." });
+  }
+});
+
+export const onlineReceiptPrintJobRouteParamsSchema = z.object({
+  printJobId: z.string().uuid()
 });
 
 export const adminOrdersQuerySchema = z.object({

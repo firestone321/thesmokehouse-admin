@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { PosPrintStationToggle } from "@/components/pwa/pos-print-station-toggle";
 import { UgxAmountInput } from "@/components/ugx-amount-input";
 import type { PosMenuItem, PosTenderType } from "@/lib/pos/types";
 
@@ -236,6 +237,7 @@ export function PosSaleWorkspace({
             Signed in as <span className="font-semibold text-[#111418]">{cashierEmail ?? "POS cashier"}</span>
           </div>
         </div>
+        <div className="mt-4 max-w-2xl"><PosPrintStationToggle /></div>
       </section>
 
       {error ? <section className="rounded-[22px] border border-[#F4C7C7] bg-[#FFF8F8] px-4 py-3 text-sm text-[#9F2D2D]">{error}</section> : null}
