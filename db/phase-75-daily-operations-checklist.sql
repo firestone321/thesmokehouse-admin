@@ -77,7 +77,7 @@ begin
   end if;
 
   if jsonb_typeof(p_responses) <> 'object'
-    or jsonb_object_length(p_responses) <> 8
+    or (select count(*) from jsonb_object_keys(p_responses)) <> 8
     or not (
       p_responses ?& array[
         'staff_readiness',
