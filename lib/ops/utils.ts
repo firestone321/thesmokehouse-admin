@@ -35,6 +35,20 @@ export function getUgandaServiceDate(reference = new Date()) {
   }).format(reference);
 }
 
+export const DAILY_OPERATIONS_CHECKLIST_ACTIVATION_HOUR = 6;
+
+export function isDailyOperationsChecklistActive(reference = new Date()) {
+  const hour = Number(
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Africa/Kampala",
+      hour: "2-digit",
+      hourCycle: "h23"
+    }).formatToParts(reference).find((part) => part.type === "hour")?.value
+  );
+
+  return Number.isFinite(hour) && hour >= DAILY_OPERATIONS_CHECKLIST_ACTIVATION_HOUR;
+}
+
 export function getUgandaDayRange(reference = new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Africa/Kampala",

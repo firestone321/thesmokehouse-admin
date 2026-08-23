@@ -17,6 +17,7 @@ export const adminNavItems: AdminNavItem[] = [
   { label: "Inventory", href: "/inventory", description: "Resupplies, stock, and movement history" },
   { label: "Kitchen Queue", href: "/kitchen-queue", description: "Prep and smoker load plan" },
   { label: "Activity", href: "/activity", description: "Staff changes and approvals", allowedRoles: ["admin", "manager"] },
+  { label: "Daily Issues", href: "/daily-issues", description: "Opening issues and staff notes", allowedRoles: ["admin", "manager"] },
   { label: "Reports", href: "/reports", description: "Sales, stock, and operations insights", allowedRoles: ["admin", "manager"] },
   { label: "Staff", href: "/staff", description: "Staff planning stays deferred", allowedRoles: ["admin", "manager"] },
   { label: "Settings", href: "/settings", description: "Controls and guardrails" }

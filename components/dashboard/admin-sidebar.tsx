@@ -9,7 +9,7 @@ import { adminNavItems } from "@/lib/admin/nav";
 import type { AdminRole } from "@/lib/auth/admin-role";
 
 const quickAccessLabels = new Set(["Dashboard", "Orders", "POS", "Menu", "Resupplies", "Suppliers", "Inventory", "Kitchen Queue", "Reports"]);
-const secondaryNavLabels = new Set(["Activity", "Reports", "Staff", "Settings"]);
+const secondaryNavLabels = new Set(["Activity", "Daily Issues", "Reports", "Staff", "Settings"]);
 
 function SidebarNav({
   items,
