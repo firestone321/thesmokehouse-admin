@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { AdminAuthorizationError, assertSameOriginRequest, requireDashboardRole } from "@/lib/auth/admin-role";
 import { createAdminSupabaseClient } from "@/lib/supabase/server";
-import { getUgandaServiceDate, isDailyOperationsChecklistActive } from "@/lib/ops/utils";
+import { getUgandaServiceDate, getUgandaServiceDateOffset, isDailyOperationsChecklistActive } from "@/lib/ops/utils";
 import { DAILY_OPERATIONS_CHECKLIST_ITEMS, mapDailyOperationsChecklistRecord } from "@/lib/ops/daily-checklist";
 import { getDailyOperationsChecklist } from "@/lib/ops/daily-checklist-data";
+import { getEndOfDayChecklist } from "@/lib/ops/end-of-day-checklist-data";
 import { OperationsSchemaMissingError } from "@/lib/ops/errors";
 import { RequestValidationError, parseJsonBody } from "@/lib/validation/http";
 
@@ -52,6 +53,10 @@ export async function POST(request: Request) {
 
     if (body.serviceDate !== getUgandaServiceDate()) {
       return NextResponse.json({ ok: false, message: "This checklist is for a different service date. Refresh the dashboard." }, { status: 409 });
+    }
+
+    if (!await getEndOfDayChecklist(getUgandaServiceDateOffset(-1))) {
+      return NextResponse.json({ ok: false, message: "Complete the previous day’s close-of-day checklist before starting today." }, { status: 409 });
     }
 
     const expectedIds = new Set<string>(DAILY_OPERATIONS_CHECKLIST_ITEMS.map((item) => item.id));

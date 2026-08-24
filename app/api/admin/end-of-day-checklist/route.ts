@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { AdminAuthorizationError, assertSameOriginRequest, requireDashboardRole } from "@/lib/auth/admin-role";
 import { createAdminSupabaseClient } from "@/lib/supabase/server";
-import { getUgandaServiceDate, getUgandaServiceDateOffset, isDailyOperationsChecklistActive, isEndOfDayChecklistActive } from "@/lib/ops/utils";
+import { getUgandaServiceDate, getUgandaServiceDateOffset, isEndOfDayChecklistActive } from "@/lib/ops/utils";
 import { END_OF_DAY_CHECKLIST_ITEMS, mapEndOfDayChecklistRecord } from "@/lib/ops/end-of-day-checklist";
 import { getEndOfDayChecklist } from "@/lib/ops/end-of-day-checklist-data";
 import { OperationsSchemaMissingError } from "@/lib/ops/errors";
@@ -23,19 +23,19 @@ export async function GET() {
     await requireDashboardRole();
     const currentServiceDate = getUgandaServiceDate();
     const previousServiceDate = getUgandaServiceDateOffset(-1);
-    const openingActive = isDailyOperationsChecklistActive();
     const closingActive = isEndOfDayChecklistActive();
-    const previousRecord = openingActive ? await getEndOfDayChecklist(previousServiceDate) : null;
+    const previousRecord = await getEndOfDayChecklist(previousServiceDate);
     const currentRecord = closingActive ? await getEndOfDayChecklist(currentServiceDate) : null;
-    const serviceDate = openingActive && !previousRecord
+    const previousCloseOutstanding = !previousRecord;
+    const serviceDate = previousCloseOutstanding
       ? previousServiceDate
       : currentServiceDate;
-    const active = Boolean((openingActive && !previousRecord) || closingActive);
+    const active = Boolean(previousCloseOutstanding || (closingActive && !currentRecord));
     return NextResponse.json({
       ok: true,
       active,
       serviceDate,
-      record: serviceDate === previousServiceDate && openingActive && !previousRecord ? null : currentRecord
+      record: previousCloseOutstanding ? null : currentRecord
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to load the end-of-day checklist.";
@@ -59,6 +59,10 @@ export async function POST(request: Request) {
 
     if (!isPreviousClose && !isEndOfDayChecklistActive()) {
       return NextResponse.json({ ok: false, message: "The end-of-day checklist becomes available at 8:30 PM EAT." }, { status: 409 });
+    }
+
+    if (!isPreviousClose && !await getEndOfDayChecklist(previousServiceDate)) {
+      return NextResponse.json({ ok: false, message: "Complete the previous day’s close-of-day checklist first." }, { status: 409 });
     }
 
     const expectedIds = new Set<string>(END_OF_DAY_CHECKLIST_ITEMS.map((item) => item.id));

@@ -50,16 +50,17 @@ export default async function AdminLayout({ children }: Readonly<{ children: Rea
   try {
     const [openingRecord, previousClosingRecord, currentClosingRecord] = await Promise.all([
       checklistActive ? getDailyOperationsChecklist(serviceDate) : Promise.resolve(null),
-      checklistActive ? getEndOfDayChecklist(previousServiceDate) : Promise.resolve(null),
+      getEndOfDayChecklist(previousServiceDate),
       endOfDayChecklistActive ? getEndOfDayChecklist(serviceDate) : Promise.resolve(null)
     ]);
     checklist = openingRecord;
-    if (checklistActive && !previousClosingRecord) {
+    if (!previousClosingRecord) {
       endOfDayChecklistDate = previousServiceDate;
       endOfDayChecklist = null;
       endOfDayGateActive = true;
     } else {
       endOfDayChecklist = currentClosingRecord;
+      endOfDayGateActive = endOfDayChecklistActive && !currentClosingRecord;
     }
   } catch (error) {
     if (error instanceof OperationsSchemaMissingError) {
