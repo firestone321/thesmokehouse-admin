@@ -88,7 +88,7 @@ function revalidateBusinessTruthHealth() {
 }
 
 function revalidateOrderPaths(orderId?: number | string) {
-  revalidatePaths(["/dashboard", "/orders", "/orders/history", orderId ? `/orders/${orderId}` : ""].filter(Boolean));
+  revalidatePaths(["/dashboard", "/orders", "/orders/history", "/kitchen-queue", orderId ? `/orders/${orderId}` : ""].filter(Boolean));
   revalidateBusinessTruthHealth();
 }
 
@@ -1521,6 +1521,7 @@ export async function updateOrderStatusAction(formData: FormData) {
   const supabase = createAdminSupabaseClient();
   const orderId = input.order_id;
   const nextStatus = input.next_status;
+  const returnTo = input.return_to ?? `/orders/${orderId}`;
   let note = input.note ?? null;
 
   if (nextStatus === "completed") {
@@ -1598,7 +1599,7 @@ export async function updateOrderStatusAction(formData: FormData) {
   }
 
   revalidateOrderPaths(orderId);
-  redirect(`/orders/${orderId}`);
+  redirect(returnTo);
 }
 
 function pickupCodesMatch(stored: string, submitted: string): boolean {

@@ -361,7 +361,8 @@ export const processProcurementReceiptToFinishedStockActionSchema = z.object({
 export const updateOrderStatusActionSchema = z.object({
   order_id: idSchema,
   next_status: z.enum(orderStatuses),
-  note: optionalText(maxLongTextLength)
+  note: optionalText(maxLongTextLength),
+  return_to: z.enum(["/kitchen-queue"]).optional()
 });
 
 export const completeOrderWithPickupCodeActionSchema = z.object({
