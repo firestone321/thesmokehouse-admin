@@ -26,10 +26,12 @@ export async function GET() {
   try {
     await requireDashboardRole();
     const active = isDailyOperationsChecklistActive();
+    const serviceDate = getUgandaServiceDate();
     return NextResponse.json({
       ok: true,
       active,
-      record: active ? await getDailyOperationsChecklist(getUgandaServiceDate()) : null
+      serviceDate,
+      record: active ? await getDailyOperationsChecklist(serviceDate) : null
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to load the daily checklist.";

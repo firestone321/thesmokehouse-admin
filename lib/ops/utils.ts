@@ -35,6 +35,13 @@ export function getUgandaServiceDate(reference = new Date()) {
   }).format(reference);
 }
 
+export function getUgandaServiceDateOffset(offset: number, reference = new Date()) {
+  const serviceDate = getUgandaServiceDate(reference);
+  const shifted = new Date(`${serviceDate}T00:00:00+03:00`);
+  shifted.setUTCDate(shifted.getUTCDate() + offset);
+  return getUgandaServiceDate(shifted);
+}
+
 export const DAILY_OPERATIONS_CHECKLIST_ACTIVATION_HOUR = 6;
 
 export function isDailyOperationsChecklistActive(reference = new Date()) {
@@ -47,6 +54,21 @@ export function isDailyOperationsChecklistActive(reference = new Date()) {
   );
 
   return Number.isFinite(hour) && hour >= DAILY_OPERATIONS_CHECKLIST_ACTIVATION_HOUR;
+}
+
+export const END_OF_DAY_CHECKLIST_ACTIVATION_MINUTES = 20 * 60 + 30;
+
+export function isEndOfDayChecklistActive(reference = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Africa/Kampala",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(reference);
+  const hour = Number(parts.find((part) => part.type === "hour")?.value);
+  const minute = Number(parts.find((part) => part.type === "minute")?.value);
+
+  return Number.isFinite(hour) && Number.isFinite(minute) && hour * 60 + minute >= END_OF_DAY_CHECKLIST_ACTIVATION_MINUTES;
 }
 
 export function getUgandaDayRange(reference = new Date()) {

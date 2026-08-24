@@ -2,18 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  DAILY_OPERATIONS_CHECKLIST_ITEMS,
-  type DailyOperationsChecklistRecord,
-  type DailyOperationsChecklistResponses,
-  type DailyOperationsChecklistStatus
-} from "@/lib/ops/daily-checklist";
+  END_OF_DAY_CHECKLIST_ITEMS,
+  type EndOfDayChecklistRecord,
+  type EndOfDayChecklistResponses,
+  type EndOfDayChecklistStatus
+} from "@/lib/ops/end-of-day-checklist";
 import { formatServiceDate } from "@/lib/ops/utils";
 
-function buildEmptyResponses(): Partial<DailyOperationsChecklistResponses> {
-  return {};
-}
-
-export function DailyOperationsGate({
+export function EndOfDayOperationsGate({
   serviceDate,
   active: initialActive,
   initialRecord,
@@ -21,23 +17,30 @@ export function DailyOperationsGate({
 }: {
   serviceDate: string;
   active: boolean;
-  initialRecord: DailyOperationsChecklistRecord | null;
+  initialRecord: EndOfDayChecklistRecord | null;
   children: React.ReactNode;
 }) {
   const [record, setRecord] = useState(initialRecord);
   const [active, setActive] = useState(initialActive);
-  const [responses, setResponses] = useState<Partial<DailyOperationsChecklistResponses>>(buildEmptyResponses);
+  const [checklistDate, setChecklistDate] = useState(serviceDate);
+  const [responses, setResponses] = useState<Partial<EndOfDayChecklistResponses>>({});
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
+    setResponses({});
+    setError(null);
+  }, [checklistDate]);
+
+  useEffect(() => {
     const interval = window.setInterval(async () => {
       try {
-        const response = await fetch("/api/admin/daily-checklist", { cache: "no-store" });
+        const response = await fetch("/api/admin/end-of-day-checklist", { cache: "no-store" });
         if (!response.ok) return;
         const payload = await response.json();
+        setChecklistDate(payload.serviceDate);
         setActive(Boolean(payload.active));
-        setRecord(payload.serviceDate === serviceDate ? payload.record : null);
+        setRecord(payload.record);
       } catch {
         // The form remains available for a direct submission if polling fails.
       }
@@ -47,13 +50,13 @@ export function DailyOperationsGate({
   }, [serviceDate]);
 
   const answeredCount = useMemo(
-    () => DAILY_OPERATIONS_CHECKLIST_ITEMS.filter((item) => responses[item.id]?.status).length,
+    () => END_OF_DAY_CHECKLIST_ITEMS.filter((item) => responses[item.id]?.status).length,
     [responses]
   );
 
   if (!active || record) return <>{children}</>;
 
-  function setStatus(itemId: keyof DailyOperationsChecklistResponses, status: DailyOperationsChecklistStatus) {
+  function setStatus(itemId: keyof EndOfDayChecklistResponses, status: EndOfDayChecklistStatus) {
     setResponses((current) => ({
       ...current,
       [itemId]: {
@@ -64,7 +67,7 @@ export function DailyOperationsGate({
     setError(null);
   }
 
-  function setNote(itemId: keyof DailyOperationsChecklistResponses, note: string) {
+  function setNote(itemId: keyof EndOfDayChecklistResponses, note: string) {
     setResponses((current) => ({
       ...current,
       [itemId]: {
@@ -76,13 +79,13 @@ export function DailyOperationsGate({
 
   async function submitChecklist() {
     setError(null);
-    const missingItem = DAILY_OPERATIONS_CHECKLIST_ITEMS.find((item) => !responses[item.id]?.status);
+    const missingItem = END_OF_DAY_CHECKLIST_ITEMS.find((item) => !responses[item.id]?.status);
     if (missingItem) {
-      setError(`Answer ${missingItem.label} before continuing.`);
+      setError(`Answer ${missingItem.label} before closing the day.`);
       return;
     }
 
-    const missingNote = DAILY_OPERATIONS_CHECKLIST_ITEMS.find(
+    const missingNote = END_OF_DAY_CHECKLIST_ITEMS.find(
       (item) => responses[item.id]?.status === "issue" && !responses[item.id]?.note?.trim()
     );
     if (missingNote) {
@@ -92,16 +95,16 @@ export function DailyOperationsGate({
 
     setIsSubmitting(true);
     try {
-      const response = await fetch("/api/admin/daily-checklist", {
+      const response = await fetch("/api/admin/end-of-day-checklist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ serviceDate, responses })
+        body: JSON.stringify({ serviceDate: checklistDate, responses })
       });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.message || "The checklist could not be completed.");
+      if (!response.ok) throw new Error(payload.message || "The end-of-day checklist could not be completed.");
       setRecord(payload.record);
     } catch (submissionError) {
-      setError(submissionError instanceof Error ? submissionError.message : "The checklist could not be completed.");
+      setError(submissionError instanceof Error ? submissionError.message : "The end-of-day checklist could not be completed.");
     } finally {
       setIsSubmitting(false);
     }
@@ -111,20 +114,20 @@ export function DailyOperationsGate({
     <section className="surface-card rounded-[32px] p-5 text-[#111418] sm:p-7">
       <div className="flex flex-col gap-3 border-b border-[#E4E7EB] pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-[11px] uppercase tracking-[0.22em] text-[#6B7280]">Opening control</p>
-          <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">Start-of-day checklist</h1>
+          <p className="text-[11px] uppercase tracking-[0.22em] text-[#6B7280]">Closing control</p>
+          <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">End-of-day checklist</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[#6B7280]">
-            This opens at 6:00 AM EAT. Complete it once for the whole team before using the dashboard. Any staff member can submit it; the first valid submission becomes the shared record for today.
+            This opens automatically at 8:30 PM EAT. Complete it once for the whole team; the first valid submission becomes the shared record for {formatServiceDate(checklistDate)}.
           </p>
         </div>
         <div className="rounded-2xl bg-[#F8FAFB] px-4 py-3 text-sm text-[#4B5563]">
-          <p className="font-semibold text-[#111418]">{formatServiceDate(serviceDate)}</p>
-          <p className="mt-1">{answeredCount}/{DAILY_OPERATIONS_CHECKLIST_ITEMS.length} answered</p>
+          <p className="font-semibold text-[#111418]">{formatServiceDate(checklistDate)}</p>
+          <p className="mt-1">{answeredCount}/{END_OF_DAY_CHECKLIST_ITEMS.length} answered</p>
         </div>
       </div>
 
       <div className="mt-5 space-y-3">
-        {DAILY_OPERATIONS_CHECKLIST_ITEMS.map((item, index) => {
+        {END_OF_DAY_CHECKLIST_ITEMS.map((item, index) => {
           const response = responses[item.id];
           return (
             <article key={item.id} className="rounded-[24px] border border-[#E4E7EB] bg-white p-4 sm:p-5">
@@ -178,7 +181,7 @@ export function DailyOperationsGate({
         disabled={isSubmitting}
         className="mt-5 w-full rounded-2xl bg-[#111418] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#2A2F35] disabled:cursor-wait disabled:opacity-60"
       >
-        {isSubmitting ? "Saving today’s checklist…" : "Complete checklist and open dashboard"}
+        {isSubmitting ? "Saving today’s closing checklist…" : "Complete checklist and close the day"}
       </button>
     </section>
   );
