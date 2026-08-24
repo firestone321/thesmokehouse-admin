@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
-import { AnalyticsBarChart } from "@/components/dashboard/analytics-bar-chart";
-import { OrdersCreatedDrilldown } from "@/components/reports/orders-created-drilldown";
+import { ReportsAnalytics } from "@/components/reports/reports-analytics";
 import { requireDashboardRole } from "@/lib/auth/admin-role";
 import { getAnalyticsSeries, getRevenueAnalyticsSeries } from "@/lib/analytics/queries";
 import { getInventoryPageData, getProcurementPageData } from "@/lib/ops/queries";
@@ -49,10 +48,7 @@ export default async function ReportsPage() {
         <article className="rounded-[26px] border border-[#F0D9B8] bg-[#FFF9EE] p-5"><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#9A6A1B]">Stock attention</p><p className="mt-3 text-3xl font-semibold">{formatCount(lowStockCount)}</p><p className="mt-2 text-sm text-[#6B7280]">Low current inventory or service-day stock rows</p></article>
       </section>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <section className="surface-card rounded-[32px] p-5"><div className="flex items-baseline justify-between gap-3"><div><p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Sales trend</p><h2 className="mt-2 text-xl font-semibold">Completed paid revenue</h2></div><p className="text-sm font-semibold">{revenueSeries.range.label}</p></div><div className="mt-5 rounded-[22px] border border-[#E4E7EB] bg-white p-4"><AnalyticsBarChart buckets={revenueSeries.buckets} formatValue={formatCurrency} /></div></section>
-        <OrdersCreatedDrilldown buckets={orderSeries.buckets} rangeLabel={orderSeries.range.label} />
-      </div>
+      <ReportsAnalytics initialRevenue={revenueSeries} initialOrders={orderSeries} />
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <section className="surface-card rounded-[32px] p-5"><p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Current stock</p><h2 className="mt-2 text-xl font-semibold">Finished portions and tracked supplies</h2><div className="mt-4 grid gap-3 sm:grid-cols-2"><div className="rounded-[20px] bg-[#F8FAFB] p-4"><p className="text-sm font-semibold">{formatCount(inventory.finishedStock.length)} finished portions</p><p className="mt-1 text-sm text-[#6B7280]">Live frozen sellable balance</p></div><div className="rounded-[20px] bg-[#F8FAFB] p-4"><p className="text-sm font-semibold">{formatCount(currentSupplyItems)} tracked supply items</p><p className="mt-1 text-sm text-[#6B7280]">Current ingredient and supply quantities</p></div></div><p className="mt-4 text-xs leading-5 text-[#6B7280]">This is a current balance, not a reconstructed historical stock valuation.</p></section>

@@ -1,7 +1,7 @@
 export const BUSINESS_TIME_ZONE = "Africa/Kampala";
 
 export type AnalyticsMetric = "revenue" | "orders";
-export type AnalyticsTimeframe = "today" | "7d" | "30d" | "180d" | "12m" | "custom";
+export type AnalyticsTimeframe = "today" | "7d" | "30d" | "3m" | "6m" | "12m" | "custom";
 export type AnalyticsBucketUnit = "hour" | "day" | "week" | "month";
 
 export interface LocalDateValue {

@@ -9,7 +9,7 @@ const timeframeOptions: Array<{ value: AnalyticsTimeframe; label: string }> = [
   { value: "today", label: "Today" },
   { value: "7d", label: "7 days" },
   { value: "30d", label: "30 days" },
-  { value: "180d", label: "180 days" },
+  { value: "6m", label: "6 months" },
   { value: "12m", label: "That year" },
   { value: "custom", label: "Custom period" }
 ];

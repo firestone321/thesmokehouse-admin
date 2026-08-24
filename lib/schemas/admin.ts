@@ -381,7 +381,7 @@ export const addOrderNoteActionSchema = z.object({
 
 export const analyticsMetricSchema = z.enum(["revenue", "orders"]);
 
-export const analyticsTimeframeSchema = z.enum(["today", "7d", "30d", "180d", "12m", "custom"]);
+export const analyticsTimeframeSchema = z.enum(["today", "7d", "30d", "3m", "6m", "12m", "custom"]);
 
 export const adminAnalyticsQuerySchema = z
   .object({

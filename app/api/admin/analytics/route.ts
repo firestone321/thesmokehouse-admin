@@ -13,7 +13,7 @@ const analyticsQueryInputSchema = z.object({
 });
 
 const allowedMetrics = new Set<AnalyticsMetric>(["revenue", "orders"]);
-const allowedTimeframes = new Set<string>(["today", "7d", "30d", "180d", "12m", "custom", "3m"]);
+const allowedTimeframes = new Set<string>(["today", "7d", "30d", "3m", "6m", "12m", "custom"]);
 
 export async function GET(request: Request) {
   try {
@@ -28,7 +28,7 @@ export async function GET(request: Request) {
       throw new RequestValidationError("Invalid analytics timeframe.");
     }
 
-    const timeframe = query.timeframe === "3m" ? "180d" : query.timeframe;
+    const timeframe = query.timeframe as AnalyticsTimeframe;
     const from = query.from ? query.from : undefined;
     const to = query.to ? query.to : undefined;
 
@@ -38,7 +38,7 @@ export async function GET(request: Request) {
 
     const series = await getAnalyticsSeries({
       metric: query.metric as AnalyticsMetric,
-      timeframe: timeframe as AnalyticsTimeframe,
+      timeframe,
       from,
       to
     });

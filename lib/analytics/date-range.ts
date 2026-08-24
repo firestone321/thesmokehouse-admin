@@ -198,15 +198,16 @@ function getRangeLabel(timeframe: AnalyticsTimeframe, startDate: LocalDateValue,
   if (timeframe === "today") return "Today";
   if (timeframe === "7d") return "Last 7 days";
   if (timeframe === "30d") return "Last 30 days";
-  if (timeframe === "180d") return "Last 180 days";
-  if (timeframe === "12m") return "This year";
+  if (timeframe === "3m") return "Last 3 months";
+  if (timeframe === "6m") return "Last 6 months";
+  if (timeframe === "12m") return "Last 12 months";
   return `${formatBusinessDateShort(startDate)} to ${formatBusinessDateShort(addLocalDays(endDateExclusive, -1))}`;
 }
 
 function resolveBucketUnit(timeframe: AnalyticsTimeframe, startDate: LocalDateValue, endDateExclusive: LocalDateValue): AnalyticsBucketUnit {
   if (timeframe === "today") return "hour";
   if (timeframe === "7d" || timeframe === "30d") return "day";
-  if (timeframe === "180d") return "week";
+  if (timeframe === "3m" || timeframe === "6m") return "week";
   if (timeframe === "12m") return "month";
 
   const spanDays =
@@ -245,7 +246,11 @@ export function buildAnalyticsRange(input: {
       startDate = addLocalDays(today, -29);
       endDateExclusive = tomorrow;
       break;
-    case "180d":
+    case "3m":
+      startDate = addLocalDays(today, -89);
+      endDateExclusive = tomorrow;
+      break;
+    case "6m":
       startDate = addLocalDays(today, -179);
       endDateExclusive = tomorrow;
       break;
