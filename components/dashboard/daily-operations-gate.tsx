@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   DAILY_OPERATIONS_CHECKLIST_ITEMS,
   type DailyOperationsChecklistRecord,
   type DailyOperationsChecklistResponses,
   type DailyOperationsChecklistStatus
 } from "@/lib/ops/daily-checklist";
-import { formatServiceDate } from "@/lib/ops/utils";
+import { formatServiceDate, isDailyOperationsChecklistActive } from "@/lib/ops/utils";
+import { useChecklistPolling } from "@/components/dashboard/use-checklist-polling";
 
 function buildEmptyResponses(): Partial<DailyOperationsChecklistResponses> {
   return {};
@@ -30,21 +31,29 @@ export function DailyOperationsGate({
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  useEffect(() => {
-    const interval = window.setInterval(async () => {
-      try {
-        const response = await fetch("/api/admin/daily-checklist", { cache: "no-store" });
-        if (!response.ok) return;
-        const payload = await response.json();
-        setActive(Boolean(payload.active));
-        setRecord(payload.serviceDate === serviceDate ? payload.record : null);
-      } catch {
-        // The form remains available for a direct submission if polling fails.
+  const refreshChecklist = useCallback(async () => {
+    try {
+      const response = await fetch("/api/admin/daily-checklist", { cache: "no-store" });
+      if (!response.ok) return;
+      const payload = await response.json();
+      if (payload.serviceDate !== serviceDate) {
+        window.location.reload();
+        return;
       }
-    }, 10000);
-
-    return () => window.clearInterval(interval);
+      setActive(Boolean(payload.active));
+      setRecord(payload.record);
+    } catch {
+      // The form remains available for a direct submission if polling fails.
+    }
   }, [serviceDate]);
+
+  const canPollChecklist = useCallback(() => active || isDailyOperationsChecklistActive(), [active]);
+
+  useChecklistPolling({
+    pending: !record,
+    isEligible: canPollChecklist,
+    refresh: refreshChecklist
+  });
 
   const answeredCount = useMemo(
     () => DAILY_OPERATIONS_CHECKLIST_ITEMS.filter((item) => responses[item.id]?.status).length,

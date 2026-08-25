@@ -1,25 +1,31 @@
 import { redirect } from "next/navigation";
 import { ReportsAnalytics } from "@/components/reports/reports-analytics";
+import { DailyCloseReport } from "@/components/reports/daily-close-report";
 import { requireDashboardRole } from "@/lib/auth/admin-role";
 import { getAnalyticsSeries, getRevenueAnalyticsSeries } from "@/lib/analytics/queries";
 import { getInventoryPageData, getProcurementPageData } from "@/lib/ops/queries";
-import { formatCurrency, formatServiceDate } from "@/lib/ops/utils";
+import { formatCurrency, formatServiceDate, getUgandaServiceDate } from "@/lib/ops/utils";
+import { getDailyCloseData } from "@/lib/reports/daily-close-data";
 
 function formatCount(value: number) {
   return new Intl.NumberFormat("en-UG").format(value);
 }
 
-export default async function ReportsPage() {
+export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ date?: string; dailyCloseMessage?: string }> }) {
+  const params = await searchParams;
+  const today = getUgandaServiceDate();
+  const dailyCloseDate = /^\d{4}-\d{2}-\d{2}$/.test(params.date ?? "") && (params.date ?? "") <= today ? params.date! : today;
   const actor = await requireDashboardRole();
   if (actor.role !== "admin" && actor.role !== "manager") {
     redirect("/access-denied?message=Reports%20are%20available%20to%20managers%20and%20administrators%20only.");
   }
 
-  const [revenueSeries, orderSeries, inventory, procurement] = await Promise.all([
+  const [revenueSeries, orderSeries, inventory, procurement, dailyClose] = await Promise.all([
     getRevenueAnalyticsSeries({ timeframe: "30d" }),
     getAnalyticsSeries({ metric: "orders", timeframe: "30d" }),
     getInventoryPageData(),
-    getProcurementPageData()
+    getProcurementPageData(),
+    getDailyCloseData(dailyCloseDate)
   ]);
 
   const currentFinishedUnits = inventory.finishedStock.reduce((total, item) => total + item.currentQuantity, 0);
@@ -50,9 +56,11 @@ export default async function ReportsPage() {
 
       <ReportsAnalytics initialRevenue={revenueSeries} initialOrders={orderSeries} />
 
+      <DailyCloseReport data={dailyClose} canSignOff={actor.role === "admin" || actor.role === "manager"} message={params.dailyCloseMessage} />
+
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <section className="surface-card rounded-[32px] p-5"><p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Current stock</p><h2 className="mt-2 text-xl font-semibold">Finished portions and tracked supplies</h2><div className="mt-4 grid gap-3 sm:grid-cols-2"><div className="rounded-[20px] bg-[#F8FAFB] p-4"><p className="text-sm font-semibold">{formatCount(inventory.finishedStock.length)} finished portions</p><p className="mt-1 text-sm text-[#6B7280]">Live frozen sellable balance</p></div><div className="rounded-[20px] bg-[#F8FAFB] p-4"><p className="text-sm font-semibold">{formatCount(currentSupplyItems)} tracked supply items</p><p className="mt-1 text-sm text-[#6B7280]">Current ingredient and supply quantities</p></div></div><p className="mt-4 text-xs leading-5 text-[#6B7280]">This is a current balance, not a reconstructed historical stock valuation.</p></section>
-        <section className="surface-card rounded-[32px] p-5"><p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Latest operations</p><h2 className="mt-2 text-xl font-semibold">Procurement and processing</h2><div className="mt-4 space-y-3">{procurement.recentActivity.slice(0, 4).map((receipt) => <div key={receipt.id} className="rounded-[18px] border border-[#E4E7EB] bg-white px-4 py-3"><p className="text-sm font-semibold">{receipt.itemName}</p><p className="mt-1 text-xs text-[#6B7280]">{receipt.quantityReceived} {receipt.unitName} · {receipt.supplierName ?? "Supplier not recorded"} · {formatServiceDate(receipt.deliveryDate)}</p></div>)}{procurement.recentActivity.length === 0 ? <p className="rounded-[18px] bg-[#F8FAFB] px-4 py-4 text-sm text-[#6B7280]">No procurement receipts are available yet.</p> : null}</div><p className="mt-4 text-xs leading-5 text-[#6B7280]">{formatCount(procurement.recentProcessingBatches.length)} latest processing batches are available in the Resupplies workspace.</p></section>
+        <section className="surface-card rounded-[32px] p-5"><p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Latest operations</p><h2 className="mt-2 text-xl font-semibold">Procurement and processing</h2><div className="mt-4 space-y-3">{procurement.recentActivity.slice(0, 4).map((receipt) => <div key={receipt.id} className="rounded-[18px] border border-[#E4E7EB] bg-white px-4 py-3"><p className="text-sm font-semibold">{receipt.itemName}</p><p className="mt-1 text-xs text-[#6B7280]">{receipt.quantityReceived} {receipt.unitName} Â· {receipt.supplierName ?? "Supplier not recorded"} Â· {formatServiceDate(receipt.deliveryDate)}</p></div>)}{procurement.recentActivity.length === 0 ? <p className="rounded-[18px] bg-[#F8FAFB] px-4 py-4 text-sm text-[#6B7280]">No procurement receipts are available yet.</p> : null}</div><p className="mt-4 text-xs leading-5 text-[#6B7280]">{formatCount(procurement.recentProcessingBatches.length)} latest processing batches are available in the Resupplies workspace.</p></section>
       </div>
 
       <section className="rounded-[28px] border border-[#D8E1F4] bg-[#F5F8FF] p-5"><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#46699B]">Reporting boundary</p><p className="mt-2 max-w-4xl text-sm leading-6 text-[#4B5563]">Tender reconciliation, refunds, voids, discounts, tax, COGS, profit, and historical stock variance are intentionally not shown yet. Their required ledger data is not reliable until the corresponding backend workflows are live.</p></section>

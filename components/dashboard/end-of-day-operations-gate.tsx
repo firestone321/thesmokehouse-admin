@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   END_OF_DAY_CHECKLIST_ITEMS,
   type EndOfDayChecklistRecord,
   type EndOfDayChecklistResponses,
   type EndOfDayChecklistStatus
 } from "@/lib/ops/end-of-day-checklist";
-import { formatServiceDate } from "@/lib/ops/utils";
+import { formatServiceDate, isEndOfDayChecklistActive } from "@/lib/ops/utils";
+import { useChecklistPolling } from "@/components/dashboard/use-checklist-polling";
 
 export function EndOfDayOperationsGate({
   serviceDate,
@@ -32,22 +33,26 @@ export function EndOfDayOperationsGate({
     setError(null);
   }, [checklistDate]);
 
-  useEffect(() => {
-    const interval = window.setInterval(async () => {
-      try {
-        const response = await fetch("/api/admin/end-of-day-checklist", { cache: "no-store" });
-        if (!response.ok) return;
-        const payload = await response.json();
-        setChecklistDate(payload.serviceDate);
-        setActive(Boolean(payload.active));
-        setRecord(payload.record);
-      } catch {
-        // The form remains available for a direct submission if polling fails.
-      }
-    }, 10000);
+  const refreshChecklist = useCallback(async () => {
+    try {
+      const response = await fetch("/api/admin/end-of-day-checklist", { cache: "no-store" });
+      if (!response.ok) return;
+      const payload = await response.json();
+      setChecklistDate(payload.serviceDate);
+      setActive(Boolean(payload.active));
+      setRecord(payload.record);
+    } catch {
+      // The form remains available for a direct submission if polling fails.
+    }
+  }, []);
 
-    return () => window.clearInterval(interval);
-  }, [serviceDate]);
+  const canPollChecklist = useCallback(() => active || isEndOfDayChecklistActive(), [active]);
+
+  useChecklistPolling({
+    pending: !record,
+    isEligible: canPollChecklist,
+    refresh: refreshChecklist
+  });
 
   const answeredCount = useMemo(
     () => END_OF_DAY_CHECKLIST_ITEMS.filter((item) => responses[item.id]?.status).length,
@@ -181,7 +186,7 @@ export function EndOfDayOperationsGate({
         disabled={isSubmitting}
         className="mt-5 w-full rounded-2xl bg-[#111418] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#2A2F35] disabled:cursor-wait disabled:opacity-60"
       >
-        {isSubmitting ? "Saving todayâ€™s closing checklistâ€¦" : "Complete checklist and close the day"}
+        {isSubmitting ? "Saving today’s closing checklist…" : "Complete checklist and close the day"}
       </button>
     </section>
   );
