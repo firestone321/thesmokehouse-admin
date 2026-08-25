@@ -8058,7 +8058,7 @@ begin
   end if;
 
   if p_service_date = v_current_service_date
-    and (now() at time zone 'Africa/Kampala')::time < time '20:30' then
+    and (now() at time zone 'Africa/Kampala')::time < time '21:00' then
     raise exception 'end_of_day_checklist_not_active';
   elsif p_service_date <> v_current_service_date
     and p_service_date <> v_current_service_date - 1 then

@@ -56,7 +56,7 @@ export function isDailyOperationsChecklistActive(reference = new Date()) {
   return Number.isFinite(hour) && hour >= DAILY_OPERATIONS_CHECKLIST_ACTIVATION_HOUR;
 }
 
-export const END_OF_DAY_CHECKLIST_ACTIVATION_MINUTES = 20 * 60 + 30;
+export const END_OF_DAY_CHECKLIST_ACTIVATION_MINUTES = 21 * 60;
 
 export function isEndOfDayChecklistActive(reference = new Date()) {
   const parts = new Intl.DateTimeFormat("en-GB", {

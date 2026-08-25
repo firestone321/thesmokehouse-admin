@@ -117,7 +117,7 @@ export function EndOfDayOperationsGate({
           <p className="text-[11px] uppercase tracking-[0.22em] text-[#6B7280]">Closing control</p>
           <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">End-of-day checklist</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[#6B7280]">
-            This opens automatically at 8:30 PM EAT and remains pending until completed. Complete it once for the whole team; the first valid submission becomes the shared record for {formatServiceDate(checklistDate)}.
+            This opens automatically at 9:00 PM EAT and remains pending until completed. Complete it once for the whole team; the first valid submission becomes the shared record for {formatServiceDate(checklistDate)}.
           </p>
         </div>
         <div className="rounded-2xl bg-[#F8FAFB] px-4 py-3 text-sm text-[#4B5563]">
@@ -181,7 +181,7 @@ export function EndOfDayOperationsGate({
         disabled={isSubmitting}
         className="mt-5 w-full rounded-2xl bg-[#111418] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#2A2F35] disabled:cursor-wait disabled:opacity-60"
       >
-        {isSubmitting ? "Saving today’s closing checklist…" : "Complete checklist and close the day"}
+        {isSubmitting ? "Saving todayâ€™s closing checklistâ€¦" : "Complete checklist and close the day"}
       </button>
     </section>
   );

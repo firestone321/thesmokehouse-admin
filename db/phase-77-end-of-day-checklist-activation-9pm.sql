@@ -1,41 +1,5 @@
--- Phase 76: shared end-of-day operations checklist and issue notes.
--- The first valid submission for a service date wins atomically. All other
--- staff members receive the same completed record and do not repeat the check.
-
-begin;
-
-create table if not exists public.end_of_day_checklists (
-  service_date date primary key,
-  responses jsonb not null,
-  submitted_by_profile_id uuid not null references public.profiles(id) on update cascade on delete restrict,
-  submitted_by_email_snapshot text not null,
-  submitted_by_role_snapshot public.app_role not null,
-  submitted_at timestamptz not null default now(),
-  created_at timestamptz not null default now(),
-  constraint end_of_day_checklists_responses_object_chk check (jsonb_typeof(responses) = 'object'),
-  constraint end_of_day_checklists_email_not_blank_chk check (btrim(submitted_by_email_snapshot) <> '')
-);
-
-create index if not exists end_of_day_checklists_submitted_idx
-  on public.end_of_day_checklists (submitted_at desc, service_date desc);
-
-comment on table public.end_of_day_checklists is
-  'One immutable end-of-day checklist completion per Smokehouse service day. The first valid staff submission becomes the shared record for all dashboard users.';
-
-comment on column public.end_of_day_checklists.responses is
-  'JSON object keyed by end-of-day checklist item ID. Each value has status ok/issue and an issue note when status is issue.';
-
-alter table public.end_of_day_checklists enable row level security;
-revoke all on public.end_of_day_checklists from public, anon, authenticated;
-grant select on public.end_of_day_checklists to authenticated;
-grant all on public.end_of_day_checklists to service_role;
-
-drop policy if exists "end_of_day_checklists_admin_manager_read" on public.end_of_day_checklists;
-create policy "end_of_day_checklists_admin_manager_read"
-on public.end_of_day_checklists
-for select
-to authenticated
-using (public.has_role(array['admin'::public.app_role, 'manager'::public.app_role]));
+﻿-- Phase 77: move end-of-day checklist activation to 9:00 PM EAT.
+-- Append-only repair for the already-applied Phase 76 database function.
 
 create or replace function public.complete_end_of_day_checklist(
   p_service_date date,
@@ -146,4 +110,3 @@ grant execute
 comment on function public.complete_end_of_day_checklist(date, uuid, jsonb) is
   'Atomically records the first complete end-of-day checklist for a service date and returns the canonical shared record to every concurrent submitter.';
 
-commit;

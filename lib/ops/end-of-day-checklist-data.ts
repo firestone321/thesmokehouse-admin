@@ -4,7 +4,7 @@ import { createAdminSupabaseClient } from "@/lib/supabase/server";
 import { OperationsSchemaMissingError } from "@/lib/ops/errors";
 import { mapEndOfDayChecklistRecord, type EndOfDayChecklistRecord } from "@/lib/ops/end-of-day-checklist";
 
-const endOfDayChecklistMigrationFiles = ["db/phase-76-end-of-day-checklist.sql"];
+const endOfDayChecklistMigrationFiles = ["db/phase-77-end-of-day-checklist-activation-9pm.sql"];
 const endOfDayChecklistSelection = "service_date,responses,submitted_by_email_snapshot,submitted_by_role_snapshot,submitted_at";
 
 function throwEndOfDayChecklistError(error: { message?: string | null; details?: string | null; hint?: string | null; code?: string | null }) {

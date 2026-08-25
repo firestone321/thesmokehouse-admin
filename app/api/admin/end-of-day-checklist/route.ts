@@ -58,11 +58,11 @@ export async function POST(request: Request) {
     }
 
     if (!isPreviousClose && !isEndOfDayChecklistActive()) {
-      return NextResponse.json({ ok: false, message: "The end-of-day checklist becomes available at 8:30 PM EAT." }, { status: 409 });
+      return NextResponse.json({ ok: false, message: "The end-of-day checklist becomes available at 9:00 PM EAT." }, { status: 409 });
     }
 
     if (!isPreviousClose && !await getEndOfDayChecklist(previousServiceDate)) {
-      return NextResponse.json({ ok: false, message: "Complete the previous day’s close-of-day checklist first." }, { status: 409 });
+      return NextResponse.json({ ok: false, message: "Complete the previous dayâ€™s close-of-day checklist first." }, { status: 409 });
     }
 
     const expectedIds = new Set<string>(END_OF_DAY_CHECKLIST_ITEMS.map((item) => item.id));
