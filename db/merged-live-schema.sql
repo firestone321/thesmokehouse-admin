@@ -268,9 +268,8 @@ as $$
       sum(
         case
           when o.payment_status = 'paid'
-           and o.status <> 'completed'
            and o.status <> 'cancelled'
-           and o.stock_reserved_at is not null
+           and o.stock_reservation_status = 'reserved'
           then oi.quantity
           else 0
         end
@@ -278,7 +277,7 @@ as $$
       sum(
         case
           when o.payment_status = 'paid'
-           and o.status = 'completed'
+           and o.stock_reservation_status = 'finalized'
           then oi.quantity
           else 0
         end
@@ -1130,7 +1129,8 @@ begin
       ((date_trunc('hour', completed_at at time zone 'Africa/Kampala')) at time zone 'Africa/Kampala')::timestamptz as bucket_start,
       coalesce(sum(greatest(total_amount, 0))::bigint, 0) as value
     from public.orders
-    where status = 'completed'
+    where completed_at is not null
+      and status <> 'cancelled'
       and payment_status = 'paid'
       and completed_at >= p_start
       and completed_at <  p_end
@@ -1142,7 +1142,8 @@ begin
       ((date_trunc('day', completed_at at time zone 'Africa/Kampala')) at time zone 'Africa/Kampala')::timestamptz as bucket_start,
       coalesce(sum(greatest(total_amount, 0))::bigint, 0) as value
     from public.orders
-    where status = 'completed'
+    where completed_at is not null
+      and status <> 'cancelled'
       and payment_status = 'paid'
       and completed_at >= p_start
       and completed_at <  p_end
@@ -2941,6 +2942,7 @@ declare
   v_order public.orders%rowtype;
   v_from_status text;
   v_valid boolean := false;
+  v_is_pos_terminal boolean := false;
 begin
   select *
   into v_order
@@ -2953,12 +2955,15 @@ begin
   end if;
 
   v_from_status := v_order.status;
+  v_is_pos_terminal := v_order.order_source = 'pos' and p_to_status = 'ready';
 
   v_valid := case
     when v_from_status = 'new' and p_to_status = 'cancelled' then true
     when v_from_status = 'confirmed' and p_to_status in ('in_prep', 'cancelled') then true
     when v_from_status = 'in_prep' and p_to_status in ('ready', 'cancelled') then true
-    when v_from_status = 'ready' and p_to_status in ('completed', 'cancelled') then true
+    when v_from_status = 'ready'
+      and v_order.order_source <> 'pos'
+      and p_to_status in ('completed', 'cancelled') then true
     else false
   end;
 
@@ -2984,7 +2989,7 @@ begin
     from public.release_reserved_order_stock(p_order_id);
   end if;
 
-  if p_to_status = 'completed' then
+  if p_to_status = 'completed' or v_is_pos_terminal then
     select *
     into v_order
     from public.finalize_reserved_order_sale(p_order_id);
@@ -2997,7 +3002,10 @@ begin
       when p_to_status = 'cancelled' and payment_status <> 'paid' then 'cancelled'
       else payment_status
     end,
-    completed_at = case when p_to_status = 'completed' then coalesce(completed_at, now()) else completed_at end,
+    completed_at = case
+      when p_to_status = 'completed' or v_is_pos_terminal then coalesce(completed_at, now())
+      else completed_at
+    end,
     cancelled_at = case when p_to_status = 'cancelled' then coalesce(cancelled_at, now()) else cancelled_at end
   where id = p_order_id
   returning *
@@ -4906,9 +4914,8 @@ as $$
       sum(
         case
           when o.payment_status = 'paid'
-           and o.status <> 'completed'
            and o.status <> 'cancelled'
-           and o.stock_reserved_at is not null
+           and o.stock_reservation_status = 'reserved'
           then oi.quantity * coalesce(pt.stock_source_units_per_serving, 1)
           else 0
         end
@@ -4916,7 +4923,7 @@ as $$
       sum(
         case
           when o.payment_status = 'paid'
-           and o.status = 'completed'
+           and o.stock_reservation_status = 'finalized'
           then oi.quantity * coalesce(pt.stock_source_units_per_serving, 1)
           else 0
         end
@@ -5037,7 +5044,7 @@ as $$
         'title', 'Daily stock differs from paid order totals',
         'severity', 'critical',
         'count', c.daily_stock_drift_count,
-        'description', 'Today reserved/sold counts differ from paid reserved/completed orders.',
+        'description', 'Today reserved/sold counts differ from paid reserved/finalized orders.',
         'items', coalesce((select jsonb_agg(to_jsonb(row)) from (select * from daily_stock_drift limit 10) row), '[]'::jsonb)
       ),
       jsonb_build_object(
@@ -5066,7 +5073,7 @@ grant execute on function public.get_business_truth_health_snapshot(timestamptz,
 to service_role;
 
 comment on function public.get_business_truth_health_snapshot(timestamptz, date) is
-  'Returns read-only payment/stock/recovery reconciliation counts and previews for elevated admin diagnostics. Phase 55: daily_paid_totals is source-aware so shared-stock portions (e.g. fries_250g sourced by large_fries) reconcile correctly against daily_stock.';
+  'Returns read-only payment/stock/recovery reconciliation counts and previews; Phase 79 classifies reserved versus sold orders by stock reservation state.';
 
 -- Phase 47: DB-side aggregate for dashboard revenue today.
 

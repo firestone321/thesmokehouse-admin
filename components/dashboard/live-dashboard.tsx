@@ -88,7 +88,7 @@ function getOverdueOrderIssues(orders: OrderListItem[]): DashboardIssueRecord[] 
   return orders
     .filter((order) => {
       if (!order.promisedAt) return false;
-      if (order.status === "completed" || order.status === "cancelled") return false;
+      if (order.status === "completed" || order.status === "cancelled" || (order.orderSource === "pos" && order.status === "ready")) return false;
       if (order.paymentStatus !== "paid") return false;
       return new Date(order.promisedAt).getTime() < Date.now();
     })
@@ -124,6 +124,7 @@ function rebuildDashboardSnapshot(
   activeOrders: OrderListItem[],
   todaysOrders: OrderListItem[]
 ): DashboardSnapshot {
+  activeOrders = activeOrders.filter((order) => !(order.orderSource === "pos" && order.status === "ready"));
   const inPrepOrders = activeOrders.filter((order) => order.status === "in_prep");
   const readyOrders = activeOrders.filter((order) => order.status === "ready");
   const reviewOrders = activeOrders.filter((order) => order.fulfillmentReviewRequired);

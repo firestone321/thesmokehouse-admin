@@ -289,6 +289,7 @@ export interface MenuItemRecord {
 export interface OrderListItem {
   id: number;
   orderNumber: string;
+  orderSource: "storefront" | "pos";
   customerName: string | null;
   customerPhone: string | null;
   status: OrderStatus;

@@ -94,6 +94,7 @@ const orderSearchColumns = ["order_number", "customer_name", "customer_phone"] a
 const orderListSelection = `
   id,
   order_number,
+  order_source,
   customer_name,
   customer_phone,
   status,
@@ -311,6 +312,7 @@ async function fetchOrderListRows(
     search: string;
     createdAtGte?: string;
     createdAtLt?: string;
+    excludeTerminalPosReady?: boolean;
     limit: number;
     offset: number;
   }
@@ -332,6 +334,10 @@ async function fetchOrderListRows(
 
     if (options.createdAtLt) {
       query = query.lt("created_at", options.createdAtLt);
+    }
+
+    if (options.excludeTerminalPosReady) {
+      query = query.or("order_source.neq.pos,status.neq.ready");
     }
 
     return query;
@@ -469,6 +475,7 @@ function mapOrderListItem(row: any): OrderListItem {
   return {
     id: normalizeNumber(row.id),
     orderNumber: row.order_number,
+    orderSource: row.order_source === "pos" ? "pos" : "storefront",
     customerName: row.customer_name,
     customerPhone: row.customer_phone,
     status: row.status as OrderStatus,
@@ -655,7 +662,7 @@ function getOverdueOrderIssues(orders: OrderListItem[]): DashboardIssueRecord[] 
   return orders
     .filter((order) => {
       if (!order.promisedAt) return false;
-      if (order.status === "completed" || order.status === "cancelled") return false;
+      if (order.status === "completed" || order.status === "cancelled" || (order.orderSource === "pos" && order.status === "ready")) return false;
       if (order.paymentStatus !== "paid") return false;
       return new Date(order.promisedAt).getTime() < Date.now();
     })
@@ -719,6 +726,7 @@ export async function getOrdersPageData(options?: {
   search?: string | null;
   createdAtGte?: string | null;
   createdAtLt?: string | null;
+  excludeTerminalPosReady?: boolean;
   limit?: number | null;
   page?: number | null;
 }) {
@@ -742,6 +750,7 @@ export async function getOrdersPageData(options?: {
     search,
     createdAtGte: options?.createdAtGte ?? undefined,
     createdAtLt: options?.createdAtLt ?? undefined,
+    excludeTerminalPosReady: options?.excludeTerminalPosReady,
     limit,
     offset
   });
@@ -1908,6 +1917,7 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
       .from("orders")
       .select(orderListSelection)
       .in("status", ["new", "confirmed", "in_prep", "ready"])
+      .or("order_source.neq.pos,status.neq.ready")
       .order("created_at", { ascending: false })
       .limit(DASHBOARD_ACTIVE_ORDERS_LIMIT),
     supabase
@@ -1932,7 +1942,9 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   ensureNoError(dailyStockResponse.error, "Unable to load dashboard daily stock");
   ensureNoError(incidentsResponse.error, "Unable to load dashboard incidents");
 
-  const activeOrders = (activeOrdersResponse.data ?? []).map(mapOrderListItem);
+  const activeOrders = (activeOrdersResponse.data ?? [])
+    .map(mapOrderListItem)
+    .filter((order) => !(order.orderSource === "pos" && order.status === "ready"));
   const todaysOrders = (todaysOrdersResponse.data ?? []).map(mapOrderListItem);
   const dailyStock = (dailyStockResponse.data ?? []).map(mapDailyStockRow);
   const warningRank = { empty: 0, critical: 1, elevated: 2, low: 3, healthy: 4 } as const;

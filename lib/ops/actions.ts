@@ -1525,21 +1525,23 @@ export async function updateOrderStatusAction(formData: FormData) {
   let note = input.note ?? null;
 
   if (nextStatus === "completed") {
-    const { data: order, error: orderError } = await supabase
+    redirect(`/orders/${orderId}?error=${encodeURIComponent("Use the pickup code form to complete storefront orders. Walk-in orders finish at Ready.")}`);
+  }
+
+  if (nextStatus === "ready") {
+    const { data: sourceOrder, error: sourceError } = await supabase
       .from("orders")
       .select("order_source")
       .eq("id", orderId)
       .maybeSingle();
 
-    if (orderError) {
-      throw new Error(`Unable to confirm the order source: ${orderError.message}`);
+    if (sourceError) {
+      throw new Error(`Unable to confirm the order source: ${sourceError.message}`);
     }
 
-    if (!order || order.order_source !== "pos") {
-      redirect(`/orders/${orderId}?error=${encodeURIComponent("Use the pickup code form to complete this order.")}`);
+    if (sourceOrder?.order_source === "pos") {
+      note = note ?? "Walk-in POS order ready and handed over at the counter.";
     }
-
-    note = note ?? "Walk-in POS order handed over at the counter.";
   }
 
   const { error } = await supabase.rpc("transition_order_status", {
@@ -1580,7 +1582,7 @@ export async function updateOrderStatusAction(formData: FormData) {
   if (nextStatus === "ready") {
     const { data: order, error: orderError } = await supabase
       .from("orders")
-      .select("id,status,updated_at")
+      .select("id,status,updated_at,order_source")
       .eq("id", orderId)
       .maybeSingle();
 
@@ -1589,7 +1591,7 @@ export async function updateOrderStatusAction(formData: FormData) {
         orderId,
         error: orderError.message
       });
-    } else if (didTransitionToReady({ requestedStatus: nextStatus, order })) {
+    } else if (order?.order_source === "storefront" && didTransitionToReady({ requestedStatus: nextStatus, order })) {
       const readyOrder = order as { id: number; updated_at: string };
       await triggerStorefrontReadyNotification({
         id: readyOrder.id,

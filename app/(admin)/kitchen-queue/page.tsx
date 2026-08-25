@@ -81,7 +81,11 @@ export default async function KitchenQueuePage() {
 
   let orders: OrderListItem[] = [];
   try {
-    ({ orders } = await getOrdersPageData({ status: ["confirmed", "in_prep", "ready"], limit: 30 }));
+    ({ orders } = await getOrdersPageData({
+      status: ["confirmed", "in_prep", "ready"],
+      excludeTerminalPosReady: true,
+      limit: 30
+    }));
   } catch (error) {
     if (error instanceof OperationsSchemaMissingError) {
       return <SchemaSetupNotice title="Kitchen queue cannot load yet" error={error} />;
