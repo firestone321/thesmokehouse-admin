@@ -1,8 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { OnlineReceiptPrintBacklogCard } from "@/components/orders/online-receipt-print-backlog-card";
 import { PosPrintStationToggle } from "@/components/pwa/pos-print-station-toggle";
 import { UgxAmountInput } from "@/components/ugx-amount-input";
+import type { OnlineReceiptPrintBacklogSnapshot } from "@/lib/ops/types";
 import type { PosMenuItem, PosTenderType } from "@/lib/pos/types";
 
 type BasketLine = PosMenuItem & { quantity: number };
@@ -71,10 +73,12 @@ function categoryIcon(category: string) {
 export function PosSaleWorkspace({
   cashierEmail,
   menuItems,
+  onlineReceiptPrintBacklog,
   canRecordSales
 }: {
   cashierEmail: string | null;
   menuItems: PosMenuItem[];
+  onlineReceiptPrintBacklog: OnlineReceiptPrintBacklogSnapshot;
   canRecordSales: boolean;
 }) {
   const [basket, setBasket] = useState<BasketLine[]>([]);
@@ -238,6 +242,7 @@ export function PosSaleWorkspace({
           </div>
         </div>
         <div className="mt-4 max-w-2xl"><PosPrintStationToggle /></div>
+        <div className="mt-4"><OnlineReceiptPrintBacklogCard snapshot={onlineReceiptPrintBacklog} /></div>
       </section>
 
       {error ? <section className="rounded-[22px] border border-[#F4C7C7] bg-[#FFF8F8] px-4 py-3 text-sm text-[#9F2D2D]">{error}</section> : null}

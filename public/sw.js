@@ -175,6 +175,9 @@ self.addEventListener("message", (event) => {
   if (event.data?.type === "smokehouse-retry-online-receipt-prints") {
     event.waitUntil(retryUnfinishedOnlineReceiptPrintJobs());
   }
+  if (event.data?.type === "smokehouse-retry-online-receipt-print-job" && typeof event.data?.printJobId === "string") {
+    event.waitUntil(processOnlineReceiptPrintJob(event.data.printJobId));
+  }
 });
 
 self.addEventListener("push", (event) => {

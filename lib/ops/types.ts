@@ -439,6 +439,22 @@ export interface PushQueueSnapshot {
   recentDispatches: PushQueueDispatchPreview[];
 }
 
+export interface OnlineReceiptPrintJobPreview {
+  id: string;
+  orderId: number;
+  status: "pending" | "accepted";
+  createdAt: string;
+  lastAttemptAt: string | null;
+  lastError: string | null;
+}
+
+export interface OnlineReceiptPrintBacklogSnapshot {
+  pendingCount: number;
+  oldestPendingAt: string | null;
+  printerStationRegistered: boolean;
+  jobs: OnlineReceiptPrintJobPreview[];
+}
+
 export type BusinessTruthHealthSeverity = "critical" | "warning" | "info";
 
 export interface BusinessTruthHealthSection {

@@ -36,7 +36,8 @@ import {
   BusinessTruthHealthSection,
   BusinessTruthHealthSnapshot,
   PushQueueDispatchPreview,
-  PushQueueSnapshot
+  PushQueueSnapshot,
+  OnlineReceiptPrintBacklogSnapshot
 } from "@/lib/ops/types";
 import { toOperationsError } from "@/lib/ops/errors";
 import { getStorefrontInternalRequestConfigurationStatus } from "@/lib/ops/storefront-config";
@@ -1064,6 +1065,43 @@ export async function getPushQueueSnapshots(): Promise<PushQueueSnapshot[]> {
   };
 
   return [adminQueue, storefrontQueue];
+}
+
+export async function getOnlineReceiptPrintBacklogSnapshot(): Promise<OnlineReceiptPrintBacklogSnapshot> {
+  noStore();
+
+  const supabase = createAdminSupabaseClient();
+  const [jobsResponse, stationResponse] = await Promise.all([
+    supabase
+      .from("online_receipt_print_jobs")
+      .select("id,order_id,status,created_at,last_attempt_at,last_error")
+      .eq("status", "pending")
+      .order("created_at", { ascending: true })
+      .limit(30),
+    supabase
+      .from("admin_push_subscriptions")
+      .select("id", { count: "exact", head: true })
+      .eq("is_pos_print_station", true)
+  ]);
+
+  ensureNoError(jobsResponse.error, "Unable to load online receipt print backlog", ["db/phase-73-online-paid-receipt-print-jobs.sql"]);
+  ensureNoError(stationResponse.error, "Unable to load POS print-station status", ["db/phase-73-online-paid-receipt-print-jobs.sql"]);
+
+  const jobs = (jobsResponse.data ?? []).map((job) => ({
+    id: String(job.id),
+    orderId: normalizeNumber(job.order_id),
+    status: job.status === "accepted" ? "accepted" as const : "pending" as const,
+    createdAt: String(job.created_at),
+    lastAttemptAt: job.last_attempt_at ?? null,
+    lastError: job.last_error ?? null
+  }));
+
+  return {
+    pendingCount: jobs.length,
+    oldestPendingAt: jobs[0]?.createdAt ?? null,
+    printerStationRegistered: (stationResponse.count ?? 0) > 0,
+    jobs
+  };
 }
 
 const getCachedBusinessTruthHealthSnapshotRow = unstable_cache(
