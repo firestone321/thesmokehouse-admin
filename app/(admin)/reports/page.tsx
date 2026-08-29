@@ -4,8 +4,9 @@ import { DailyCloseReport } from "@/components/reports/daily-close-report";
 import { requireDashboardRole } from "@/lib/auth/admin-role";
 import { getAnalyticsSeries, getRevenueAnalyticsSeries } from "@/lib/analytics/queries";
 import { getInventoryPageData, getProcurementPageData } from "@/lib/ops/queries";
-import { formatCurrency, formatServiceDate, getUgandaServiceDate } from "@/lib/ops/utils";
+import { formatCurrency, formatServiceDate, getUgandaServiceDate, getUgandaServiceDateOffset } from "@/lib/ops/utils";
 import { getDailyCloseData } from "@/lib/reports/daily-close-data";
+import { getFinancialSummary } from "@/lib/reports/financial-data";
 
 function formatCount(value: number) {
   return new Intl.NumberFormat("en-UG").format(value);
@@ -20,12 +21,15 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     redirect("/access-denied?message=Reports%20are%20available%20to%20managers%20and%20administrators%20only.");
   }
 
-  const [revenueSeries, orderSeries, inventory, procurement, dailyClose] = await Promise.all([
+  const reportStartDate = getUgandaServiceDateOffset(-29);
+  const reportEndDateExclusive = getUgandaServiceDateOffset(1);
+  const [revenueSeries, orderSeries, inventory, procurement, dailyClose, financial] = await Promise.all([
     getRevenueAnalyticsSeries({ timeframe: "30d" }),
     getAnalyticsSeries({ metric: "orders", timeframe: "30d" }),
     getInventoryPageData(),
     getProcurementPageData(),
-    getDailyCloseData(dailyCloseDate)
+    getDailyCloseData(dailyCloseDate),
+    getFinancialSummary(reportStartDate, reportEndDateExclusive)
   ]);
 
   const currentFinishedUnits = inventory.finishedStock.reduce((total, item) => total + item.currentQuantity, 0);
@@ -54,7 +58,11 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         <article className="rounded-[26px] border border-[#F0D9B8] bg-[#FFF9EE] p-5"><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#9A6A1B]">Stock attention</p><p className="mt-3 text-3xl font-semibold">{formatCount(lowStockCount)}</p><p className="mt-2 text-sm text-[#6B7280]">Low current inventory or service-day stock rows</p></article>
       </section>
 
-      <ReportsAnalytics initialRevenue={revenueSeries} initialOrders={orderSeries} />
+      <section className="grid gap-4 sm:grid-cols-3">
+        <article className="rounded-[26px] border border-[#CCE4D2] bg-[#F3FBF5] p-5"><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#287241]">Money In</p><p className="mt-3 text-3xl font-semibold">{formatCurrency(revenueSeries.total)}</p><p className="mt-2 text-sm text-[#6B7280]">Completed paid sales</p></article>
+        <article className="rounded-[26px] border border-[#F0D9B8] bg-[#FFF9EE] p-5"><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#9A6A1B]">Money Out</p><p className="mt-3 text-3xl font-semibold">{formatCurrency(financial.moneyOut)}</p><p className="mt-2 text-sm text-[#6B7280]">Confirmed cash purchases from the ledger</p></article>
+        <article className="rounded-[26px] border border-[#D3DDF3] bg-[#F4F7FF] p-5"><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#46699B]">Net Cash Movement</p><p className="mt-3 text-3xl font-semibold">{formatCurrency(revenueSeries.total - financial.moneyOut)}</p><p className="mt-2 text-sm text-[#6B7280]">Money In minus Money Out</p></article>
+      </section>      <ReportsAnalytics initialRevenue={revenueSeries} initialOrders={orderSeries} />
 
       <DailyCloseReport data={dailyClose} canSignOff={actor.role === "admin" || actor.role === "manager"} message={params.dailyCloseMessage} />
 
