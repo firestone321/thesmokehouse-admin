@@ -1,4 +1,4 @@
-import "server-only";
+﻿import "server-only";
 
 import { createAdminSupabaseClient } from "@/lib/supabase/server";
 
@@ -15,6 +15,15 @@ export interface StaffActivityRecord {
 }
 
 const STAFF_ACTIVITY_PAGE_SIZE = 30;
+
+function getActivityDateRange(dateValue?: string | null) {
+  if (!dateValue || !/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) return null;
+  const start = new Date(`${dateValue}T00:00:00+03:00`);
+  if (Number.isNaN(start.getTime())) return null;
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 1);
+  return { startIso: start.toISOString(), endIso: end.toISOString() };
+}
 
 function normalizeActivityPage(value: number | null | undefined) {
   if (!Number.isFinite(value)) return 1;
@@ -45,7 +54,7 @@ function mapStaffActivityRecord(row: {
   };
 }
 
-export async function getStaffActivityLogPage(pageValue?: number | null): Promise<{
+export async function getStaffActivityLogPage(pageValue?: number | null, dateValue?: string | null): Promise<{
   activity: StaffActivityRecord[];
   page: number;
   totalPages: number;
@@ -54,9 +63,11 @@ export async function getStaffActivityLogPage(pageValue?: number | null): Promis
 }> {
   const supabase = createAdminSupabaseClient();
   const requestedPage = normalizeActivityPage(pageValue);
-  const { count, error: countError } = await supabase
-    .from("staff_activity_log")
-    .select("id", { count: "exact", head: true });
+  const dateRange = getActivityDateRange(dateValue);
+
+  let countQuery = supabase.from("staff_activity_log").select("id", { count: "exact", head: true });
+  if (dateRange) countQuery = countQuery.gte("created_at", dateRange.startIso).lt("created_at", dateRange.endIso);
+  const { count, error: countError } = await countQuery;
 
   if (countError) throw new Error(`Unable to count staff activity: ${countError.message}`);
 
@@ -64,9 +75,12 @@ export async function getStaffActivityLogPage(pageValue?: number | null): Promis
   const totalPages = Math.max(1, Math.ceil(total / STAFF_ACTIVITY_PAGE_SIZE));
   const page = Math.min(requestedPage, totalPages);
   const offset = (page - 1) * STAFF_ACTIVITY_PAGE_SIZE;
-  const { data, error } = await supabase
+
+  let activityQuery = supabase
     .from("staff_activity_log")
-    .select("id,actor_email_snapshot,actor_role_snapshot,action,entity_type,entity_id,order_id,summary,created_at")
+    .select("id,actor_email_snapshot,actor_role_snapshot,action,entity_type,entity_id,order_id,summary,created_at");
+  if (dateRange) activityQuery = activityQuery.gte("created_at", dateRange.startIso).lt("created_at", dateRange.endIso);
+  const { data, error } = await activityQuery
     .order("created_at", { ascending: false })
     .order("id", { ascending: false })
     .range(offset, offset + STAFF_ACTIVITY_PAGE_SIZE - 1);
