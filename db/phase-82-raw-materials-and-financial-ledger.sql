@@ -265,7 +265,12 @@ grant select on public.raw_materials, public.raw_material_movements, public.raw_
 grant update, insert on public.raw_materials to service_role;
 
 insert into public.raw_materials (name, category, unit_name, reorder_threshold) values
-  ('Oranges', 'edible', 'kg', 0), ('Irish potatoes', 'edible', 'kg', 0), ('Gonja', 'edible', 'clusters', 0), ('Flour', 'edible', 'kg', 0), ('Sugar', 'edible', 'kg', 0), ('Eggs', 'edible', 'trays', 0), ('Charcoal', 'non_edible', 'sacks', 0), ('Firewood', 'non_edible', 'bundles', 0)
+  ('Oranges', 'edible', 'pieces', 0), ('Irish potatoes', 'edible', 'kg', 0), ('Gonja', 'edible', 'clusters', 0), ('Flour', 'edible', 'kg', 0), ('Sugar', 'edible', 'kg', 0), ('Eggs', 'edible', 'trays', 0), ('Charcoal', 'non_edible', 'sacks', 0), ('Firewood', 'non_edible', 'bundles', 0)
 on conflict (name) do nothing;
+
+-- Correct the seeded Oranges unit without changing its quantity or purchase history.
+update public.raw_materials
+set unit_name = 'pieces', updated_at = now()
+where name = 'Oranges' and unit_name = 'kg';
 
 commit;

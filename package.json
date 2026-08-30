@@ -8,7 +8,8 @@
     "start": "next start",
     "test:daily-close": "node tests/daily-close-aggregation-sql.test.mjs",
     "test:payments": "node tests/payment-integrity-sql.test.mjs",
-    "generate:pos-hardware-key": "node scripts/generate-pos-hardware-jwk.mjs"
+    "generate:pos-hardware-key": "node scripts/generate-pos-hardware-jwk.mjs",
+    "test:cash-reconciliation": "node tests/phase-83-cash-reconciliation-sql.test.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.0",
