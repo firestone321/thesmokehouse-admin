@@ -57,6 +57,7 @@ export function SidesIntakeForm({
     () => itemOptions.find((item) => String(item.id) === selectedItemId) ?? null,
     [itemOptions, selectedItemId]
   );
+  const receivesPieces = selectedItem?.unitName.toLowerCase() === "piece" || selectedItem?.unitName.toLowerCase() === "pieces";
   const selectedSupplier = useMemo(
     () => supplierOptions.find((supplier) => String(supplier.id) === supplierId) ?? null,
     [supplierId, supplierOptions]
@@ -438,7 +439,7 @@ export function SidesIntakeForm({
 
           <label className="space-y-2 text-sm text-[#6B7280]">
             <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">
-              Quantity received{selectedItem ? ` (${selectedItem.unitName})` : ""}
+              {receivesPieces ? "Pieces Received" : `Quantity received${selectedItem ? ` (${selectedItem.unitName})` : ""}`}
             </span>
             <input
               type="number"
@@ -450,7 +451,7 @@ export function SidesIntakeForm({
             />
             {selectedItem?.directSellablePortionTypeId ? (
               <p className="text-xs leading-5 text-[#6B7280]">
-                Each {selectedItem.unitName} credits {(selectedItem.sellableUnitsPerInput ?? 1).toLocaleString("en-UG")} sellable{" "}
+                Each {receivesPieces ? "piece" : selectedItem.unitName} credits {(selectedItem.sellableUnitsPerInput ?? 1).toLocaleString("en-UG")} sellable{" "}
                 {(selectedItem.sellableUnitsPerInput ?? 1) === 1 ? "portion" : "portions"}.
               </p>
             ) : null}

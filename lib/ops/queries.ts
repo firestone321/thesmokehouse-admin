@@ -1297,7 +1297,8 @@ export async function getInventoryPageData(selectedItemId?: string | null) {
     loadDailyMenuStock(serviceDate, { allowTransientFallback: true }),
     supabase
       .from("inventory_items")
-      .select("id, code, name, unit_name, item_type, current_quantity, reorder_threshold, is_active, updated_at")
+      .select("id, code, name, unit_name, item_type, current_quantity, reorder_threshold, is_active, updated_at, direct_sellable_portion_type_id")
+      .is("direct_sellable_portion_type_id", null)
       .order("name", { ascending: true }),
     supabase
       .from("suppliers")
