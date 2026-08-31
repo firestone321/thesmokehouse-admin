@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { CollapsibleCard } from "@/components/procurement/collapsible-card";
 import { isThisDevicePosPrintStation } from "@/components/pwa/admin-push-auto-enrollment";
 import { getAppServiceWorkerRegistration } from "@/lib/pwa/service-worker";
@@ -9,6 +10,7 @@ import type { OnlineReceiptPrintBacklogSnapshot, OnlineReceiptPrintJobPreview } 
 import { formatDateTime } from "@/lib/ops/utils";
 
 function PrintJobRow({ job, canRetry }: { job: OnlineReceiptPrintJobPreview; canRetry: boolean }) {
+  const router = useRouter();
   const [message, setMessage] = useState<string | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
 
@@ -19,8 +21,19 @@ function PrintJobRow({ job, canRetry }: { job: OnlineReceiptPrintJobPreview; can
       const registration = await getAppServiceWorkerRegistration();
       const worker = registration?.active ?? navigator.serviceWorker.controller;
       if (!worker) throw new Error("The print worker is not ready yet. Refresh this PWA and try again.");
-      worker.postMessage({ type: "smokehouse-retry-online-receipt-print-job", printJobId: job.id });
-      setMessage("Retry sent to this printer station. The job will clear after Windows accepts it.");
+      const channel = new MessageChannel();
+      const result = new Promise<{ status?: string; error?: string }>((resolve) => {
+        channel.port1.onmessage = (event) => resolve(event.data ?? {});
+      });
+      worker.postMessage({ type: "smokehouse-retry-online-receipt-print-job", printJobId: job.id }, [channel.port2]);
+      const outcome = await Promise.race([
+        result,
+        new Promise<{ status: "timeout" }>((resolve) => window.setTimeout(() => resolve({ status: "timeout" }), 30_000))
+      ]);
+      if (outcome.status === "failed") throw new Error(outcome.error || "Receipt printer rejected the request.");
+      if (outcome.status === "timeout") throw new Error("The printer station did not report back. Check the POS computer and retry again.");
+      setMessage("Retry completed. Refreshing the print backlog…");
+      router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to start the print retry.");
     } finally {

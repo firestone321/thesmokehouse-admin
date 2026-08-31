@@ -109,18 +109,23 @@ async function listUnfinishedPosPrintJobs() {
 }
 
 async function reportPosPrintJobResult(printJobId, result) {
-  await fetch(`/api/admin/pos/print-jobs/${encodeURIComponent(printJobId)}/result`, {
+  const response = await fetch(`/api/admin/pos/print-jobs/${encodeURIComponent(printJobId)}/result`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify(result)
   });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || !payload?.ok) {
+    throw new Error(payload?.message || `Unable to record print result (${response.status}).`);
+  }
+  return payload.data;
 }
 
 async function processOnlineReceiptPrintJob(printJobId) {
   const previous = await readPosPrintJob(printJobId);
-  if (previous && (previous.status === "accepted" || (previous.status === "sending" && Date.now() - previous.updatedAt < 60_000))) {
-    return;
+  if (previous && previous.status === "sending" && Date.now() - previous.updatedAt < 60_000) {
+    return { status: "in_progress" };
   }
 
   await writePosPrintJob({ id: printJobId, status: "sending", updatedAt: Date.now() });
@@ -135,7 +140,7 @@ async function processOnlineReceiptPrintJob(printJobId) {
     job = payload.data;
     if (job.completed) {
       await writePosPrintJob({ id: printJobId, status: "accepted", updatedAt: Date.now() });
-      return;
+      return { status: "accepted" };
     }
 
     const bridgeResponse = await fetch(`${job.bridgeUrl}/receipt/print`, {
@@ -155,6 +160,7 @@ async function processOnlineReceiptPrintJob(printJobId) {
       bridgeResult: { status: String(bridgePayload.status || "queued"), detail: typeof bridgePayload.jobId === "string" ? bridgePayload.jobId : undefined }
     });
     await writePosPrintJob({ id: printJobId, status: "accepted", updatedAt: Date.now() });
+    return { status: "accepted" };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Receipt print failed.";
     await writePosPrintJob({ id: printJobId, status: "failed", updatedAt: Date.now(), error: message });
@@ -163,6 +169,7 @@ async function processOnlineReceiptPrintJob(printJobId) {
     } catch {
       // The bridge/job path is retried on a later event or PWA activation.
     }
+    return { status: "failed", error: message };
   }
 }
 
@@ -176,7 +183,11 @@ self.addEventListener("message", (event) => {
     event.waitUntil(retryUnfinishedOnlineReceiptPrintJobs());
   }
   if (event.data?.type === "smokehouse-retry-online-receipt-print-job" && typeof event.data?.printJobId === "string") {
-    event.waitUntil(processOnlineReceiptPrintJob(event.data.printJobId));
+    event.waitUntil(
+      processOnlineReceiptPrintJob(event.data.printJobId).then((result) => {
+        event.ports[0]?.postMessage(result);
+      })
+    );
   }
 });
 

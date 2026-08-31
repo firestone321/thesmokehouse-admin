@@ -78,6 +78,16 @@ export async function GET(_request: Request, context: RouteContext) {
       return NextResponse.json({ ok: false, message: "Receipt print job contains invalid receipt data." }, { status: 409 });
     }
 
+    // Record the dispatch attempt before contacting the local bridge. The
+    // bridge result is a second, completion/acceptance acknowledgement; it
+    // must not be the first place an attempt becomes visible in the backlog.
+    const { error: attemptError } = await createAdminSupabaseClient()
+      .from("online_receipt_print_jobs")
+      .update({ last_attempt_at: new Date().toISOString() })
+      .eq("id", printJobId)
+      .eq("status", "pending");
+    if (attemptError) throw new Error(`Unable to record receipt print attempt: ${attemptError.message}`);
+
     const hardware = await issueOnlineReceiptPrintInstructions({
       printJobId: data.id,
       orderId: Number(data.order_id),
