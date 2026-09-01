@@ -142,7 +142,7 @@ export function RawMaterialsImport({
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <label className="grid gap-1 text-xs"><span>Item · row {row.sourceRow}</span><input value={row.material} onChange={(event) => update(row.id, { material: importMaterial(event.target.value) })} className="rounded-lg border border-[#D7DDE4] px-2 py-2 text-sm" /></label>
           <label className="grid gap-1 text-xs"><span>Supplier</span><input value={row.supplier} onChange={(event) => update(row.id, { supplier: event.target.value })} className="rounded-lg border border-[#D7DDE4] px-2 py-2 text-sm" /></label>
-          <label className="grid gap-1 text-xs"><span>Quantity</span><input type="number" min="0.01" step="0.01" placeholder="0" value={row.quantity} onFocus={(event) => { if (event.currentTarget.value === "0") update(row.id, { quantity: "" }); }} onChange={(event) => update(row.id, { quantity: event.target.value })} className="rounded-lg border border-[#D7DDE4] px-2 py-2 text-sm" /></label>
+          <label className="grid gap-1 text-xs"><span>Quantity</span><input type="text" inputMode="decimal" pattern="[0-9]*([.][0-9]+)?" placeholder="0" value={row.quantity} onChange={(event) => update(row.id, { quantity: event.target.value.replace(/^0+(?=\d)/, "") })} className="rounded-lg border border-[#D7DDE4] px-2 py-2 text-sm" /></label>
           <label className="grid gap-1 text-xs"><span>Amount spent (UGX)</span><input inputMode="numeric" value={row.amount} onChange={(event) => update(row.id, { amount: event.target.value })} className="rounded-lg border border-[#D7DDE4] px-2 py-2 text-sm" /></label>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
