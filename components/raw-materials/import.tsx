@@ -45,10 +45,19 @@ function importFirst(row: Record<string, unknown>, headers: string[]) {
 function importQuantity(value: unknown) {
   const source = importText(value);
   const fraction = source.match(/^(\d+)\s*\/\s*(\d+)/);
-  if (fraction) return String(Number(fraction[1]) / Number(fraction[2]));
-  return source.replace(/,/g, "").match(/^\d+(?:\.\d+)?/)?.[0] ?? "";
+  if (fraction) return Number(fraction[1]) / Number(fraction[2]) > 0 ? String(Number(fraction[1]) / Number(fraction[2])) : "";
+  const parsed = source.replace(/,/g, "").match(/^\d+(?:\.\d+)?/)?.[0] ?? "";
+  return parsed === "0" ? "" : parsed;
 }
 function importAmount(value: unknown) { return importText(value).replace(/^UGX/i, "").replace(/[\s,]/g, ""); }
+function importSectionTone(section: ImportSection) {
+  if (section === "Vegetables & fruits") return { panel: "border-[#B8DCC4] bg-[#F1FAF3]", heading: "text-[#287241]", dot: "bg-[#5B9B6B]" };
+  if (section === "Irish potatoes") return { panel: "border-[#E6D2A9] bg-[#FFF9EC]", heading: "text-[#8A641D]", dot: "bg-[#C38F2D]" };
+  if (section === "Spices") return { panel: "border-[#E8C1B7] bg-[#FFF4F1]", heading: "text-[#A34A38]", dot: "bg-[#C56A53]" };
+  if (section === "Cleaning supplies") return { panel: "border-[#C4D8EB] bg-[#F2F8FD]", heading: "text-[#31658F]", dot: "bg-[#5A8FBE]" };
+  if (section === "Charcoal") return { panel: "border-[#C8C5D2] bg-[#F5F4F8]", heading: "text-[#514B65]", dot: "bg-[#756B91]" };
+  return { panel: "border-[#D7C6B8] bg-[#FBF6F1]", heading: "text-[#76513A]", dot: "bg-[#A77A59]" };
+}
 
 export function RawMaterialsImport({
   materials, suppliers, action, defaultEventDate
@@ -62,6 +71,8 @@ export function RawMaterialsImport({
   const [eventDate, setEventDate] = useState(defaultEventDate);
   const [filename, setFilename] = useState("");
   const [error, setError] = useState("");
+  const [isParsing, setIsParsing] = useState(false);
+  const [isReviewOpen, setIsReviewOpen] = useState(false);
   const materialMap = useMemo(() => new Map(materials.filter((item) => item.isActive).map((item) => [importKey(item.name), item])), [materials]);
   const supplierMap = useMemo(() => new Map(suppliers.map((supplier) => [importKey(supplier.name), supplier])), [suppliers]);
 
@@ -73,6 +84,7 @@ export function RawMaterialsImport({
     if (!file) return;
     setError("");
     setFilename(file.name);
+    setIsParsing(true);
     try {
       const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
       const next: ImportRow[] = [];
@@ -93,9 +105,12 @@ export function RawMaterialsImport({
       }
       if (!next.length) throw new Error("No supported rows");
       setRows(next);
+      setIsReviewOpen(true);
     } catch {
       setRows([]);
       setError("No supported vegetable, Irish, spice, or non-edible sheets with data were found.");
+    } finally {
+      setIsParsing(false);
     }
   }
 
@@ -121,23 +136,13 @@ export function RawMaterialsImport({
   }));
   const groups = Array.from(new Set(rows.map((row) => row.section))).map((section) => ({ section, rows: reviewed.filter((row) => row.section === section) }));
 
-  return <section className="surface-card rounded-[32px] p-5">
-    <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Workbook intake</p>
-    <h2 className="mt-2 text-xl font-semibold">Review non-meat raw materials</h2>
-    <p className="mt-2 text-sm leading-6 text-[#6B7280]">Meat, fries, and operational expenses are ignored. Choose one date for the whole intake event; each accepted row posts its own amount spent.</p>
-    <div className="mt-4 flex flex-wrap items-end gap-3">
-      <label className="grid gap-2 text-sm"><span>Event date</span><input type="date" value={eventDate} max={defaultEventDate} onChange={(event) => setEventDate(event.target.value)} className="rounded-xl border border-[#D7DDE4] px-3 py-2.5" /></label>
-      <label className="cursor-pointer rounded-xl bg-[#5E2519] px-4 py-2.5 text-sm font-semibold text-white">Choose .xlsx<input type="file" accept=".xlsx" className="hidden" onChange={(event) => void parse(event.target.files?.[0])} /></label>
-      {filename ? <p className="pb-2 text-sm text-[#6B7280]">{filename}</p> : null}
-    </div>
-    {error ? <p className="mt-3 text-sm text-[#A52B20]">{error}</p> : null}
-    {groups.map((group) => <section key={group.section} className="mt-5 rounded-2xl border border-[#E4E7EB] p-4">
-      <h3 className="font-semibold">{group.section}</h3>
+  const reviewContent = groups.map((group) => { const tone = importSectionTone(group.section); return <section key={group.section} className={`rounded-2xl border p-4 ${tone.panel}`}>
+      <h3 className={`flex items-center gap-2 font-semibold ${tone.heading}`}><span className={`h-2.5 w-2.5 rounded-full ${tone.dot}`} aria-hidden="true" />{group.section}<span className="text-xs font-normal text-[#6B7280]">{group.rows.length} row(s)</span></h3>
       <div className="mt-3 space-y-3">{group.rows.map((row) => <article key={row.id} className={"rounded-xl border p-3 " + (row.disregarded ? "border-[#E4E7EB] bg-[#F8FAFB] opacity-70" : row.problems.length ? "border-[#F2C6C0] bg-[#FFF8F7]" : "border-[#CDE8D5] bg-white")}>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <label className="grid gap-1 text-xs"><span>Item · row {row.sourceRow}</span><input value={row.material} onChange={(event) => update(row.id, { material: importMaterial(event.target.value) })} className="rounded-lg border border-[#D7DDE4] px-2 py-2 text-sm" /></label>
           <label className="grid gap-1 text-xs"><span>Supplier</span><input value={row.supplier} onChange={(event) => update(row.id, { supplier: event.target.value })} className="rounded-lg border border-[#D7DDE4] px-2 py-2 text-sm" /></label>
-          <label className="grid gap-1 text-xs"><span>Quantity</span><input type="number" min="0.01" step="0.01" value={row.quantity} onChange={(event) => update(row.id, { quantity: event.target.value })} className="rounded-lg border border-[#D7DDE4] px-2 py-2 text-sm" /></label>
+          <label className="grid gap-1 text-xs"><span>Quantity</span><input type="number" min="0.01" step="0.01" placeholder="0" value={row.quantity} onFocus={(event) => { if (event.currentTarget.value === "0") update(row.id, { quantity: "" }); }} onChange={(event) => update(row.id, { quantity: event.target.value })} className="rounded-lg border border-[#D7DDE4] px-2 py-2 text-sm" /></label>
           <label className="grid gap-1 text-xs"><span>Amount spent (UGX)</span><input inputMode="numeric" value={row.amount} onChange={(event) => update(row.id, { amount: event.target.value })} className="rounded-lg border border-[#D7DDE4] px-2 py-2 text-sm" /></label>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
@@ -146,7 +151,41 @@ export function RawMaterialsImport({
           {row.problems.length && !row.disregarded ? <span className="text-[#A52B20]">{row.problems.join(" · ")}</span> : null}
         </div>
       </article>)}</div>
-    </section>)}
-    {rows.length ? <form action={action} className="mt-5"><input type="hidden" name="filename" value={filename} /><input type="hidden" name="event_date" value={eventDate} /><input type="hidden" name="rows" value={JSON.stringify(payload)} /><p className="mb-3 text-sm text-[#6B7280]">{ready.length} row(s) ready. Disregarded and incomplete rows will not post.</p><button disabled={!eventDate || ready.length === 0} className="rounded-xl bg-[#287241] px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Confirm {ready.length} row(s)</button></form> : null}
-  </section>;
+    </section>; });
+
+  return <>
+    <section className="surface-card rounded-[32px] p-5">
+      <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Workbook intake</p>
+      <h2 className="mt-2 text-xl font-semibold">Review non-meat raw materials</h2>
+      <p className="mt-2 text-sm leading-6 text-[#6B7280]">Meat, fries, and operational expenses are ignored. Choose one date for the whole intake event; each accepted row posts its own amount spent.</p>
+      <div className="mt-4 flex flex-wrap items-end gap-3">
+        <label className="grid gap-2 text-sm"><span>Event date</span><input type="date" value={eventDate} max={defaultEventDate} onChange={(event) => setEventDate(event.target.value)} className="rounded-xl border border-[#D7DDE4] px-3 py-2.5" /></label>
+        <label className="cursor-pointer rounded-xl bg-[#5E2519] px-4 py-2.5 text-sm font-semibold text-white">Choose .xlsx<input type="file" accept=".xlsx" className="hidden" onChange={(event) => void parse(event.target.files?.[0])} /></label>
+        {filename ? <p className="pb-2 text-sm text-[#6B7280]">{filename}</p> : null}
+      </div>
+      {isParsing ? <p className="mt-3 text-sm text-[#6B7280]" role="status">Loading workbook data…</p> : null}
+      {error ? <p className="mt-3 text-sm text-[#A52B20]">{error}</p> : null}
+      {rows.length ? <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#E4E7EB] bg-[#F8FAFB] p-4">
+        <div><p className="text-sm font-semibold">{rows.length} imported row(s) ready for review</p><p className="mt-1 text-xs text-[#6B7280]">Review and resolve rows in the expanded workspace.</p></div>
+        <button type="button" onClick={() => setIsReviewOpen(true)} className="rounded-xl bg-[#5E2519] px-4 py-2.5 text-sm font-semibold text-white">Review workbook</button>
+      </div> : null}
+    </section>
+
+    {isReviewOpen ? <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#17212b]/55 p-4 sm:p-8" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setIsReviewOpen(false); }}>
+      <section role="dialog" aria-modal="true" aria-labelledby="workbook-review-title" className="my-4 w-full max-w-6xl rounded-[28px] border border-[#D8CFC5] bg-[#F7F3EE] p-5 shadow-2xl sm:p-7">
+        <div className="rounded-2xl border border-[#E1D6CB] bg-[#FFFDFC] p-4 sm:p-5">
+          <div className="flex items-start justify-between gap-4">
+          <div><p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Workbook intake</p><h2 id="workbook-review-title" className="mt-2 text-2xl font-semibold">Review non-meat raw materials</h2><p className="mt-2 text-sm leading-6 text-[#6B7280]">{filename} · {rows.length} row(s). Changes stay local until you confirm the import.</p></div>
+          <button type="button" onClick={() => setIsReviewOpen(false)} aria-label="Close workbook review" className="rounded-xl border border-[#D7DDE4] px-3 py-2 text-sm font-semibold text-[#374151]">Close</button>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-xs text-[#6B7280]" aria-label="Review status legend"><span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[#CDE8D5]" aria-hidden="true" />Ready</span><span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[#F2C6C0]" aria-hidden="true" />Needs attention</span><span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[#E4E7EB]" aria-hidden="true" />Disregarded</span></div>
+        </div>
+        <div className="mt-5 grid gap-4">{reviewContent}</div>
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#E1D6CB] bg-[#FFFDFC] p-4">
+          <p className="text-sm text-[#6B7280]">{ready.length} row(s) ready. Disregarded and incomplete rows will not post.</p>
+          {rows.length ? <form action={action}><input type="hidden" name="filename" value={filename} /><input type="hidden" name="event_date" value={eventDate} /><input type="hidden" name="rows" value={JSON.stringify(payload)} /><button disabled={!eventDate || ready.length === 0} className="rounded-xl bg-[#287241] px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Confirm {ready.length} row(s)</button></form> : null}
+        </div>
+      </section>
+    </div> : null}
+  </>;
 }
