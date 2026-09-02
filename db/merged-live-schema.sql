@@ -7799,7 +7799,11 @@ declare
   v_existing_customer_id uuid;
 begin
   if p_customer_id is null
-    or not exists (select 1 from public.customers where id = p_customer_id) then
+    or not exists (
+      select 1
+      from public.customers as c
+      where c.id = p_customer_id
+    ) then
     raise exception 'storefront_customer_required';
   end if;
 

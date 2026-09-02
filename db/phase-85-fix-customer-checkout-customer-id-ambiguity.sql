@@ -1,8 +1,8 @@
 begin;
 
--- Phase 84: Phase 74's returned `id` column is a PL/pgSQL output variable.
--- Qualify the orders table references so signed-in checkout does not confuse
--- that output variable with public.orders.id.
+-- Phase 85: fully qualify every table id reference in the customer checkout
+-- wrapper. The returned `id` column is also a PL/pgSQL output variable, so an
+-- unqualified customers.id reference fails before checkout reaches the order.
 create or replace function public.prepare_storefront_checkout_payment_for_customer(
   p_customer_id     uuid,
   p_idempotency_key text,
