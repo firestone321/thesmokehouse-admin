@@ -1,39 +1,8 @@
 begin;
 
--- Phase 74: associate future authenticated storefront orders with their
--- customer account while preserving guest and POS order ownership.
-
-alter table public.orders
-  add column if not exists customer_id uuid;
-
-do $$
-begin
-  if not exists (
-    select 1
-    from pg_constraint
-    where conname = 'orders_customer_id_fkey'
-      and conrelid = 'public.orders'::regclass
-  ) then
-    alter table public.orders
-      add constraint orders_customer_id_fkey
-      foreign key (customer_id)
-      references public.customers(id)
-      on update cascade
-      on delete set null;
-  end if;
-end
-$$;
-
-create index if not exists orders_customer_id_created_idx
-  on public.orders (customer_id, created_at desc)
-  where customer_id is not null;
-
-comment on column public.orders.customer_id is
-  'Authenticated storefront customer account that placed the order. Null for guest and admin POS orders.';
-
--- Keep the existing checkout function stable for guests and older deployments.
--- This service-role wrapper attaches only the authenticated customer supplied by
--- the storefront server after the base checkout transaction succeeds.
+-- Phase 84: Phase 74's returned `id` column is a PL/pgSQL output variable.
+-- Qualify the orders table references so signed-in checkout does not confuse
+-- that output variable with public.orders.id.
 create or replace function public.prepare_storefront_checkout_payment_for_customer(
   p_customer_id     uuid,
   p_idempotency_key text,

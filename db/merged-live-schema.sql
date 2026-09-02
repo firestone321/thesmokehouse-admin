@@ -7820,10 +7820,10 @@ begin
       p_items
     )
   loop
-    select customer_id
+    select o.customer_id
     into v_existing_customer_id
-    from public.orders
-    where id = v_result.id
+    from public.orders as o
+    where o.id = v_result.id
     for update;
 
     if v_existing_customer_id is not null
@@ -7831,10 +7831,10 @@ begin
       raise exception 'checkout_customer_mismatch';
     end if;
 
-    update public.orders
+    update public.orders as o
     set customer_id = p_customer_id
-    where id = v_result.id
-      and customer_id is null;
+    where o.id = v_result.id
+      and o.customer_id is null;
 
     return query
       select
