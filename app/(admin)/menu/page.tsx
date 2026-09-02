@@ -81,7 +81,7 @@ export default async function MenuPage({
       ) : null}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_380px]">
-        <section className="space-y-4">
+        <section className="order-2 space-y-4 xl:order-1">
           <section className="surface-card rounded-[32px] p-5">
             <div className="border-b border-[#EEF2F6] pb-4">
               <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Menu items</p>
@@ -313,7 +313,7 @@ export default async function MenuPage({
           </section>
         </section>
 
-        <aside className="space-y-4">
+        <aside className="order-1 space-y-4 xl:order-2">
           <section className="surface-card rounded-[32px] p-5">
             <div className="border-b border-[#EEF2F6] pb-4">
               <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Category</p>
