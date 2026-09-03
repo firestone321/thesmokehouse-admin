@@ -74,12 +74,14 @@ export function MenuItemForm({
   categories,
   portionTypes,
   selectedMenuItem,
-  nextSortOrder
+  nextSortOrder,
+  canEditDetails = true
 }: {
   categories: MenuCategoryRecord[];
   portionTypes: PortionTypeOption[];
   selectedMenuItem: MenuItemRecord | null;
   nextSortOrder: number;
+  canEditDetails?: boolean;
 }) {
   const router = useRouter();
   const [phase, setPhase] = useState<SavePhase>("idle");
@@ -253,6 +255,19 @@ export function MenuItemForm({
       <form id="menu-quick-add-portion-form" onSubmit={handleQuickAddPortionType}></form>
       <form onSubmit={handleSubmit} className="mt-5 grid gap-5">
         {selectedMenuItem ? <input type="hidden" name="menu_item_id" value={selectedMenuItem.id} /> : null}
+        {!canEditDetails && selectedMenuItem ? (
+          <>
+            <input type="hidden" name="name" value={selectedMenuItem.name} />
+            <input type="hidden" name="description" value={selectedMenuItem.description ?? ""} />
+            <input type="hidden" name="base_price" value={selectedMenuItem.basePrice} />
+            <input type="hidden" name="prep_type" value={selectedMenuItem.prepType} />
+            <input type="hidden" name="menu_category_id" value={selectedMenuItem.categoryId} />
+            <input type="hidden" name="portion_type_id" value={selectedMenuItem.portionTypeId} />
+            <input type="hidden" name="sort_order" value={selectedMenuItem.sortOrder} />
+            <input type="hidden" name="is_active" value={String(selectedMenuItem.isActive)} />
+          </>
+        ) : null}
+        <fieldset disabled={!canEditDetails} className="grid gap-5">
         <section className={sectionClassName} aria-labelledby="menu-item-details-heading">
           <div id="menu-item-details-heading">
             <FormSectionHeading icon="details" title="Item details" />
@@ -485,6 +500,7 @@ export function MenuItemForm({
           </div>
         ) : null}
         </section>
+        </fieldset>
 
         <section className={sectionClassName} aria-labelledby="menu-availability-heading">
           <div id="menu-availability-heading">

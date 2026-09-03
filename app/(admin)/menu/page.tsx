@@ -11,7 +11,7 @@ import {
   toggleMenuItemActiveAction,
   toggleMenuItemAvailabilityAction
 } from "@/lib/ops/actions";
-import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
+import { requireMenuAvailabilityRole } from "@/lib/auth/admin-role";
 import { getMenuPriceChangeRequest } from "@/lib/menu/price-approvals";
 import { OperationsSchemaMissingError } from "@/lib/ops/errors";
 import { getMenuPageData } from "@/lib/ops/queries";
@@ -31,7 +31,7 @@ export default async function MenuPage({
   const priceRequestId = getFirstValue(params.price_request) ?? null;
   const errorMessage = getFirstValue(params.error) ?? null;
   const noticeMessage = getFirstValue(params.notice) ?? null;
-  const actor = await requireApprovedAdminRole();
+  const actor = await requireMenuAvailabilityRole();
   let data;
   let priceRequest;
 
@@ -49,6 +49,7 @@ export default async function MenuPage({
   }
 
   const { categories, portionTypes, inventoryItems, menuItems, selectedMenuItem } = data;
+  const canEditMenuDetails = actor.role !== "cashier";
 
   return (
     <div className="space-y-4 text-[#111418]">
@@ -188,8 +189,9 @@ export default async function MenuPage({
                             key={selectedMenuItem.id}
                             categories={categories}
                             portionTypes={portionTypes}
-                            selectedMenuItem={selectedMenuItem}
-                            nextSortOrder={menuItems.length + 1}
+                selectedMenuItem={selectedMenuItem}
+                nextSortOrder={menuItems.length + 1}
+                canEditDetails={canEditMenuDetails}
                           />
                           {priceRequest && priceRequest.menuItemId === selectedMenuItem.id ? (
                             <section className="rounded-[24px] border border-[#E4D8C8] bg-[#FFFDF8] p-4 sm:p-5">
@@ -351,15 +353,18 @@ export default async function MenuPage({
                 </svg>
               </div>
             </summary>
-            <div className="border-t border-[#EEF2F6] px-5 pb-5 pt-4">
-              <MenuItemForm
-                key="new-menu-item"
-                categories={categories}
-                portionTypes={portionTypes}
-                selectedMenuItem={null}
-                nextSortOrder={menuItems.length + 1}
-              />
-            </div>
+             {canEditMenuDetails ? (
+               <div className="border-t border-[#EEF2F6] px-5 pb-5 pt-4">
+                 <MenuItemForm
+                   key="new-menu-item"
+                   categories={categories}
+                   portionTypes={portionTypes}
+                   selectedMenuItem={null}
+                   nextSortOrder={menuItems.length + 1}
+                   canEditDetails={canEditMenuDetails}
+                 />
+               </div>
+             ) : null}
           </details>
 
         </aside>

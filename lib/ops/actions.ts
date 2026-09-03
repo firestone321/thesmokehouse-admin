@@ -9,7 +9,7 @@ import {
   triggerStorefrontReadyNotification,
   triggerStorefrontReadyQueueProcessing
 } from "@/lib/ops/storefront-ready-notifications";
-import { isRegularStaffRole, requireApprovedAdminRole } from "@/lib/auth/admin-role";
+import { isRegularStaffRole, requireApprovedAdminRole, requireMenuAvailabilityRole } from "@/lib/auth/admin-role";
 import { recordStaffActivity, type ActivityActor } from "@/lib/activity/log";
 import {
   processAdminPushDispatchQueue,
@@ -207,6 +207,20 @@ async function saveMenuItemRecord(formData: FormData, actor: ActivityActor) {
 
     existingMenuItem = loadedExistingMenuItem;
     code = existingMenuItem.code;
+  }
+
+  if (actor.role === "cashier") {
+    if (!menuItemId) throw new Error("Cashiers can only change availability for existing menu items.");
+    const { error } = await supabase.from("menu_items").update({
+      is_available_today: input.is_available_today,
+      availability_days: input.availability_days.split(",").map(Number),
+      availability_start_date: input.availability_start_date,
+      availability_end_date: input.availability_end_date
+    }).eq("id", menuItemId);
+    if (error) throw new Error(`Unable to update menu item availability: ${error.message}`);
+    await recordStaffActivity({ actor, action: "menu.item_availability_updated", entityType: "menu_item", entityId: menuItemId, summary: (actor.email ?? "A staff account") + " updated menu item availability." });
+    revalidateMenuPaths();
+    return { ok: true as const, menuItemId, mode: "updated" as const, priceApprovalPending: false, livePrice: existingMenuItem?.base_price ?? 0 };
   }
 
   const existingPrice = menuItemId ? Number(existingMenuItem?.base_price ?? input.base_price) : input.base_price;
@@ -1327,7 +1341,7 @@ export async function saveMenuItemAction(formData: FormData) {
 }
 
 export async function saveMenuItemDetailsAction(formData: FormData) {
-  const actor = await requireApprovedAdminRole();
+  const actor = await requireMenuAvailabilityRole();
   return saveMenuItemRecord(formData, actor);
 }
 
@@ -1441,7 +1455,7 @@ export async function toggleMenuItemActiveAction(formData: FormData) {
 }
 
 export async function toggleMenuItemAvailabilityAction(formData: FormData) {
-  const actor = await requireApprovedAdminRole();
+  const actor = await requireMenuAvailabilityRole();
   const { menu_item_id: menuItemId, next_value: nextValue } = parseFormData(formData, toggleMenuItemFlagActionSchema);
   const supabase = createAdminSupabaseClient();
 

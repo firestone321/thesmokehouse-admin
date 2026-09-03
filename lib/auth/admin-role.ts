@@ -6,6 +6,7 @@ import { isLocalAuthBypassEnabled } from "@/lib/auth/local-bypass";
 export type AdminRole = "admin" | "manager" | "chef" | "staff" | "cashier";
 
 const approvedAdminRoles = new Set<AdminRole>(["admin", "manager", "chef", "staff"]);
+const menuAvailabilityRoles = new Set<AdminRole>(["admin", "manager", "chef", "staff", "cashier"]);
 const dashboardRoles = new Set<AdminRole>(["admin", "manager", "chef", "staff", "cashier"]);
 const staffProvisioningRoles = new Set<AdminRole>(["admin", "manager"]);
 const approvalRoles = new Set<AdminRole>(["admin", "manager"]);
@@ -83,6 +84,10 @@ async function requireRoleFromSet(allowedRoles: Set<AdminRole>): Promise<{ userI
 
 export async function requireApprovedAdminRole(): Promise<{ userId: string; email: string | null; role: AdminRole }> {
   return requireRoleFromSet(approvedAdminRoles);
+}
+
+export async function requireMenuAvailabilityRole(): Promise<{ userId: string; email: string | null; role: AdminRole }> {
+  return requireRoleFromSet(menuAvailabilityRoles);
 }
 
 export async function requireDashboardRole(): Promise<{ userId: string; email: string | null; role: AdminRole }> {
