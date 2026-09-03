@@ -238,7 +238,10 @@ export const menuItemActionSchema = z.object({
   portion_type_id: idSchema,
   sort_order: z.preprocess(blankToUndefined, z.coerce.number().int().min(0).max(999).default(1)).default(1),
   is_active: checkboxSchema,
-  is_available_today: checkboxSchema
+  is_available_today: checkboxSchema,
+  availability_days: z.string().regex(/^[0-6](,[0-6])*$/, "Select at least one availability day."),
+  availability_start_date: z.preprocess(blankToNull, z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable()),
+  availability_end_date: z.preprocess(blankToNull, z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable())
 });
 
 export const menuPriceReviewActionSchema = z.object({

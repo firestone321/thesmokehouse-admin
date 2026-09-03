@@ -181,6 +181,9 @@ async function uploadMenuItemImage(menuItemId: number, file: File) {
 
 async function saveMenuItemRecord(formData: FormData, actor: ActivityActor) {
   const input = parseFormData(formData, menuItemActionSchema);
+  if (input.availability_start_date && input.availability_end_date && input.availability_end_date < input.availability_start_date) {
+    throw new Error("Availability end date must be on or after the start date.");
+  }
   const supabase = createAdminSupabaseClient();
   const menuItemId = input.menu_item_id;
   const name = input.name;
@@ -220,7 +223,10 @@ async function saveMenuItemRecord(formData: FormData, actor: ActivityActor) {
     portion_type_id: input.portion_type_id,
     sort_order: input.sort_order,
     is_active: input.is_active,
-    is_available_today: input.is_available_today
+    is_available_today: input.is_available_today,
+    availability_days: input.availability_days.split(",").map(Number),
+    availability_start_date: input.availability_start_date,
+    availability_end_date: input.availability_end_date
   };
 
   let conflictQuery = supabase

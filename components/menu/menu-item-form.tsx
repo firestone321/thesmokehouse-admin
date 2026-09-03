@@ -99,16 +99,19 @@ export function MenuItemForm({
   const isDrinkCategory = selectedCategory?.code === "drinks" || selectedCategory?.name?.toLowerCase() === "drinks";
   const portionUnit = isDrinkCategory ? "ml" : "g";
   const portionUnitLabel = isDrinkCategory ? "Milliliters" : "Grams";
+  const [availabilityDays, setAvailabilityDays] = useState<number[]>(selectedMenuItem?.availabilityDays ?? [0, 1, 2, 3, 4, 5, 6]);
 
   useEffect(() => {
     setPhase("idle");
     setErrorMessage(null);
     setSuccessMessage(null);
+    setAvailabilityDays(selectedMenuItem?.availabilityDays ?? [0, 1, 2, 3, 4, 5, 6]);
   }, [selectedMenuItem?.id]);
 
   useEffect(() => {
     setPortionOptions(portionTypes);
     setPortionTypeId(selectedMenuItem?.portionTypeId ? String(selectedMenuItem.portionTypeId) : "");
+    setAvailabilityDays(selectedMenuItem?.availabilityDays ?? [0, 1, 2, 3, 4, 5, 6]);
     setIsQuickAddOpen(portionTypes.length === 0);
     setIsCreatingPortionType(false);
     setQuickAddError(null);
@@ -498,6 +501,25 @@ export function MenuItemForm({
               <input type="checkbox" name="is_available_today" defaultChecked={selectedMenuItem?.isAvailableToday ?? true} className="size-4 accent-[#B85C38]" />
               Available today
             </label>
+          </div>
+          <div className="grid gap-3 rounded-2xl border border-[#DDD6CF] bg-[#FFFDF9] p-4">
+            <div>
+              <p className="text-sm font-semibold text-[#111418]">Automatic availability schedule</p>
+              <p className="mt-1 text-xs leading-5 text-[#6B7280]">Choose the days this item can be ordered. Optional dates limit the schedule to a season or promotion.</p>
+            </div>
+            <input type="hidden" name="availability_days" value={availabilityDays.join(",")} />
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map((day, index) => (
+                <label key={day} className="flex items-center gap-2 rounded-xl border border-[#E5DED6] bg-white px-3 py-2 text-xs font-semibold text-[#374151]">
+                  <input type="checkbox" checked={availabilityDays.includes(index)} onChange={() => setAvailabilityDays((current) => current.includes(index) ? current.filter((dayIndex) => dayIndex !== index) : [...current, index].sort())} className="size-4 accent-[#B85C38]" />
+                  {day}
+                </label>
+              ))}
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="grid gap-2 text-sm font-semibold text-[#111418]">Start date<input type="date" name="availability_start_date" defaultValue={selectedMenuItem?.availabilityStartDate ?? ""} className={fieldClassName} /></label>
+              <label className="grid gap-2 text-sm font-semibold text-[#111418]">End date<input type="date" name="availability_end_date" defaultValue={selectedMenuItem?.availabilityEndDate ?? ""} className={fieldClassName} /></label>
+            </div>
           </div>
         </section>
 

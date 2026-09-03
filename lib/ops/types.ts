@@ -278,6 +278,9 @@ export interface MenuItemRecord {
   prepType: PrepType;
   isActive: boolean;
   isAvailableToday: boolean;
+  availabilityDays: number[];
+  availabilityStartDate: string | null;
+  availabilityEndDate: string | null;
   sortOrder: number;
   categoryId: number;
   categoryName: string;

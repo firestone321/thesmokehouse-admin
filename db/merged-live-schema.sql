@@ -358,6 +358,9 @@ returns table (
   category_name        text,
   is_active            boolean,
   is_available_today   boolean,
+  availability_days    smallint[],
+  availability_start_date date,
+  availability_end_date date,
   available_quantity   integer
 )
 language sql
@@ -375,6 +378,9 @@ as $$
     mc.name  as category_name,
     mi.is_active,
     mi.is_available_today,
+    mi.availability_days,
+    mi.availability_start_date,
+    mi.availability_end_date,
     case
       when pt.id is null
         then 0
@@ -402,7 +408,6 @@ as $$
   left join public.finished_stock src_fs
     on src_fs.portion_type_id = pt.stock_source_portion_type_id
   where mi.is_active = true
-    and mi.is_available_today = true
   order by mi.sort_order, mi.name;
 $$;
 
@@ -442,6 +447,9 @@ create table if not exists public.menu_items (
   prep_type text not null,
   is_active boolean not null default true,
   is_available_today boolean not null default true,
+  availability_days smallint[] not null default '{0,1,2,3,4,5,6}',
+  availability_start_date date,
+  availability_end_date date,
   sort_order smallint not null default 1,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),

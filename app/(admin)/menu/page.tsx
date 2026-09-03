@@ -137,7 +137,7 @@ export default async function MenuPage({
                             <Link
                               href="/menu"
                               scroll={false}
-                              className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2 text-sm font-semibold text-[#111418]"
+                               className="rounded-2xl border border-[#CBD5E1] bg-[#F8FAFC] px-3 py-2 text-sm font-semibold text-[#334155]"
                             >
                               Close
                             </Link>
@@ -145,7 +145,7 @@ export default async function MenuPage({
                             <Link
                               href={`/menu?edit=${item.id}`}
                               scroll={false}
-                              className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2 text-sm font-semibold text-[#111418]"
+                               className="rounded-2xl border border-[#BFDBFE] bg-[#EFF6FF] px-3 py-2 text-sm font-semibold text-[#1D4ED8]"
                             >
                               Edit
                             </Link>
@@ -154,7 +154,7 @@ export default async function MenuPage({
                           <form action={toggleMenuItemActiveAction}>
                             <input type="hidden" name="menu_item_id" value={item.id} />
                             <input type="hidden" name="next_value" value={item.isActive ? "false" : "true"} />
-                            <button type="submit" className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2 text-sm font-semibold text-[#111418]">
+                             <button type="submit" className={`rounded-2xl border px-3 py-2 text-sm font-semibold ${item.isActive ? "border-[#FECACA] bg-[#FEF2F2] text-[#B91C1C]" : "border-[#BBF7D0] bg-[#F0FDF4] text-[#15803D]"}`}>
                               {item.isActive ? "Deactivate" : "Activate"}
                             </button>
                           </form>
@@ -162,7 +162,7 @@ export default async function MenuPage({
                           <form action={toggleMenuItemAvailabilityAction}>
                             <input type="hidden" name="menu_item_id" value={item.id} />
                             <input type="hidden" name="next_value" value={item.isAvailableToday ? "false" : "true"} />
-                            <button type="submit" className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2 text-sm font-semibold text-[#111418]">
+                             <button type="submit" className={`rounded-2xl border px-3 py-2 text-sm font-semibold ${item.isAvailableToday ? "border-[#FED7AA] bg-[#FFF7ED] text-[#C2410C]" : "border-[#C4B5FD] bg-[#F5F3FF] text-[#6D28D9]"}`}>
                               {item.isAvailableToday ? "Hide today" : "Make available"}
                             </button>
                           </form>
