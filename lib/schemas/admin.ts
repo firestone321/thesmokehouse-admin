@@ -115,7 +115,7 @@ export const posSaleRequestSchema = z.object({
   idempotencyKey: z.string().uuid(),
   tenderType: z.enum(["cash", "mobile_money", "card"]),
   amountReceived: z.number().int().nonnegative(),
-  paymentReference: z.string().trim().max(120).optional(),
+  paymentReference: z.string().trim().regex(/^(?:\d{4}|\d{11})$/).optional(),
   items: z
     .array(
       z.object({
