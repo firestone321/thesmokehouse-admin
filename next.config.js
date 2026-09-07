@@ -1,6 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  outputFileTracingIncludes: {
+    "/api/admin/raw-materials/template": ["./assets/templates/AUGUST EXPENDITURE FIRESTONE.xlsx"]
+  },
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "stvbivbatrlutqhgfgic.supabase.co" }

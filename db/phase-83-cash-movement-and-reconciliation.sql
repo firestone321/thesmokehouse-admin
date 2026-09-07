@@ -361,6 +361,11 @@ revoke all on public.financial_accounts, public.financial_transfers, public.fina
   from public, anon, authenticated;
 grant select on public.financial_accounts, public.financial_transfers, public.financial_account_movements
   to service_role;
+-- Daily Close writes must pass through sign_off_daily_close_v2. The function is
+-- SECURITY DEFINER and executes with the migration owner's privileges; server-side
+-- readers retain SELECT, while stale direct-insert paths fail closed.
+revoke all on public.daily_close_snapshots from service_role;
+grant select on public.daily_close_snapshots to service_role;
 
 revoke all on function public.record_financial_transfer(bigint,bigint,bigint,timestamptz,text,text,bigint,uuid,text)
   from public, anon, authenticated;
