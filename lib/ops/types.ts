@@ -62,6 +62,8 @@ export interface ProcurementInventoryOption {
   code: string;
   name: string;
   displayName?: string;
+  portionLabel?: string | null;
+  sourceMenuCategoryCode?: string | null;
   unitName: string;
   itemType: InventoryItemType;
   currentQuantity: number;
@@ -69,6 +71,15 @@ export interface ProcurementInventoryOption {
   directSellablePortionTypeId?: number | null;
   sellableUnitsPerInput?: number;
   requiresWholeInput?: boolean;
+}
+
+export interface NonDrinkSellablePortionOption {
+  menuItemId: number;
+  portionTypeId: number;
+  menuItemName: string;
+  portionLabel: string;
+  categoryName: string;
+  isMapped: boolean;
 }
 
 export interface ProcurementActivityRecord {
@@ -189,6 +200,7 @@ export interface ProcurementPageData {
   proteinFamilies: ProteinFamilyOption[];
   proteinIntakeItems: ProteinIntakeItemOption[];
   portionOptions: ProcurementPortionOption[];
+  nonDrinkSellablePortions: NonDrinkSellablePortionOption[];
   recentActivity: ProcurementActivityRecord[];
   processingProteinReceipts: ProcurementActivityRecord[];
   finishedStock: FinishedStockRecord[];
@@ -258,6 +270,7 @@ export interface PortionTypeOption {
   code: string;
   label: string;
   isAssigned: boolean;
+  isUnused: boolean;
 }
 
 export interface MenuComponentRecord {

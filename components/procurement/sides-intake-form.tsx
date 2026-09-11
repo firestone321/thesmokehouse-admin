@@ -8,7 +8,11 @@ import {
   createSupplierInlineAction,
   recordIngredientProcurementAction
 } from "@/lib/ops/actions";
-import { ProcurementInventoryOption, ProcurementSupplierOption } from "@/lib/ops/types";
+import {
+  NonDrinkSellablePortionOption,
+  ProcurementInventoryOption,
+  ProcurementSupplierOption
+} from "@/lib/ops/types";
 
 function formatQuantity(value: number, unitName: string) {
   return `${value.toFixed(2)} ${unitName}`;
@@ -17,10 +21,12 @@ function formatQuantity(value: number, unitName: string) {
 export function SidesIntakeForm({
   defaultDeliveryDate,
   inventoryItems,
+  sellablePortions,
   suppliers = []
 }: {
   defaultDeliveryDate: string;
   inventoryItems: ProcurementInventoryOption[];
+  sellablePortions: NonDrinkSellablePortionOption[];
   suppliers?: ProcurementSupplierOption[];
 }) {
   const ingredientItems = useMemo(
@@ -41,6 +47,8 @@ export function SidesIntakeForm({
   const [quickAddItemError, setQuickAddItemError] = useState<string | null>(null);
   const [quickAddItemSuccess, setQuickAddItemSuccess] = useState<string | null>(null);
   const [isCreatingItem, startCreateItemTransition] = useTransition();
+  const [sellableOptions, setSellableOptions] = useState(sellablePortions);
+  const [portionToLinkId, setPortionToLinkId] = useState("");
   const [batchPreviewTime, setBatchPreviewTime] = useState(() => {
     const now = new Date();
     const timeFormatter = new Intl.DateTimeFormat("en-GB", {
@@ -57,6 +65,15 @@ export function SidesIntakeForm({
     () => itemOptions.find((item) => String(item.id) === selectedItemId) ?? null,
     [itemOptions, selectedItemId]
   );
+  const portionToLink = useMemo(
+    () => sellableOptions.find((option) => String(option.portionTypeId) === portionToLinkId) ?? null,
+    [portionToLinkId, sellableOptions]
+  );
+  const mappedNonDrinkInventoryIds = useMemo(() => new Set(
+    sellableOptions
+      .map((option) => itemOptions.find((item) => item.directSellablePortionTypeId === option.portionTypeId)?.id)
+      .filter((id): id is number => Boolean(id))
+  ), [itemOptions, sellableOptions]);
   const receivesPieces = selectedItem?.unitName.toLowerCase() === "piece" || selectedItem?.unitName.toLowerCase() === "pieces";
   const selectedSupplier = useMemo(
     () => supplierOptions.find((supplier) => String(supplier.id) === supplierId) ?? null,
@@ -73,6 +90,10 @@ export function SidesIntakeForm({
     setSupplierOptions(suppliers);
     setSupplierId((currentSupplierId) => currentSupplierId || (suppliers[0] ? String(suppliers[0].id) : ""));
   }, [suppliers]);
+
+  useEffect(() => {
+    setSellableOptions(sellablePortions);
+  }, [sellablePortions]);
 
   useEffect(() => {
     const updatePreviewTime = () => {
@@ -194,6 +215,40 @@ export function SidesIntakeForm({
         form.reset();
       } catch (error) {
         setQuickAddItemError(error instanceof Error ? error.message : "Unable to create tracked side or drink item.");
+      }
+    });
+  }
+
+  function handleLinkPortion() {
+    if (!portionToLink) return;
+
+    setQuickAddItemError(null);
+    setQuickAddItemSuccess(null);
+    startCreateItemTransition(async () => {
+      try {
+        const formData = new FormData();
+        formData.set("name", portionToLink.menuItemName);
+        formData.set("unit_name", "portions");
+        formData.set("item_type", "ingredient");
+        formData.set("reorder_threshold", "0");
+        formData.set("direct_sellable_portion_type_id", String(portionToLink.portionTypeId));
+        formData.set("source_menu_item_id", String(portionToLink.menuItemId));
+        const result = await createInventoryItemInlineAction(formData);
+
+        if (!result.ok) {
+          setQuickAddItemError("Unable to link this portion.");
+          return;
+        }
+
+        setItemOptions((currentItems) => [...currentItems.filter((item) => item.id !== result.item.id), result.item]);
+        setSellableOptions((currentOptions) => currentOptions.map((option) => (
+          option.portionTypeId === portionToLink.portionTypeId ? { ...option, isMapped: true } : option
+        )));
+        setSelectedItemId(String(result.item.id));
+        setPortionToLinkId("");
+        setQuickAddItemSuccess(`${portionToLink.menuItemName} is linked. You will not need to do this again.`);
+      } catch (error) {
+        setQuickAddItemError(error instanceof Error ? error.message : "Unable to link this portion.");
       }
     });
   }
@@ -331,8 +386,9 @@ export function SidesIntakeForm({
           {isQuickAddItemOpen ? (
             <div className="rounded-[24px] border border-[#E4E7EB] bg-[#F8FAFB] px-4 py-4">
               <div>
-                <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Add Tracked Item</p>
-                <h3 className="mt-2 text-lg font-semibold text-[#111418]">Quick add a tracked side input</h3>
+                <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Raw input</p>
+                <h3 className="mt-2 text-lg font-semibold text-[#111418]">Add something that needs preparation</h3>
+                <p className="mt-1 text-sm leading-6 text-[#6B7280]">Menu portions are added automatically when the menu item is created.</p>
               </div>
 
               <div className="mt-4 grid gap-3">
@@ -340,14 +396,14 @@ export function SidesIntakeForm({
                   form="sides-quick-add-item-form"
                   name="name"
                   required
-                  placeholder="Item name, e.g. juice produced"
+                  placeholder="What is the raw item called?"
                   className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
                 />
                 <input
                   form="sides-quick-add-item-form"
                   name="unit_name"
                   required
-                  placeholder="Unit of measure, e.g. kg"
+                  placeholder="How is it counted? For example kg"
                   className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
                 />
                 <input
@@ -356,7 +412,7 @@ export function SidesIntakeForm({
                   step="0.01"
                   min="0"
                   name="reorder_threshold"
-                  placeholder="Reorder threshold"
+                  placeholder="Low-stock level (optional)"
                   className="rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-sm text-[#111418]"
                 />
                 <input form="sides-quick-add-item-form" type="hidden" name="item_type" value="ingredient" />
@@ -376,28 +432,59 @@ export function SidesIntakeForm({
                   disabled={isCreatingItem}
                   className="rounded-2xl bg-[#111418] px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70"
                 >
-                  {isCreatingItem ? "Creating tracked item..." : "Create tracked item and use it"}
+                  {isCreatingItem ? "Adding raw input..." : "Add raw input"}
                 </button>
               </div>
             </div>
           ) : null}
 
           <label className="space-y-2 text-sm text-[#6B7280]">
-            <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Side or drink item</span>
+            <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Choose portion</span>
             <select
-              name="inventory_item_id"
-              value={selectedItemId}
-              onChange={(event) => setSelectedItemId(event.target.value)}
-              disabled={itemOptions.length === 0}
+              value={portionToLinkId ? `portion:${portionToLinkId}` : selectedItemId ? `item:${selectedItemId}` : ""}
+              onChange={(event) => {
+                const [kind, id] = event.target.value.split(":");
+                if (kind === "portion") {
+                  setPortionToLinkId(id);
+                  setSelectedItemId("");
+                } else {
+                  setSelectedItemId(id ?? "");
+                  setPortionToLinkId("");
+                }
+                setQuickAddItemError(null);
+                setQuickAddItemSuccess(null);
+              }}
+              disabled={itemOptions.length === 0 && sellableOptions.length === 0}
               className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
             >
-              {itemOptions.length === 0 ? <option value="">Create a tracked item first</option> : null}
-              {itemOptions.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.displayName ?? item.name}
-                  {item.directSellablePortionTypeId ? ` — received by ${item.unitName}` : ""}
-                </option>
-              ))}
+              {itemOptions.length === 0 ? <option value="">Create a menu portion first</option> : null}
+              <optgroup label="Sides and Accompaniments">
+                {sellableOptions.map((option) => {
+                  const linkedItem = itemOptions.find((item) => item.directSellablePortionTypeId === option.portionTypeId);
+                  return (
+                    <option
+                      key={option.portionTypeId}
+                      value={linkedItem ? `item:${linkedItem.id}` : `portion:${option.portionTypeId}`}
+                    >
+                      {option.menuItemName} — {option.portionLabel}{linkedItem ? "" : " — link once"}
+                    </option>
+                  );
+                })}
+              </optgroup>
+              <optgroup label="Drinks">
+                {itemOptions.filter((item) => item.sourceMenuCategoryCode === "drinks").map((item) => (
+                  <option key={item.id} value={`item:${item.id}`}>
+                    {item.displayName ?? item.name}{item.portionLabel ? ` — ${item.portionLabel}` : ""}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Other inputs">
+                {itemOptions.filter((item) => !mappedNonDrinkInventoryIds.has(item.id) && item.sourceMenuCategoryCode !== "drinks").map((item) => (
+                  <option key={item.id} value={`item:${item.id}`}>
+                    {item.name}{item.portionLabel ? ` — ${item.portionLabel} input` : " — raw input"}
+                  </option>
+                ))}
+              </optgroup>
             </select>
             <button
               type="button"
@@ -408,9 +495,43 @@ export function SidesIntakeForm({
               }}
               className="text-left text-xs font-semibold text-[#111418] underline underline-offset-4"
             >
-              {isQuickAddItemOpen ? "Close add tracked item" : "Add tracked item"}
+              {isQuickAddItemOpen ? "Close raw input" : "Add raw input"}
             </button>
           </label>
+
+          <input type="hidden" name="inventory_item_id" value={selectedItemId} />
+
+          {portionToLink ? (
+            <div className="rounded-[22px] border border-[#F3D7A6] bg-[#FFF9ED] px-4 py-4">
+              <p className="text-sm font-semibold text-[#111418]">Link this portion once</p>
+              <p className="mt-1 text-sm leading-6 text-[#6B7280]">
+                {portionToLink.menuItemName} — {portionToLink.portionLabel}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-[#6B7280]">After linking, staff can simply choose it and enter the restocking amount.</p>
+              <button
+                type="button"
+                onClick={handleLinkPortion}
+                disabled={isCreatingItem}
+                className="mt-3 w-full rounded-2xl bg-[#111418] px-4 py-3 text-sm font-semibold text-white disabled:opacity-70"
+              >
+                {isCreatingItem ? "Linking portion..." : "Link this portion"}
+              </button>
+            </div>
+          ) : null}
+
+          {!isQuickAddItemOpen && quickAddItemError ? (
+            <div className="rounded-[20px] border border-[#F4C7C7] bg-[#FFF8F8] px-4 py-3 text-sm leading-6 text-[#8A1C1C]">
+              {quickAddItemError}
+            </div>
+          ) : null}
+          {!isQuickAddItemOpen && quickAddItemSuccess ? (
+            <div className="rounded-[20px] border border-[#CFE8D6] bg-[#F2FBF5] px-4 py-3 text-sm leading-6 text-[#166534]">
+              {quickAddItemSuccess}
+            </div>
+          ) : null}
+
+          {selectedItem ? (
+            <>
 
           <label className="space-y-2 text-sm text-[#6B7280]">
             <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Batch number</span>
@@ -439,7 +560,7 @@ export function SidesIntakeForm({
 
           <label className="space-y-2 text-sm text-[#6B7280]">
             <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">
-              {receivesPieces ? "Pieces Received" : `Quantity received${selectedItem ? ` (${selectedItem.unitName})` : ""}`}
+              {selectedItem?.directSellablePortionTypeId ? "Restocking amount" : receivesPieces ? "Pieces Received" : `Quantity received${selectedItem ? ` (${selectedItem.unitName})` : ""}`}
             </span>
             <input
               type="number"
@@ -451,8 +572,7 @@ export function SidesIntakeForm({
             />
             {selectedItem?.directSellablePortionTypeId ? (
               <p className="text-xs leading-5 text-[#6B7280]">
-                Each {receivesPieces ? "piece" : selectedItem.unitName} credits {(selectedItem.sellableUnitsPerInput ?? 1).toLocaleString("en-UG")} sellable{" "}
-                {(selectedItem.sellableUnitsPerInput ?? 1) === 1 ? "portion" : "portions"}.
+                Enter how many of the selected portion are being added.
               </p>
             ) : null}
           </label>
@@ -468,14 +588,18 @@ export function SidesIntakeForm({
               className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
             />
           </label>
+            </>
+          ) : null}
         </div>
 
+        {selectedItem ? (
+          <>
         {selectedItem?.directSellablePortionTypeId ? (
           <article className="rounded-[22px] border border-[#CFE8D6] bg-[#F2FBF5] px-4 py-4">
             <p className="text-[10px] uppercase tracking-[0.18em] text-[#15803D]">Stock destination</p>
             <p className="mt-2 text-base font-semibold text-[#111418]">Sellable finished stock</p>
             <p className="mt-1 text-sm leading-6 text-[#6B7280]">
-              Saving this receipt makes {selectedItem.displayName ?? selectedItem.name} available through its menu portion immediately.
+              Saving adds these portions to {selectedItem.displayName ?? selectedItem.name} immediately.
             </p>
           </article>
         ) : selectedItem ? (
@@ -518,7 +642,7 @@ export function SidesIntakeForm({
 
         <button
           type="submit"
-          disabled={supplierOptions.length === 0 || itemOptions.length === 0}
+          disabled={supplierOptions.length === 0 || !selectedItemId || Boolean(portionToLinkId)}
           className="rounded-2xl bg-[#111418] px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70"
         >
           Save sides and drinks intake
@@ -533,6 +657,8 @@ export function SidesIntakeForm({
             Add a tracked side item or create a drink on the Menu page first.
           </p>
         ) : null}
+            </>
+          ) : null}
           </form>
           <form id="sides-quick-add-supplier-form" onSubmit={handleQuickAddSupplier}></form>
           <form id="sides-quick-add-item-form" onSubmit={handleQuickAddItem}></form>

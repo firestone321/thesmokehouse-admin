@@ -18,6 +18,7 @@ import {
 import {
   addOrderNoteActionSchema,
   completeOrderWithPickupCodeActionSchema,
+  deletePortionTypeActionSchema,
   ingredientProcurementActionSchema,
   inventoryAdjustmentActionSchema,
   inventoryItemActionSchema,
@@ -496,6 +497,56 @@ export async function createInventoryItemInlineAction(formData: FormData) {
   const input = parseFormData(formData, inventoryItemActionSchema);
   const supabase = createAdminSupabaseClient();
   const code = input.code ?? toCode(input.name);
+  const hasSellableTarget = input.direct_sellable_portion_type_id !== null || input.source_menu_item_id !== null;
+  let mappedMenuItemName: string | null = null;
+
+  if (hasSellableTarget) {
+    if (input.direct_sellable_portion_type_id === null || input.source_menu_item_id === null) {
+      throw new Error("Choose the menu item that this ready-to-sell stock belongs to.");
+    }
+
+    if (input.item_type !== "ingredient") {
+      throw new Error("Ready-to-sell menu stock must be created as a food intake item.");
+    }
+
+    const { data: menuItem, error: menuItemError } = await supabase
+      .from("menu_items")
+      .select("id, name, portion_type_id, menu_categories!inner(code), portion_types!menu_items_portion_type_id_fkey(stock_source_portion_type_id)")
+      .eq("id", input.source_menu_item_id)
+      .maybeSingle();
+
+    if (menuItemError) {
+      throw new Error(`Unable to validate the sellable menu item: ${menuItemError.message}`);
+    }
+
+    const menuCategory = (menuItem as any)?.menu_categories;
+    const categoryCode = Array.isArray(menuCategory) ? menuCategory[0]?.code : menuCategory?.code;
+
+    const menuPortion = (menuItem as any)?.portion_types;
+    const stockPoolPortionTypeId = Number(menuPortion?.stock_source_portion_type_id ?? menuItem?.portion_type_id ?? 0);
+
+    if (!menuItem || !["sides", "accompaniments"].includes(categoryCode ?? "") || stockPoolPortionTypeId !== input.direct_sellable_portion_type_id) {
+      throw new Error("Choose a menu item from Sides or Accompaniments.");
+    }
+
+    const { data: existingMapping, error: existingMappingError } = await supabase
+      .from("inventory_items")
+      .select("id, name")
+      .or(
+        `direct_sellable_portion_type_id.eq.${input.direct_sellable_portion_type_id},source_menu_item_id.eq.${input.source_menu_item_id}`
+      )
+      .maybeSingle();
+
+    if (existingMappingError) {
+      throw new Error(`Unable to check the sellable stock setup: ${existingMappingError.message}`);
+    }
+
+    if (existingMapping) {
+      throw new Error(`${menuItem.name} already has a resupply item.`);
+    }
+
+    mappedMenuItemName = menuItem.name;
+  }
 
   const { data, error } = await supabase
     .from("inventory_items")
@@ -505,6 +556,10 @@ export async function createInventoryItemInlineAction(formData: FormData) {
       unit_name: input.unit_name,
       reorder_threshold: input.reorder_threshold,
       item_type: input.item_type,
+      direct_sellable_portion_type_id: input.direct_sellable_portion_type_id,
+      sellable_units_per_input: hasSellableTarget ? 1 : undefined,
+      requires_whole_input: hasSellableTarget,
+      source_menu_item_id: input.source_menu_item_id,
       is_active: true
     })
     .select(
@@ -513,6 +568,9 @@ export async function createInventoryItemInlineAction(formData: FormData) {
     .single();
 
   if (error || !data) {
+    if (error?.message.includes("inventory_items_direct_sellable_portion_idx") || error?.message.includes("inventory_items_source_menu_item_idx")) {
+      throw new Error("That menu item already has a resupply item.");
+    }
     throw new Error(`Unable to create inventory item: ${error?.message ?? "Unknown error"}`);
   }
 
@@ -533,7 +591,7 @@ export async function createInventoryItemInlineAction(formData: FormData) {
       id: data.id,
       code: data.code,
       name: data.name,
-      displayName: data.name,
+      displayName: mappedMenuItemName ?? data.name,
       unitName: data.unit_name,
       itemType: data.item_type,
       currentQuantity: Number(data.current_quantity ?? 0),
@@ -1109,7 +1167,7 @@ async function savePortionTypeRecord(formData: FormData) {
   }
 
   const nextSortOrder = Number(latestPortionType?.sort_order ?? 0) + 1;
-  const portionLabel = `${input.quantity}${input.unit}`;
+  const portionLabel = input.unit === "piece" ? `${input.quantity} ${input.quantity === 1 ? "piece" : "pieces"}` : `${input.quantity}${input.unit}`;
 
   const { data, error } = await supabase
     .from("portion_types")
@@ -1133,8 +1191,70 @@ async function savePortionTypeRecord(formData: FormData) {
     id: data.id,
     code: data.code,
     label: `${data.name}${data.portion_label ? ` (${data.portion_label})` : ""}`,
-    isAssigned: false
+    isAssigned: false,
+    isUnused: true
   };
+}
+
+export async function deletePortionTypeAction(formData: FormData) {
+  const actor = await requireApprovedAdminRole();
+  const input = parseFormData(formData, deletePortionTypeActionSchema);
+  const supabase = createAdminSupabaseClient();
+  const { data: portionType, error: portionTypeError } = await supabase
+    .from("portion_types")
+    .select("id, name, portion_label")
+    .eq("id", input.portion_type_id)
+    .maybeSingle();
+
+  if (portionTypeError) {
+    throw new Error(`Unable to load the portion: ${portionTypeError.message}`);
+  }
+
+  if (!portionType) {
+    return { ok: false as const, error: "That portion no longer exists." };
+  }
+
+  const referenceChecks = [
+    supabase.from("menu_items").select("id", { count: "exact", head: true }).eq("portion_type_id", input.portion_type_id),
+    supabase.from("daily_stock").select("portion_type_id", { count: "exact", head: true }).eq("portion_type_id", input.portion_type_id),
+    supabase.from("finished_stock").select("portion_type_id", { count: "exact", head: true }).eq("portion_type_id", input.portion_type_id),
+    supabase.from("finished_stock_movements").select("id", { count: "exact", head: true }).eq("portion_type_id", input.portion_type_id),
+    supabase.from("processing_batches").select("id", { count: "exact", head: true }).eq("portion_type_id", input.portion_type_id),
+    supabase.from("protein_intake_item_portions").select("portion_type_id", { count: "exact", head: true }).eq("portion_type_id", input.portion_type_id),
+    supabase.from("inventory_items").select("id", { count: "exact", head: true }).eq("direct_sellable_portion_type_id", input.portion_type_id),
+    supabase.from("portion_types").select("id", { count: "exact", head: true }).eq("stock_source_portion_type_id", input.portion_type_id),
+    supabase.from("menu_item_stock_requirements").select("menu_item_id", { count: "exact", head: true }).eq("portion_type_id", input.portion_type_id)
+  ];
+  const references = await Promise.all(referenceChecks);
+  const referenceError = references.find((result) => result.error)?.error;
+
+  if (referenceError) {
+    throw new Error(`Unable to check whether the portion is unused: ${referenceError.message}`);
+  }
+
+  if (references.some((result) => (result.count ?? 0) > 0)) {
+    return { ok: false as const, error: "This portion is already in use and cannot be deleted." };
+  }
+
+  const { error } = await supabase.from("portion_types").delete().eq("id", input.portion_type_id);
+
+  if (error) {
+    if (error.code === "23503") {
+      return { ok: false as const, error: "This portion became used and cannot be deleted." };
+    }
+    throw new Error(`Unable to delete the portion: ${error.message}`);
+  }
+
+  await recordStaffActivity({
+    actor,
+    action: "menu.portion_type_deleted",
+    entityType: "portion_type",
+    entityId: input.portion_type_id,
+    summary: `${actor.email ?? "A staff account"} deleted unused portion ${portionType.name}${portionType.portion_label ? ` (${portionType.portion_label})` : ""}.`
+  });
+  revalidateMenuPaths();
+
+  return { ok: true as const };
 }
 
 export async function createPortionTypeInlineAction(formData: FormData) {

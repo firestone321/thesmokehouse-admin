@@ -3,7 +3,12 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { UgxAmountInput } from "@/components/ugx-amount-input";
-import { createPortionTypeInlineAction, saveMenuItemDetailsAction, uploadMenuItemImageAction } from "@/lib/ops/actions";
+import {
+  createPortionTypeInlineAction,
+  deletePortionTypeAction,
+  saveMenuItemDetailsAction,
+  uploadMenuItemImageAction
+} from "@/lib/ops/actions";
 import { MenuItemRecord, PortionTypeOption, MenuCategoryRecord } from "@/lib/ops/types";
 
 type SavePhase = "idle" | "creating" | "saving" | "uploading";
@@ -92,6 +97,8 @@ export function MenuItemForm({
   const [menuCategoryId, setMenuCategoryId] = useState<string>(selectedMenuItem?.categoryId ? String(selectedMenuItem.categoryId) : "");
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(portionTypes.length === 0);
   const [isCreatingPortionType, setIsCreatingPortionType] = useState(false);
+  const [deletingPortionTypeId, setDeletingPortionTypeId] = useState<number | null>(null);
+  const [newPortionUnit, setNewPortionUnit] = useState<"g" | "piece">("g");
   const [quickAddError, setQuickAddError] = useState<string | null>(null);
   const [quickAddSuccess, setQuickAddSuccess] = useState<string | null>(null);
   const [imagePreview, setImagePreview] = useState<{ name: string; url: string } | null>(null);
@@ -99,8 +106,9 @@ export function MenuItemForm({
   const isPending = phase !== "idle";
   const selectedCategory = categories.find((category) => String(category.id) === menuCategoryId);
   const isDrinkCategory = selectedCategory?.code === "drinks" || selectedCategory?.name?.toLowerCase() === "drinks";
-  const portionUnit = isDrinkCategory ? "ml" : "g";
-  const portionUnitLabel = isDrinkCategory ? "Milliliters" : "Grams";
+  const portionUnit = isDrinkCategory ? "ml" : newPortionUnit;
+  const portionUnitLabel = portionUnit === "ml" ? "Milliliters" : portionUnit === "piece" ? "Number of pieces" : "Grams";
+  const unusedPortionOptions = portionOptions.filter((portion) => portion.isUnused);
   const [availabilityDays, setAvailabilityDays] = useState<number[]>(selectedMenuItem?.availabilityDays ?? [0, 1, 2, 3, 4, 5, 6]);
 
   useEffect(() => {
@@ -178,6 +186,34 @@ export function MenuItemForm({
       setQuickAddError(error instanceof Error ? error.message : "Unable to create portion type.");
     } finally {
       setIsCreatingPortionType(false);
+    }
+  }
+
+  async function handleDeletePortionType(portion: PortionTypeOption) {
+    if (!window.confirm(`Delete ${portion.label}?`)) return;
+
+    setQuickAddError(null);
+    setQuickAddSuccess(null);
+    setDeletingPortionTypeId(portion.id);
+
+    try {
+      const formData = new FormData();
+      formData.set("portion_type_id", String(portion.id));
+      const result = await deletePortionTypeAction(formData);
+
+      if (!result.ok) {
+        setQuickAddError(result.error);
+        return;
+      }
+
+      setPortionOptions((currentOptions) => currentOptions.filter((option) => option.id !== portion.id));
+      if (portionTypeId === String(portion.id)) setPortionTypeId("");
+      setQuickAddSuccess(`${portion.label} was deleted.`);
+      router.refresh();
+    } catch (error) {
+      setQuickAddError(error instanceof Error ? error.message : "Unable to delete the portion.");
+    } finally {
+      setDeletingPortionTypeId(null);
     }
   }
 
@@ -368,6 +404,35 @@ export function MenuItemForm({
           <p className="text-xs leading-5 text-[#6B7280]">
             Portion code is generated from the name, and the size label follows the selected category.
           </p>
+          {unusedPortionOptions.length > 0 ? (
+            <details className="rounded-2xl border border-[#E5DED6] bg-[#FAF7F3] px-3 py-2">
+              <summary className="cursor-pointer text-xs font-semibold text-[#70412D]">Remove an unused portion</summary>
+              <div className="mt-3 grid max-h-56 gap-2 overflow-y-auto">
+                {unusedPortionOptions.map((portion) => (
+                  <div key={portion.id} className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2">
+                    <span className="text-sm text-[#2D2219]">{portion.label}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleDeletePortionType(portion)}
+                      disabled={deletingPortionTypeId !== null}
+                      aria-label={`Delete unused portion ${portion.label}`}
+                      title="Delete unused portion"
+                      className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-[#F4C7C7] bg-[#FFF8F8] text-[#B42318] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {deletingPortionTypeId === portion.id ? (
+                        <span className="text-xs">...</span>
+                      ) : (
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="size-4" aria-hidden="true">
+                          <path d="M4 7h16M9 7V4h6v3M8 10v8M12 10v8M16 10v8M6 7l1 14h10l1-14" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-2 text-xs leading-5 text-[#6B7280]">Only portions that are not on the menu are shown. A final safety check runs before deletion.</p>
+            </details>
+          ) : null}
         </div>
 
         {isQuickAddOpen ? (
@@ -381,12 +446,23 @@ export function MenuItemForm({
                 placeholder="Portion name, e.g. Kachumbari"
                 className={fieldClassName}
               />
-              <input
-                type="hidden"
-                form="menu-quick-add-portion-form"
-                name="unit"
-                value={portionUnit}
-              />
+              {isDrinkCategory ? (
+                <input type="hidden" form="menu-quick-add-portion-form" name="unit" value="ml" />
+              ) : (
+                <label className="grid gap-2 text-sm font-semibold text-[#111418]">
+                  How is one portion measured?
+                  <select
+                    form="menu-quick-add-portion-form"
+                    name="unit"
+                    value={newPortionUnit}
+                    onChange={(event) => setNewPortionUnit(event.target.value as "g" | "piece")}
+                    className={selectClassName}
+                  >
+                    <option value="g">By weight (grams)</option>
+                    <option value="piece">By pieces</option>
+                  </select>
+                </label>
+              )}
               <input
                 id="menu-quick-add-portion-quantity"
                 form="menu-quick-add-portion-form"

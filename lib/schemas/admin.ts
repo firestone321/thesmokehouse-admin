@@ -279,7 +279,13 @@ export const inventoryItemActionSchema = z.object({
   reorder_threshold: quantitySchema.default(0),
   initial_quantity: signedQuantitySchema.default(0),
   item_type: z.enum(inventoryItemTypes).default("supply"),
+  direct_sellable_portion_type_id: optionalIdSchema,
+  source_menu_item_id: optionalIdSchema,
   is_active: checkboxSchema
+});
+
+export const deletePortionTypeActionSchema = z.object({
+  portion_type_id: idSchema
 });
 
 export const inventoryAdjustmentActionSchema = z.object({
@@ -347,7 +353,7 @@ export const supplierActionSchema = z.object({
 export const portionTypeActionSchema = z.object({
   name: shortTextSchema,
   quantity: z.coerce.number().int().min(1).max(maxNumericValue),
-  unit: z.enum(["g", "ml"])
+  unit: z.enum(["g", "ml", "piece"])
 });
 
 export const processProcurementReceiptToFinishedStockActionSchema = z.object({

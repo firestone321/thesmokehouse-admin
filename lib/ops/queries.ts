@@ -12,6 +12,7 @@ import {
   MenuCategoryRecord,
   MenuComponentRecord,
   MenuItemRecord,
+  NonDrinkSellablePortionOption,
   PortionTypeOption,
   FinishedStockRecord,
   ProcessingBatchRecord,
@@ -1442,6 +1443,7 @@ export async function getProcurementPageData(): Promise<ProcurementPageData> {
     proteinFamiliesResponse,
     proteinIntakeItemsResponse,
     portionOptionsResponse,
+    nonDrinkSellablePortionsResponse,
     finishedStockResponse,
     recentActivityResponse,
     processingReceiptsResponse,
@@ -1462,7 +1464,13 @@ export async function getProcurementPageData(): Promise<ProcurementPageData> {
         sellable_units_per_input,
         requires_whole_input,
         source_menu_item:menu_items!inventory_items_source_menu_item_id_fkey (
-          name
+          name,
+          menu_categories (
+            code
+          )
+        ),
+        direct_sellable_portion:portion_types!inventory_items_direct_sellable_portion_type_id_fkey (
+          portion_label
         )
       `
       )
@@ -1512,6 +1520,28 @@ export async function getProcurementPageData(): Promise<ProcurementPageData> {
       )
       .eq("is_active", true)
       .order("sort_order", { ascending: true }),
+    supabase
+      .from("menu_items")
+      .select(
+        `
+        id,
+        name,
+        portion_type_id,
+        menu_categories!inner (
+          code,
+          name
+        ),
+        portion_types!menu_items_portion_type_id_fkey (
+          id,
+          name,
+          portion_label,
+          stock_source_portion_type_id,
+          is_active
+        )
+      `
+      )
+      .in("menu_categories.code", ["sides", "accompaniments"])
+      .order("name", { ascending: true }),
     supabase
       .from("finished_stock")
       .select(
@@ -1580,6 +1610,7 @@ export async function getProcurementPageData(): Promise<ProcurementPageData> {
   ensureNoError(proteinFamiliesResponse.error, "Unable to load protein families", procurementMigrationFiles);
   ensureNoError(proteinIntakeItemsResponse.error, "Unable to load protein intake items", procurementMigrationFiles);
   ensureNoError(portionOptionsResponse.error, "Unable to load sellable portion options");
+  ensureNoError(nonDrinkSellablePortionsResponse.error, "Unable to load Sides and Accompaniments portions");
   ensureNoError(finishedStockResponse.error, "Unable to load finished frozen stock", procurementMigrationFiles);
   ensureNoError(recentActivityResponse.error, "Unable to load procurement activity", procurementMigrationFiles);
   ensureNoError(processingReceiptsResponse.error, "Unable to load processing protein receipts", procurementMigrationFiles);
@@ -1621,6 +1652,8 @@ export async function getProcurementPageData(): Promise<ProcurementPageData> {
     code: item.code,
     name: item.name,
     displayName: item.source_menu_item?.name ?? item.name,
+    portionLabel: item.direct_sellable_portion?.portion_label ?? null,
+    sourceMenuCategoryCode: item.source_menu_item?.menu_categories?.code ?? null,
     unitName: item.unit_name,
     itemType: item.item_type ?? "supply",
     currentQuantity: normalizeNumber(item.current_quantity),
@@ -1668,6 +1701,56 @@ export async function getProcurementPageData(): Promise<ProcurementPageData> {
     proteinCode: portion.proteins?.code ?? null,
     proteinId: portion.protein_id ? normalizeNumber(portion.protein_id) : null
   }));
+  const mappedPortionTypeIds = new Set(
+    inventoryItems
+      .map((item) => item.directSellablePortionTypeId)
+      .filter((portionTypeId): portionTypeId is number => Boolean(portionTypeId))
+  );
+  const sharedPortionGroups = new Map<number, {
+    menuItemId: number;
+    menuItemNames: string[];
+    portionLabels: string[];
+    categoryName: string;
+  }>();
+
+  for (const item of (nonDrinkSellablePortionsResponse.data ?? []) as any[]) {
+    if (!item.portion_types?.is_active) continue;
+
+    const menuItemId = normalizeNumber(item.id);
+    const portionTypeId = normalizeNumber(item.portion_type_id);
+    const stockPoolPortionTypeId = normalizeNumber(item.portion_types?.stock_source_portion_type_id) || portionTypeId;
+    const current = sharedPortionGroups.get(stockPoolPortionTypeId);
+    const portionLabel = item.portion_types?.portion_label ?? item.portion_types?.name ?? "Portion";
+
+    if (current) {
+      current.menuItemNames.push(item.name);
+      current.portionLabels.push(portionLabel);
+      if (portionTypeId === stockPoolPortionTypeId) current.menuItemId = menuItemId;
+      continue;
+    }
+
+    sharedPortionGroups.set(stockPoolPortionTypeId, {
+      menuItemId,
+      menuItemNames: [item.name],
+      portionLabels: [portionLabel],
+      categoryName: item.menu_categories?.name ?? "Sides"
+    });
+  }
+
+  const nonDrinkSellablePortions: NonDrinkSellablePortionOption[] = [...sharedPortionGroups.entries()]
+    .map(([portionTypeId, group]) => {
+      const shared = group.menuItemNames.length > 1;
+      const preferredName = group.menuItemNames.find((name) => !/large/i.test(name)) ?? group.menuItemNames[0];
+      return {
+        menuItemId: group.menuItemId,
+        portionTypeId,
+        menuItemName: preferredName,
+        portionLabel: shared ? `Shared stock: ${group.portionLabels.join(" and ")}` : group.portionLabels[0],
+        categoryName: group.categoryName,
+        isMapped: mappedPortionTypeIds.has(portionTypeId)
+      };
+    })
+    .sort((left, right) => left.menuItemName.localeCompare(right.menuItemName));
 
   const finishedStock = (finishedStockResponse.data ?? []).map(mapFinishedStock);
   const recentProcessingBatches = (recentProcessingBatchesResponse.data ?? []).map(mapProcessingBatch);
@@ -1759,6 +1842,7 @@ export async function getProcurementPageData(): Promise<ProcurementPageData> {
     proteinFamilies,
     proteinIntakeItems,
     portionOptions,
+    nonDrinkSellablePortions,
     finishedStock,
     recentActivity,
     processingProteinReceipts: visibleProcessingProteinReceipts,
@@ -1938,7 +2022,8 @@ export async function getMenuPageData(editMenuItemId?: string | null) {
         id: portionTypeId,
         code: portion.code,
         label: `${portion.name}${portion.portion_label ? ` (${portion.portion_label})` : ""}`,
-        isAssigned: assignedPortionTypeIds.has(portionTypeId) && selectedMenuItem?.portionTypeId !== portionTypeId
+        isAssigned: assignedPortionTypeIds.has(portionTypeId) && selectedMenuItem?.portionTypeId !== portionTypeId,
+        isUnused: !assignedPortionTypeIds.has(portionTypeId)
       };
     });
 

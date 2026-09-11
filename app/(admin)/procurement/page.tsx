@@ -134,6 +134,7 @@ export default async function ProcurementPage() {
           <SidesIntakeForm
             defaultDeliveryDate={data.serviceDate}
             inventoryItems={data.inventoryItems}
+            sellablePortions={data.nonDrinkSellablePortions}
             suppliers={ingredientSuppliers}
           />
           <SupplyIntakeForm
