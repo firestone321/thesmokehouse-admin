@@ -600,7 +600,7 @@ export function MenuItemForm({
               <p className="mt-1 text-xs leading-5 text-[#6B7280]">Choose the days this item can be ordered. Optional dates limit the schedule to a season or promotion.</p>
             </div>
             <input type="hidden" name="availability_days" value={availabilityDays.join(",")} />
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className={`grid grid-cols-2 gap-2 sm:grid-cols-4 ${selectedMenuItem ? "" : "xl:grid-cols-2"}`}>
               {["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map((day, index) => (
                 <label key={day} className="flex items-center gap-2 rounded-xl border border-[#E5DED6] bg-white px-3 py-2 text-xs font-semibold text-[#374151]">
                   <input type="checkbox" checked={availabilityDays.includes(index)} onChange={() => setAvailabilityDays((current) => current.includes(index) ? current.filter((dayIndex) => dayIndex !== index) : [...current, index].sort())} className="size-4 accent-[#B85C38]" />

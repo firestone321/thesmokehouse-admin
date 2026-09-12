@@ -81,7 +81,7 @@ export default async function MenuPage({
         </section>
       ) : null}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_380px]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(380px,420px)]">
         <section className="order-2 space-y-4 xl:order-1">
           <section className="surface-card rounded-[32px] p-5">
             <div className="border-b border-[#EEF2F6] pb-4">
