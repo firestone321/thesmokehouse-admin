@@ -14,3 +14,4 @@ tsconfig.tsbuildinfo
 /.pos-audit-local/
 /order-reset-backups/
 .env.example
+travellers-pos-audit-2026-09-29.md

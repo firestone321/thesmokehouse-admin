@@ -1329,6 +1329,34 @@ export async function processProcurementReceiptToFinishedStockAction(formData: F
       throw new Error("Post-roast packed weight and Country Platter allocation are required.");
     }
 
+    if (receipt.protein_code === "goat_chunks") {
+      if (input.traveller_goat_weight_kg === null) {
+        throw new Error("Traveller goat allocation weight is required.");
+      }
+      const { error } = await supabase.rpc("process_traveller_goat_receipt_allocation", {
+        p_procurement_receipt_id: input.procurement_receipt_id,
+        p_post_roast_packed_weight_kg: input.post_roast_packed_weight_kg,
+        p_country_platter_weight_kg: input.country_platter_weight_kg,
+        p_traveller_weight_kg: input.traveller_goat_weight_kg,
+        p_note: input.note
+      });
+      if (error) throw new Error(`Unable to process traveller goat allocation: ${error.message}`);
+      await recordStaffActivity({
+        actor,
+        action: "resupply.receipt_processed",
+        entityType: "procurement_receipt",
+        entityId: input.procurement_receipt_id,
+        summary: (actor.email ?? "A staff account") + " allocated goat stock across traveller, platter, and standalone portions.",
+        metadata: {
+          post_roast_packed_weight_kg: input.post_roast_packed_weight_kg,
+          country_platter_weight_kg: input.country_platter_weight_kg,
+          traveller_goat_weight_kg: input.traveller_goat_weight_kg
+        }
+      });
+      revalidateProcurementPaths();
+      redirect("/procurement");
+    }
+
     const { error } = await supabase.rpc("process_standard_weight_meat_receipt_allocation", {
       p_procurement_receipt_id: input.procurement_receipt_id,
       p_post_roast_packed_weight_kg: input.post_roast_packed_weight_kg,

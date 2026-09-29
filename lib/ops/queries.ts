@@ -1889,7 +1889,7 @@ export async function getMenuPageData(editMenuItemId?: string | null) {
 
   const supabase = createAdminSupabaseClient();
 
-  const [categoriesResponse, portionTypesResponse, inventoryItemsResponse, menuItemsResponse] = await Promise.all([
+  let [categoriesResponse, portionTypesResponse, inventoryItemsResponse, menuItemsResponse] = await Promise.all([
     supabase
       .from("menu_categories")
       .select("id, code, name, sort_order, is_active")
@@ -1946,6 +1946,12 @@ export async function getMenuPageData(editMenuItemId?: string | null) {
   ]);
 
   ensureNoError(categoriesResponse.error, "Unable to load menu categories");
+  if (portionTypesResponse.error && [502, 503, 504].includes(portionTypesResponse.status)) {
+    portionTypesResponse = await supabase
+      .from("portion_types")
+      .select("id, code, name, portion_label, is_active")
+      .order("sort_order", { ascending: true });
+  }
   ensureNoError(portionTypesResponse.error, "Unable to load portion types");
   ensureNoError(inventoryItemsResponse.error, "Unable to load inventory items for menu");
   ensureNoError(menuItemsResponse.error, "Unable to load menu items");

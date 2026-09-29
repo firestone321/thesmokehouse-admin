@@ -87,6 +87,12 @@ export default async function ProcurementPage() {
             >
               Manage suppliers
             </Link>
+            <Link href="/procurement/travellers" className="rounded-[22px] border border-[#D7DDE4] bg-white px-4 py-3 font-semibold text-[#111418] sm:col-span-2">
+              Count traveller salad, sauce and soda
+            </Link>
+            <Link href="/procurement/travellers/beef" className="rounded-[22px] border border-[#D7DDE4] bg-white px-4 py-3 font-semibold text-[#111418] sm:col-span-2">
+              Convert cooked beef for traveller skewers and samosas
+            </Link>
           </div>
         </div>
       </section>

@@ -122,6 +122,7 @@ export function ProcessingBatchForm({
   const [selectedPortionId, setSelectedPortionId] = useState<string>("");
   const [postRoastPackedWeightKg, setPostRoastPackedWeightKg] = useState<string>("");
   const [countryPlatterWeightKg, setCountryPlatterWeightKg] = useState<string>("0");
+  const [travellerGoatWeightKg, setTravellerGoatWeightKg] = useState<string>("0");
   const [quantityProduced, setQuantityProduced] = useState<string>("");
   const [birdsAllocatedToHalves, setBirdsAllocatedToHalves] = useState<string>("0");
   const [birdsAllocatedToQuarters, setBirdsAllocatedToQuarters] = useState<string>("0");
@@ -140,6 +141,7 @@ export function ProcessingBatchForm({
     ? meatAllocatorPortionCodes[selectedReceipt.proteinCode as keyof typeof meatAllocatorPortionCodes] ?? null
     : null;
   const isMeatAllocator = Boolean(meatAllocatorCodes);
+  const isTravellerGoat = selectedReceipt?.proteinCode === "goat_chunks";
   const totalBirds = selectedReceipt && isWholeChicken ? selectedReceipt.quantityReceived : 0;
   const wholeChickenCountIsValid = !isWholeChicken || (Number.isInteger(totalBirds) && totalBirds > 0);
 
@@ -168,6 +170,7 @@ export function ProcessingBatchForm({
   const meatAllocation = useMemo(() => {
     const packedWeightKg = Number(postRoastPackedWeightKg);
     const countryPlatterWeight = Number(countryPlatterWeightKg);
+    const travellerWeight = isTravellerGoat ? Number(travellerGoatWeightKg) : 0;
     const standalonePortionWeightKg = parsePortionWeightKg(meatAllocatorStandalonePortion?.portionLabel);
     const countryPlatterPortionWeightKg = parsePortionWeightKg(meatAllocatorCountryPlatterPortion?.portionLabel);
 
@@ -177,6 +180,9 @@ export function ProcessingBatchForm({
       !Number.isFinite(countryPlatterWeight) ||
       countryPlatterWeight < 0 ||
       countryPlatterWeight > packedWeightKg ||
+      !Number.isFinite(travellerWeight) ||
+      travellerWeight < 0 ||
+      countryPlatterWeight + travellerWeight > packedWeightKg ||
       !standalonePortionWeightKg ||
       !countryPlatterPortionWeightKg
     ) {
@@ -184,24 +190,29 @@ export function ProcessingBatchForm({
     }
 
     const countryPlatterQuantity = Math.floor(countryPlatterWeight / countryPlatterPortionWeightKg);
-    const standaloneWeightKg = packedWeightKg - countryPlatterWeight;
+    const standaloneWeightKg = packedWeightKg - countryPlatterWeight - travellerWeight;
+    const travellerQuantity = Math.floor(travellerWeight / 0.25);
     const standaloneQuantity = Math.floor(standaloneWeightKg / standalonePortionWeightKg);
     const trimWeightKg = Number(
       (
         packedWeightKg -
         countryPlatterQuantity * countryPlatterPortionWeightKg -
-        standaloneQuantity * standalonePortionWeightKg
+        standaloneQuantity * standalonePortionWeightKg -
+        travellerQuantity * 0.25
       ).toFixed(3)
     );
 
     return {
       countryPlatterQuantity,
+      travellerQuantity,
       standaloneQuantity,
       standaloneWeightKg,
       trimWeightKg
     };
   }, [
     countryPlatterWeightKg,
+    isTravellerGoat,
+    travellerGoatWeightKg,
     meatAllocatorCountryPlatterPortion?.portionLabel,
     meatAllocatorStandalonePortion?.portionLabel,
     postRoastPackedWeightKg
@@ -455,10 +466,17 @@ export function ProcessingBatchForm({
                     </div>
                   </div>
 
+                  {isTravellerGoat ? (
+                    <label className="mt-4 grid gap-2 rounded-[22px] border border-[#D4A373] bg-white p-4 text-sm text-[#6B7280]">
+                      <span className="text-sm font-semibold text-[#2D2219]">Goat for traveller 250 g packs (kg)</span>
+                      <input type="number" min="0" max={postRoastPackedWeightKg || undefined} step="0.001" name="traveller_goat_weight_kg" required disabled={!selectedReceipt || selectedReceipt.hasProcessingBatch} value={travellerGoatWeightKg} onChange={(event) => setTravellerGoatWeightKg(event.target.value)} className={processingFieldClassName} />
+                      <span className="text-xs">This weight is set aside during processing. The remainder after Country Platter and traveller allocations becomes standalone goat portions.</span>
+                    </label>
+                  ) : null}
                   <div className="mt-4 rounded-2xl border border-[#E3C4A5] bg-[#FFFDF9] px-4 py-3 text-sm leading-6 text-[#4C372A]">
                     {meatAllocation ? (
                       <>
-                        You are setting aside <strong>{countryPlatterWeightKg || "0"} kg</strong> for Country Platter and leaving <strong>{formatWeightKg(meatAllocation.standaloneWeightKg)}</strong> for standalone orders.
+                        You are setting aside <strong>{countryPlatterWeightKg || "0"} kg</strong> for Country Platter{isTravellerGoat ? <> and <strong>{travellerGoatWeightKg || "0"} kg</strong> for traveller goat</> : null} and leaving <strong>{formatWeightKg(meatAllocation.standaloneWeightKg)}</strong> for standalone orders.
                       </>
                     ) : (
                       <>Enter the usable cooked weight, then decide how much to set aside for Country Platter.</>
@@ -494,6 +512,7 @@ export function ProcessingBatchForm({
                     </p>
                   </article>
                   <article className="rounded-[22px] border border-[#E5E1DC] bg-[#FAFAF9] px-4 py-4">
+                    {isTravellerGoat ? <p className="mb-2 text-xs font-semibold">Traveller goat: {meatAllocation?.travellerQuantity ?? 0} packs of 250 g</p> : null}
                     <p className={processingLabelClassName}>Trim / hold</p>
                     <p className="mt-2 text-xl font-semibold text-[#111418]">
                       {meatAllocation ? formatWeightKg(meatAllocation.trimWeightKg) : "—"}
