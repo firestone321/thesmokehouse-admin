@@ -19,7 +19,7 @@ function toNumber(value: unknown) {
   return typeof value === "number" ? value : Number(value ?? 0);
 }
 
-export async function getPosMenuItems(options: { includeUnavailable?: boolean } = {}): Promise<PosMenuItem[]> {
+export async function getPosMenuItems(): Promise<PosMenuItem[]> {
   noStore();
 
   const { data, error } = await createAdminSupabaseClient().rpc("get_pos_menu", {
@@ -41,5 +41,5 @@ export async function getPosMenuItems(options: { includeUnavailable?: boolean } 
       portionLabel: typeof item.portion_label === "string" ? item.portion_label : null,
       availableQuantity: Math.max(0, toNumber(item.available_quantity))
     }))
-    .filter((item) => options.includeUnavailable || item.availableQuantity > 0);
+    .filter((item) => item.availableQuantity > 0);
 }
