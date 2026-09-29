@@ -1,10 +1,10 @@
 # Traveller POS rollout
 
-The combined migration has been applied to the live database. Read-only verification found the four traveller food rows, preorder table, POS menu RPC, shared fries base, and universal soda bottle portion. The four traveller foods are active; regular water and Soda remain inactive. Do not rerun the one-time fries conversion. An operational order and restock smoke test is still outstanding.
+The combined migration has been applied to the live database. Read-only verification found the four traveller food rows, preorder table, POS menu RPC, shared fries base, and universal soda bottle portion. The four traveller foods are active; regular water and Soda remain inactive. Do not rerun the one-time fries conversion. An operational order and restock smoke test is still outstanding. Phase 98 is a separate follow-up migration and is not yet applied.
 
 ## Order
 
-`TRAVELLER-APPLY-ONCE.sql` was applied as one transaction. The numbered phase files are its source and are retained for review:
+`TRAVELLER-APPLY-ONCE.sql` was applied as one transaction. Phases 87–97 are its source and are retained for review. Phase 98 is a separate follow-up:
 
 1. `phase-87-traveller-pos-products.sql` — POS-only products and requirements.
 2. `phase-88-traveller-goat-allocation.sql` — 250 g goat processing output.
@@ -17,6 +17,7 @@ The combined migration has been applied to the live database. Read-only verifica
 9. `phase-95-traveller-paid-cancellation-guard.sql` — unpaid cancellation and paid cancellation guard.
 10. `phase-96-traveller-counted-components.sql` — counted salad and sauce servings plus the shared soda bottle pool.
 11. `phase-97-traveller-beef-conversion.sql` — cooked beef conversion to counted skewers/samosas.
+12. `phase-98-traveller-nonblocking-accompaniments.sql` — keeps chicken, fries, goat, skewers, and samosas as sale gates; counts salad and sauce when available at check-in without blocking the food sale. Apply this follow-up file once after the original combined migration.
 
 ## Historical preflight checks
 
@@ -31,6 +32,6 @@ The combined migration has been applied to the live database. Read-only verifica
 1. Restock fries, regular juice/water, counted salad and sauce, and universal 330 ml soda bottles. Count soda bottles/cans and enter the cartons actually consumed. Record any tracked sauce cups actually consumed; existing raw cup stock is not migrated automatically.
 2. Process a goat-chunks receipt with an explicit 250 g traveller allocation.
 3. Convert physically verified unsold cooked beef portions into counted skewers and samosas. Verify the original portion falls and the new pieces rise by the entered counts. Batch age is guidance, with a recorded early-conversion acknowledgment.
-4. Activate only traveller foods whose included requirements have sellable stock. Activate regular water and Soda when ready; these use their ordinary menu choices and shared physical stock. Confirm the four traveller foods appear in POS and remain absent from storefront menu and checkout.
+4. Activate traveller foods when their main portions have sellable stock. Salad and sauce are nonblocking accompaniments after Phase 98; their counted stock is consumed at check-in when available. Activate regular water and Soda when ready; these use their ordinary menu choices and shared physical stock. Confirm the four traveller foods appear in POS and remain absent from storefront menu and checkout.
 5. Verify a combined preorder, an individual preorder, payment at booking, payment on arrival, an unpaid cancellation, and a counter sale. Check the kitchen queue, POS tender, daily reserved/sold quantities, finished-stock movements, and receipt output.
 6. Keep paid cancellation blocked until a refund ledger and stock restoration policy are implemented. Chicken/goat skewers or samosas need separate product names and prices; they cannot be sold as beef.
