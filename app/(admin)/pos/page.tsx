@@ -7,7 +7,7 @@ import { PosSaleWorkspace } from "@/components/pos/pos-sale-workspace";
 export default async function PosPage() {
   const [actor, menuItems, onlineReceiptPrintBacklog] = await Promise.all([
     requirePosAccess(),
-    getPosMenuItems(),
+    getPosMenuItems({ includeUnavailable: true }),
     getOnlineReceiptPrintBacklogSnapshot()
   ]);
 
@@ -16,7 +16,7 @@ export default async function PosPage() {
       <Link href="/pos/travellers" className="inline-flex rounded-xl border border-[#D7DDE4] bg-white px-4 py-2 text-sm font-semibold text-[#111418]">Traveller preorders and arrivals</Link>
       <PosSaleWorkspace
         cashierEmail={actor.email}
-        menuItems={menuItems}
+        menuItems={menuItems.filter((item) => item.availableQuantity > 0 || item.categoryName === "Travellers")}
         onlineReceiptPrintBacklog={onlineReceiptPrintBacklog}
         canRecordSales
       />

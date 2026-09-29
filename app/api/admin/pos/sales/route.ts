@@ -65,9 +65,17 @@ export async function POST(request: Request) {
     assertSameOriginRequest(request);
     const actor = await requirePosAccess();
     const body = parseObject(await request.json(), posSaleRequestSchema);
+    const db = createAdminSupabaseClient();
+    const { data: privateItems, error: privateItemError } = await db.from("menu_items")
+      .select("id")
+      .in("id", body.items.map((item) => item.menuItemId))
+      .eq("pos_only", true)
+      .limit(1);
+    if (privateItemError) throw new Error(`Unable to validate POS channel: ${privateItemError.message}`);
+    if (privateItems?.length) throw new RequestValidationError("Open Traveller orders to sell traveller foods.");
     const requestHash = createHash("sha256").update(normalizeForHash(body)).digest("hex");
 
-    const { data, error } = await createAdminSupabaseClient().rpc("create_pos_sale", {
+    const { data, error } = await db.rpc("create_pos_sale", {
       p_idempotency_key: body.idempotencyKey,
       p_request_hash: requestHash,
       p_cashier_profile_id: actor.userId,

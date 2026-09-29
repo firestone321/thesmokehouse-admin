@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { OnlineReceiptPrintBacklogCard } from "@/components/orders/online-receipt-print-backlog-card";
 import { PosPrintStationToggle } from "@/components/pwa/pos-print-station-toggle";
 import { UgxAmountInput } from "@/components/ugx-amount-input";
@@ -81,6 +82,7 @@ export function PosSaleWorkspace({
   onlineReceiptPrintBacklog: OnlineReceiptPrintBacklogSnapshot;
   canRecordSales: boolean;
 }) {
+  const router = useRouter();
   const [basket, setBasket] = useState<BasketLine[]>([]);
   const [query, setQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
@@ -269,7 +271,7 @@ export function PosSaleWorkspace({
         <section className="surface-card rounded-[32px] p-5">
           <div className="flex flex-col gap-3 border-b border-[#EEF2F6] pb-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Available now</p>
+              <p className="text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Counter menu</p>
               <h2 className="mt-2 text-xl font-semibold">Menu</h2>
             </div>
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search item or category" className="rounded-2xl border border-[#D7DDE4] bg-white px-4 py-2.5 text-sm" />
@@ -287,14 +289,14 @@ export function PosSaleWorkspace({
                 <h3 className="text-base font-bold text-[#4B5563]"><span className="mr-2">{categoryIcon(category)}</span>{category}</h3>
                 <div className="mt-2 grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
                   {visibleItems.filter((item) => item.categoryName === category).map((item) => (
-                    <button key={item.id} type="button" onClick={() => addItem(item)} className={`overflow-hidden rounded-[22px] border text-left transition focus:outline-none focus:ring-4 focus:ring-[#111418]/15 ${categoryCardColors[categories.indexOf(category) % categoryCardColors.length]}`}>
+                    <button key={item.id} type="button" onClick={() => item.categoryName === "Travellers" ? router.push("/pos/travellers") : addItem(item)} className={`overflow-hidden rounded-[22px] border text-left transition focus:outline-none focus:ring-4 focus:ring-[#111418]/15 ${categoryCardColors[categories.indexOf(category) % categoryCardColors.length]}`}>
                       <div className="flex gap-3 p-3">
                         <div className="h-20 w-20 shrink-0 overflow-hidden rounded-[18px] bg-white/70">
                           {item.imageUrl ? <img src={item.imageUrl} alt="" className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-2xl">🍽️</div>}
                         </div>
                         <div className="min-w-0 flex-1 py-1">
-                          <div className="flex items-start justify-between gap-2"><span className="text-base font-bold leading-5">{item.name}</span><span className="shrink-0 rounded-full bg-white/80 px-2 py-1 text-[11px] font-bold text-[#287241]">{item.availableQuantity} left</span></div>
-                          <p className="mt-2 text-xs text-[#5C6470]">{item.portionLabel ?? item.description ?? "Sellable portion"}</p>
+                          <div className="flex items-start justify-between gap-2"><span className="text-base font-bold leading-5">{item.name}</span><span className="shrink-0 rounded-full bg-white/80 px-2 py-1 text-[11px] font-bold text-[#287241]">{item.availableQuantity > 0 ? `${item.availableQuantity} left` : "Out of stock"}</span></div>
+                          <p className="mt-2 text-xs text-[#5C6470]">{item.categoryName === "Travellers" ? "Open traveller order" : item.portionLabel ?? item.description ?? "Sellable portion"}</p>
                           <p className="mt-3 text-base font-bold">{formatCurrency(item.basePrice)}</p>
                         </div>
                       </div>

@@ -1,6 +1,6 @@
 # Traveller POS rollout
 
-The combined migration has been applied to the live database. Read-only verification found the four traveller food rows, preorder table, POS menu RPC, shared fries base, and universal soda bottle portion. The four traveller foods are active; regular water and Soda remain inactive. Do not rerun the one-time fries conversion. An operational order and restock smoke test is still outstanding. Phase 98 is a separate follow-up migration and is not yet applied.
+The combined migration has been applied to the live database. Read-only verification found the four traveller food rows, preorder table, POS menu RPC, shared fries base, and universal soda bottle portion. The four traveller foods are active; regular water and Soda remain inactive. Do not rerun the one-time fries conversion. An operational order and restock smoke test is still outstanding. Phase 98 has also been applied. A read-only POS menu query now reports 303 sellable traveller chicken meals from shared chicken-quarter and fries stock; this is a snapshot, not an operational sale test.
 
 ## Order
 
@@ -17,7 +17,7 @@ The combined migration has been applied to the live database. Read-only verifica
 9. `phase-95-traveller-paid-cancellation-guard.sql` — unpaid cancellation and paid cancellation guard.
 10. `phase-96-traveller-counted-components.sql` — counted salad and sauce servings plus the shared soda bottle pool.
 11. `phase-97-traveller-beef-conversion.sql` — cooked beef conversion to counted skewers/samosas.
-12. `phase-98-traveller-nonblocking-accompaniments.sql` — keeps chicken, fries, goat, skewers, and samosas as sale gates; counts salad and sauce when available at check-in without blocking the food sale. Apply this follow-up file once after the original combined migration.
+12. `phase-98-traveller-nonblocking-accompaniments.sql` — keeps chicken, fries, goat, skewers, and samosas as sale gates; counts salad and sauce when available at check-in without blocking the food sale. This follow-up was applied after the original combined migration; do not rerun it.
 
 ## Historical preflight checks
 
