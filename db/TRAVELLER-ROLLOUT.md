@@ -1,6 +1,6 @@
 # Traveller foods in the ordinary POS
 
-The four traveller food products are POS-only menu items. Staff add them to the same POS basket as regular products and drinks, take payment, and handle the order in the existing kitchen and Orders flow. There is no separate traveller ordering page or traveller-specific preorder form. Regular juice, water, and Soda remain their ordinary menu products with shared stock.
+The four traveller food products are POS-only menu items. Staff add them to the same POS basket as regular products and drinks, take payment, and handle the order in the existing kitchen and Orders flow. There is no separate traveller ordering page or traveller-specific preorder form. For a call-ahead request, staff record the sale and take payment in the ordinary POS only when the traveller arrives; a caller who does not show creates no sale or stock hold. Regular juice, water, and Soda remain their ordinary menu products with shared stock.
 
 ## Database state
 
