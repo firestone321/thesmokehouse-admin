@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { publicEnv } from "@/lib/public-env";
+import { useEffect, useRef, useState } from "react";
 import {
   decodeVapidPublicKey,
   getAppServiceWorkerRegistration,
@@ -30,7 +29,8 @@ function encodeVapidPublicKey(value: ArrayBuffer | null) {
 
 function subscriptionMatchesVapidKey(subscription: PushSubscription, publicKey: string) {
   const subscriptionKey = encodeVapidPublicKey(subscription.options.applicationServerKey);
-  return subscriptionKey === publicKey;
+  const serialized = subscription.toJSON();
+  return subscriptionKey === publicKey && Boolean(serialized.endpoint && serialized.keys?.p256dh && serialized.keys?.auth);
 }
 
 async function saveAdminPushSubscription(subscription: PushSubscription, isPosPrintStation: boolean) {
@@ -69,33 +69,32 @@ export function AdminPushAutoEnrollment() {
   const [status, setStatus] = useState<"checking" | "active" | "needs_permission" | "blocked" | "unsupported" | "not_configured" | "error">("checking");
   const [message, setMessage] = useState<string | null>(null);
 
-  async function createOrRefreshSubscription(registration: ServiceWorkerRegistration) {
+  const enrollmentInFlight = useRef(false);
+
+  async function createOrRefreshSubscription(registration: ServiceWorkerRegistration, publicKey: string) {
     const existingSubscription = await registration.pushManager.getSubscription();
 
-    if (existingSubscription && subscriptionMatchesVapidKey(existingSubscription, publicEnv.webPushVapidPublicKey)) {
+    if (existingSubscription && subscriptionMatchesVapidKey(existingSubscription, publicKey)) {
       return existingSubscription;
     }
 
     if (existingSubscription) {
-      await existingSubscription.unsubscribe();
+      const removed = await existingSubscription.unsubscribe();
+      if (!removed) {
+        throw new Error("Unable to replace the previous push subscription. Close and reopen the browser, then retry.");
+      }
     }
 
     return registration.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: decodeVapidPublicKey(publicEnv.webPushVapidPublicKey)
+      applicationServerKey: decodeVapidPublicKey(publicKey)
     });
   }
 
-  async function enroll(options?: { requestPermission?: boolean }) {
+  async function enrollOnce(options?: { requestPermission?: boolean }) {
     if (!supportsPushNotifications()) {
       setStatus("unsupported");
       setMessage("This browser cannot receive push alerts.");
-      return;
-    }
-
-    if (!publicEnv.webPushVapidPublicKey) {
-      setStatus("not_configured");
-      setMessage("Push alerts need VAPID config.");
       return;
     }
 
@@ -127,13 +126,27 @@ export function AdminPushAutoEnrollment() {
     setStatus("checking");
     setMessage("Setting up order alerts...");
 
+    let stage = "load_public_key";
     try {
+      const response = await fetch("/api/admin/push/public-key", { cache: "no-store", headers: { Accept: "application/json" } });
+      const payload = await response.json().catch(() => null) as { publicKey?: string; message?: string } | null;
+      if (!response.ok || !payload?.publicKey) {
+        throw new Error(payload?.message ?? "Unable to load notification configuration. Retry when connected.");
+      }
+      const publicKey = payload.publicKey;
+      const decodedKey = decodeVapidPublicKey(publicKey);
+      if (decodedKey.length !== 65 || decodedKey[0] !== 4) {
+        throw new Error("Notification configuration has an invalid public key. Contact the administrator.");
+      }
+      stage = "service_worker";
       const registration = await getAppServiceWorkerRegistration();
       if (!registration) {
         throw new Error("Service worker registration is unavailable.");
       }
 
-      const subscription = await createOrRefreshSubscription(registration);
+      stage = "subscribe";
+      const subscription = await createOrRefreshSubscription(registration, publicKey);
+      stage = "save_subscription";
       await saveAdminPushSubscription(subscription, isThisDevicePosPrintStation());
       registration.active?.postMessage({ type: "smokehouse-retry-online-receipt-prints" });
       void fetch("/api/admin/push/process", { method: "POST" }).catch((error) => {
@@ -142,9 +155,22 @@ export function AdminPushAutoEnrollment() {
       setStatus("active");
       setMessage(null);
     } catch (error) {
-      console.warn("admin_push_auto_enrollment_failed", error);
+      console.warn("admin_push_auto_enrollment_failed", { stage, error });
       setStatus("error");
-      setMessage(error instanceof Error ? error.message : "Unable to set up order alerts.");
+      const detail = error instanceof Error ? error.message : "Unable to set up order alerts.";
+      setMessage(stage === "subscribe" && /could not retrieve the public key/i.test(detail)
+        ? "Chrome could not create notification encryption keys. Fully close Chrome and any installed Smokehouse windows, reopen Chrome, then retry alerts. If this continues, try a new Chrome profile."
+        : detail);
+    }
+  }
+
+  async function enroll(options?: { requestPermission?: boolean }) {
+    if (enrollmentInFlight.current) return;
+    enrollmentInFlight.current = true;
+    try {
+      await enrollOnce(options);
+    } finally {
+      enrollmentInFlight.current = false;
     }
   }
 
@@ -173,7 +199,7 @@ export function AdminPushAutoEnrollment() {
           }}
           className="mt-3 rounded-md bg-[#2B211B] px-3 py-2 text-xs font-black uppercase tracking-wide text-white"
         >
-          Enable alerts
+          {status === "error" ? "Retry alerts" : "Enable alerts"}
         </button>
       ) : null}
     </div>
