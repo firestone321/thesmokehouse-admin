@@ -35,7 +35,7 @@ export function isRegularStaffRole(role: AdminRole) {
   return role === "staff" || role === "chef";
 }
 
-async function requireRoleFromSet(allowedRoles: Set<AdminRole>): Promise<{ userId: string; email: string | null; role: AdminRole }> {
+async function requireRoleFromSet(allowedRoles: Set<AdminRole>, timing?: (stage: "authentication_completed" | "role_verification_completed") => void): Promise<{ userId: string; email: string | null; role: AdminRole }> {
   if (await isLocalAuthBypassEnabled()) {
     const localProfileId = process.env.LOCAL_AUTH_BYPASS_PROFILE_ID?.trim();
 
@@ -56,6 +56,7 @@ async function requireRoleFromSet(allowedRoles: Set<AdminRole>): Promise<{ userI
     error: userError
   } = await supabase.auth.getUser();
 
+  timing?.("authentication_completed");
   if (userError || !user) {
     throw new AdminAuthorizationError("Unauthorized.", 401);
   }
@@ -66,6 +67,7 @@ async function requireRoleFromSet(allowedRoles: Set<AdminRole>): Promise<{ userI
     .eq("id", user.id)
     .maybeSingle();
 
+  timing?.("role_verification_completed");
   if (profileError) {
     throw new Error(`Unable to verify admin role: ${profileError.message}`);
   }
@@ -94,8 +96,8 @@ export async function requireDashboardRole(): Promise<{ userId: string; email: s
   return requireRoleFromSet(dashboardRoles);
 }
 
-export async function requirePosAccess(): Promise<{ userId: string; email: string | null; role: AdminRole }> {
-  return requireRoleFromSet(posRoles);
+export async function requirePosAccess(timing?: (stage: "authentication_completed" | "role_verification_completed") => void): Promise<{ userId: string; email: string | null; role: AdminRole }> {
+  return requireRoleFromSet(posRoles, timing);
 }
 
 export async function requirePosViewAccess(): Promise<{ userId: string; email: string | null; role: AdminRole }> {

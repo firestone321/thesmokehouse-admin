@@ -13,6 +13,7 @@ export default async function PosPage() {
   return (
     <PosSaleWorkspace
       cashierEmail={actor.email}
+      cashierId={actor.userId}
       menuItems={menuItems}
       onlineReceiptPrintBacklog={onlineReceiptPrintBacklog}
       canRecordSales

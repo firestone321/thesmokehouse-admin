@@ -169,3 +169,19 @@ export async function issueOnlineReceiptPrintInstructions(input: {
 
   return { bridgeUrl: config.bridgeUrl, printAuthorization, receiptFingerprint };
 }
+
+/** Stable action identity survives token refresh. Only the new durable bridge
+ * endpoints accept this scope. Receipt-only reprints never authorize a drawer. */
+export async function issueWalkInHardwareAction(
+  orderId: number, receipt: CanonicalPosReceipt, kind: "drawer" | "receipt", requestId: string
+) {
+  if (receipt.paymentMethod !== "cash") return null;
+  const config = readConfig();
+  if (!config) return null;
+  if (kind === "drawer" && requestId !== "original") throw new Error("Automatic drawer action must be stable.");
+  const actionId = "pos:" + orderId + ":" + kind + ":" + requestId;
+  const authorization = await signHardwareAction(config, kind === "drawer" ? "open_drawer" : "print_receipt", receipt.saleId, {
+    pos_action_id: actionId, receipt_hash: getReceiptFingerprint(receipt)
+  });
+  return { bridgeUrl: config.bridgeUrl, authorization, actionId, saleId: receipt.saleId, receipt, expiresAt: Date.now() + 60_000 };
+}

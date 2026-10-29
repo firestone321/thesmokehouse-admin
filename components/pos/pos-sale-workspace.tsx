@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { usePosSale } from "@/lib/pos/use-pos-sale";
 import { OnlineReceiptPrintBacklogCard } from "@/components/orders/online-receipt-print-backlog-card";
 import { PosPrintStationToggle } from "@/components/pwa/pos-print-station-toggle";
 import { UgxAmountInput } from "@/components/ugx-amount-input";
@@ -8,35 +9,6 @@ import type { OnlineReceiptPrintBacklogSnapshot } from "@/lib/ops/types";
 import type { PosMenuItem, PosTenderType } from "@/lib/pos/types";
 
 type BasketLine = PosMenuItem & { quantity: number };
-type Receipt = {
-  orderId: number;
-  orderNumber: string;
-  status: string;
-  totalAmount: number;
-  tenderType: string;
-  amountReceived: number;
-  changeGiven: number;
-  hardware: HardwareInstructions | HardwareUnavailable | HardwareExternalTerminal | null;
-};
-
-type HardwareInstructions = {
-  status: "ready";
-  bridgeUrl: string;
-  receipt: {
-    saleId: string;
-    date: string;
-    items: Array<{ name: string; quantity: number; unitPrice: number; total: number }>;
-    subtotal: number;
-    total: number;
-    paymentMethod: "cash" | "mobile_money" | "card";
-  };
-  printAuthorization: string;
-  drawerAuthorization?: string;
-};
-
-type HardwareUnavailable = { status: "unavailable"; message: string };
-type HardwareExternalTerminal = { status: "external_terminal"; message: string };
-
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-UG", {
     style: "currency",
@@ -72,11 +44,13 @@ function categoryIcon(category: string) {
 
 export function PosSaleWorkspace({
   cashierEmail,
+  cashierId,
   menuItems,
   onlineReceiptPrintBacklog,
   canRecordSales
 }: {
   cashierEmail: string | null;
+  cashierId: string;
   menuItems: PosMenuItem[];
   onlineReceiptPrintBacklog: OnlineReceiptPrintBacklogSnapshot;
   canRecordSales: boolean;
@@ -87,11 +61,10 @@ export function PosSaleWorkspace({
   const [tenderType, setTenderType] = useState<PosTenderType>("cash");
   const [cashReceived, setCashReceived] = useState("");
   const [paymentReference, setPaymentReference] = useState("");
-  const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const sale = usePosSale(cashierId);
+  const receipt = sale.attempt?.state === "committed" ? sale.attempt.receipt : null;
+  const controlsLocked = !sale.ready || sale.busy || !!sale.attempt;
   const [error, setError] = useState<string | null>(null);
-  const [receipt, setReceipt] = useState<Receipt | null>(null);
-  const [hardwareNotice, setHardwareNotice] = useState<string | null>(null);
 
   const total = useMemo(
     () => basket.reduce((sum, item) => sum + item.basePrice * item.quantity, 0),
@@ -108,10 +81,8 @@ export function PosSaleWorkspace({
   const change = tenderType === "cash" && cashReceived !== "" ? Math.max(0, Number(cashReceived) - total) : 0;
 
   function addItem(item: PosMenuItem) {
-    setReceipt(null);
-    setHardwareNotice(null);
+    if (controlsLocked) return;
     setError(null);
-    setIdempotencyKey(null);
     setBasket((current) => {
       const existing = current.find((line) => line.id === item.id);
       if (!existing) return [...current, { ...item, quantity: 1 }];
@@ -121,10 +92,8 @@ export function PosSaleWorkspace({
   }
 
   function changeQuantity(menuItemId: number, nextQuantity: number) {
-    setReceipt(null);
-    setHardwareNotice(null);
+    if (controlsLocked) return;
     setError(null);
-    setIdempotencyKey(null);
     setBasket((current) =>
       current.flatMap((line) => {
         if (line.id !== menuItemId) return [line];
@@ -135,9 +104,8 @@ export function PosSaleWorkspace({
   }
 
   async function takePayment() {
+    if (controlsLocked) return;
     setError(null);
-    setReceipt(null);
-    setHardwareNotice(null);
     if (!canRecordSales) {
       setError("POS view only. Ask a cashier, manager, or admin to record a sale.");
       return;
@@ -157,73 +125,10 @@ export function PosSaleWorkspace({
       return;
     }
 
-    const requestKey = idempotencyKey ?? crypto.randomUUID();
-    setIdempotencyKey(requestKey);
-    setIsSubmitting(true);
-
-    try {
-      const response = await fetch("/api/admin/pos/sales", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          idempotencyKey: requestKey,
-          tenderType,
-          amountReceived,
-          paymentReference: paymentReference.trim() || undefined,
-          items: basket.map((line) => ({ menuItemId: line.id, quantity: line.quantity }))
-        })
-      });
-      const result = await response.json();
-      if (!response.ok || !result.ok) {
-        throw new Error(result.message ?? "Unable to create the POS sale.");
-      }
-
-      const completedReceipt = result.data as Receipt;
-      setReceipt(completedReceipt);
-      if (completedReceipt.hardware?.status === "ready") {
-        void sendReceiptToLocalBridge(completedReceipt.hardware);
-      } else if (completedReceipt.hardware?.status === "unavailable" || completedReceipt.hardware?.status === "external_terminal") {
-        setHardwareNotice(completedReceipt.hardware.message);
-      }
-      setBasket([]);
-      setCashReceived("");
-      setPaymentReference("");
-      setIdempotencyKey(null);
-    } catch (submissionError) {
-      setError(submissionError instanceof Error ? submissionError.message : "Unable to create the POS sale.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
-  async function sendReceiptToLocalBridge(hardware: HardwareInstructions) {
-    const notices: string[] = [];
-    try {
-      const response = await fetch(`${hardware.bridgeUrl}/receipt/print`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${hardware.printAuthorization}` },
-        body: JSON.stringify(hardware.receipt)
-      });
-      if (!response.ok) throw new Error("Receipt printer rejected the request.");
-      notices.push("Receipt sent to printer.");
-    } catch {
-      notices.push("SALE COMPLETE — RECEIPT PRINT FAILED");
-    }
-
-    if (hardware.drawerAuthorization) {
-      try {
-        const response = await fetch(`${hardware.bridgeUrl}/drawer/open`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${hardware.drawerAuthorization}` },
-          body: JSON.stringify({ saleId: hardware.receipt.saleId })
-        });
-        if (!response.ok) throw new Error("Cash drawer rejected the request.");
-        notices.push("Cash drawer opened.");
-      } catch {
-        notices.push("SALE COMPLETE — DRAWER OPEN FAILED");
-      }
-    }
-    setHardwareNotice(notices.join(" "));
+    await sale.submit({
+      tenderType, amountReceived, paymentReference: paymentReference.trim() || undefined,
+      items: basket.map((line) => ({ menuItemId: line.id, quantity: line.quantity }))
+    });
   }
 
   return (
@@ -247,6 +152,32 @@ export function PosSaleWorkspace({
 
       {error ? <section className="rounded-[22px] border border-[#F4C7C7] bg-[#FFF8F8] px-4 py-3 text-sm text-[#9F2D2D]">{error}</section> : null}
 
+      {sale.message ? <p role="alert" className="rounded-2xl border border-amber-300 bg-amber-50 p-4">{sale.message}</p> : null}
+      {sale.attempt ? (
+        <section aria-live="polite" className="surface-card rounded-2xl p-4 space-y-3">
+          <p className="font-bold">Sale status: {sale.attempt.state.replaceAll("_", " ")}</p>
+          <p className="text-sm">{sale.attempt.message}</p>
+          {sale.attempt.state !== "committed" ? <p className="text-sm">Original request preserved. Do not record the same payment as a new sale.</p> : null}
+          <div className="flex flex-wrap gap-2">
+            {sale.attempt.state !== "committed" ? <button type="button" disabled={sale.busy} onClick={() => void sale.checkOutcome()} className="rounded-xl border px-4 py-2">Check original sale outcome</button> : null}
+            {sale.attempt.state === "prepared" ? <button type="button" disabled={sale.busy} onClick={() => void sale.retryOriginal()} className="rounded-xl border px-4 py-2">Retry preserved request</button> : null}
+            {["committed", "rejected"].includes(sale.attempt.state) ? <button type="button" disabled={sale.busy} onClick={async () => { await sale.startNew(); setBasket([]); setCashReceived(""); setPaymentReference(""); setError(null); }} className="rounded-xl border px-4 py-2">Start next sale</button> : null}
+          </div>
+          {receipt?.tenderType === "cash" && receipt.hardwareEnabled ? (
+            <div className="space-y-2 border-t pt-3">
+              <p>Receipt: {sale.attempt.hardware.receipt.state.replaceAll("_", " ")}. {sale.attempt.hardware.receipt.message}</p>
+              <p>Drawer: {sale.attempt.hardware.drawer.state.replaceAll("_", " ")}. {sale.attempt.hardware.drawer.message}</p>
+              <p className="text-xs">Bridge acknowledgement confirms Windows submission, not physical printing or drawer movement. Drawer commands are never automatically repeated during recovery.</p>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" disabled={sale.busy} onClick={() => void sale.checkHardware()} className="rounded-xl border px-4 py-2">Check hardware status (no replay)</button>
+                <button type="button" disabled={sale.busy} onClick={() => void sale.reprint()} className="rounded-xl border px-4 py-2">Reprint recorded receipt only</button>
+              </div>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+      {!sale.attempt && sale.history.length ? <details className="surface-card rounded-2xl p-4"><summary>Recent recorded sales on this browser</summary><div className="mt-3 flex flex-wrap gap-2">{sale.history.map((previous) => <button key={previous.payload.idempotencyKey} type="button" disabled={sale.busy || basket.length > 0} onClick={() => void sale.reviewRecorded(previous)} className="rounded-xl border px-3 py-2">Review sale {previous.receipt?.orderNumber}</button>)}</div></details> : null}
+
       {receipt ? (
         <section className="rounded-[28px] border border-[#B9DFC6] bg-[#F2FBF5] p-5 print:border-0 print:bg-white">
           <p className="text-[11px] uppercase tracking-[0.18em] text-[#287241]">Payment recorded</p>
@@ -257,15 +188,16 @@ export function PosSaleWorkspace({
             </div>
             <p className="text-xl font-semibold">{formatCurrency(receipt.totalAmount)}</p>
           </div>
+          {receipt.tenderType !== "cash" ? <p className="mt-3 text-sm">External terminal receipt applies. Local printer and cash drawer are not triggered.</p> : null}
           {receipt.changeGiven > 0 ? <p className="mt-3 text-sm font-semibold">Change due: {formatCurrency(receipt.changeGiven)}</p> : null}
-          {hardwareNotice ? <p className="mt-3 text-sm font-semibold text-[#166534]">{hardwareNotice}</p> : null}
-          {!receipt.hardware ? <button type="button" onClick={() => window.print()} className="mt-4 rounded-2xl border border-[#A8D3B5] bg-white px-4 py-2.5 text-sm font-semibold text-[#166534] print:hidden">
+          {receipt.tenderType === "cash" && !receipt.hardwareEnabled ? <button type="button" onClick={() => window.print()} className="mt-4 rounded-2xl border border-[#A8D3B5] bg-white px-4 py-2.5 text-sm font-semibold text-[#166534] print:hidden">
             Print receipt
           </button> : null}
         </section>
       ) : null}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_390px]">
+      <fieldset disabled={controlsLocked} className="min-w-0 border-0 p-0 grid gap-4 xl:grid-cols-[minmax(0,1fr)_390px]">
+        <legend className="sr-only">Sale entry</legend>
         <section className="surface-card rounded-[32px] p-5">
           <div className="flex flex-col gap-3 border-b border-[#EEF2F6] pb-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
@@ -324,10 +256,10 @@ export function PosSaleWorkspace({
           {tenderType === "cash" ? <label className="mt-4 grid gap-2 text-sm font-semibold">Cash received <span className="text-xs font-normal text-[#6B7280]">Type numbers normally; commas are added automatically.</span><div className="relative"><span className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-sm font-bold text-[#4B5563]">UGX</span><UgxAmountInput value={cashReceived} onValueChange={setCashReceived} placeholder="0" className="w-full rounded-2xl border-2 border-[#287241] bg-[#F2FBF5] py-3 pl-14 pr-4 text-lg font-bold" aria-label="Cash received in Ugandan shillings" /></div></label> : <label className="mt-4 grid gap-2 text-sm font-semibold">Pesapal terminal reference<span className="text-xs font-normal text-[#6B7280]">Enter the full 11-digit reference or its last 4 digits.</span><input value={paymentReference} onChange={(event) => setPaymentReference(event.target.value.replace(/\D/g, ""))} inputMode="numeric" pattern="(?:[0-9]{4}|[0-9]{11})" maxLength={11} placeholder="Full reference or last 4 digits" className="rounded-2xl border-2 border-[#4267B2] bg-[#F3F6FF] px-4 py-3 text-sm font-normal" /></label>}
           {tenderType === "cash" && cashReceived !== "" ? <p className={`mt-2 rounded-xl px-3 py-2 text-sm font-semibold ${Number(cashReceived) >= total ? "bg-[#EAF8EF] text-[#166534]" : "bg-[#FFF4E5] text-[#B45309]"}`}>{Number(cashReceived) >= total ? `Change: ${formatCurrency(change)}` : `Still needed: ${formatCurrency(total - Number(cashReceived))}`}</p> : null}
           {!canRecordSales ? <p className="mt-5 rounded-2xl bg-[#F3F4F6] px-4 py-3 text-sm font-semibold text-[#6B7280]">POS view only. A cashier, manager, or admin records sales.</p> : null}
-          <button type="button" disabled={!canRecordSales || isSubmitting || basket.length === 0 || (tenderType !== "cash" && !/^(?:\d{4}|\d{11})$/.test(paymentReference.trim()))} onClick={takePayment} className="mt-5 w-full rounded-2xl bg-[#166534] px-4 py-4 text-base font-bold text-white shadow-[0_10px_22px_rgba(22,101,52,0.22)] disabled:cursor-not-allowed disabled:bg-[#9CA3AF]">{!canRecordSales ? "View only" : isSubmitting ? "Recording sale…" : "Take payment and create sale"}</button>
+          <button type="button" disabled={!canRecordSales || sale.busy || basket.length === 0 || (tenderType !== "cash" && !/^(?:\d{4}|\d{11})$/.test(paymentReference.trim()))} onClick={takePayment} className="mt-5 w-full rounded-2xl bg-[#166534] px-4 py-4 text-base font-bold text-white shadow-[0_10px_22px_rgba(22,101,52,0.22)] disabled:cursor-not-allowed disabled:bg-[#9CA3AF]">{!canRecordSales ? "View only" : sale.busy ? (receipt ? "Hardware in progress…" : "Recording sale…") : "Take payment and create sale"}</button>
           <p className="mt-3 text-xs leading-5 text-[#6B7280]">One payment method per sale for now. Split payments remain pending proprietor approval.</p>
         </aside>
-      </div>
+      </fieldset>
     </div>
   );
 }

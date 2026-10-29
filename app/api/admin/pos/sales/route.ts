@@ -1,128 +1,71 @@
-import { createHash } from "crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { AdminAuthorizationError, assertSameOriginRequest, requirePosAccess } from "@/lib/auth/admin-role";
-import { isPosHardwareBridgeEnabled, issuePosHardwareInstructions, type CanonicalPosReceipt } from "@/lib/pos/hardware-bridge";
 import { posSaleRequestSchema } from "@/lib/schemas/admin";
 import { createAdminSupabaseClient } from "@/lib/supabase/server";
-import { RequestValidationError, parseObject } from "@/lib/validation/http";
-
-function normalizeForHash(input: {
-  tenderType: string;
-  amountReceived: number;
-  paymentReference?: string;
-  items: Array<{ menuItemId: number; quantity: number }>;
-}) {
-  return JSON.stringify({
-    tenderType: input.tenderType,
-    amountReceived: input.amountReceived,
-    paymentReference: input.paymentReference?.trim() || null,
-    items: [...input.items].sort((left, right) => left.menuItemId - right.menuItemId)
-  });
-}
-
-async function loadCanonicalPosReceipt(orderId: number, cashierProfileId: string): Promise<CanonicalPosReceipt> {
-  const { data, error } = await createAdminSupabaseClient()
-    .from("orders")
-    .select("order_number,paid_at,total_amount,order_items(menu_item_name,quantity,unit_price,line_total)")
-    .eq("id", orderId)
-    .eq("order_source", "pos")
-    .eq("cashier_profile_id", cashierProfileId)
-    .single();
-
-  if (error || !data) throw new Error("Unable to load the committed POS receipt for the hardware bridge.");
-  const { data: tenderData, error: tenderError } = await createAdminSupabaseClient()
-    .from("pos_tenders")
-    .select("tender_type")
-    .eq("order_id", orderId)
-    .single();
-
-  if (tenderError || !tenderData) throw new Error("Unable to load the committed POS tender for the hardware bridge.");
-  const tender = tenderData.tender_type;
-  if (tender !== "cash" && tender !== "mobile_money" && tender !== "card") {
-    throw new Error("Committed POS receipt has an unsupported tender type.");
-  }
-
-  const items = Array.isArray(data.order_items) ? data.order_items.map((item) => ({
-    name: String(item.menu_item_name),
-    quantity: Number(item.quantity),
-    unitPrice: Number(item.unit_price),
-    total: Number(item.line_total)
-  })) : [];
-  if (items.length === 0) throw new Error("Committed POS receipt has no line items.");
-
-  return {
-    saleId: String(data.order_number),
-    date: data.paid_at ? String(data.paid_at) : new Date().toISOString(),
-    items,
-    subtotal: Number(data.total_amount),
-    total: Number(data.total_amount),
-    paymentMethod: tender
-  };
-}
+import { RequestValidationError, parseJsonBody } from "@/lib/validation/http";
+import { RequestBodyTooLargeError } from "@/lib/request-limits";
+import { hashableSale } from "@/lib/pos/sale-contract";
+import { decorateReceipt } from "@/lib/pos/sale-server";
+import { posTimer } from "@/lib/pos/timing";
+import { issueWalkInHardwareAction } from "@/lib/pos/hardware-bridge";
 
 export async function POST(request: Request) {
+  let correlationId = randomUUID() as string;
+  let rpcStarted = false;
   try {
     assertSameOriginRequest(request);
-    const actor = await requirePosAccess();
-    const body = parseObject(await request.json(), posSaleRequestSchema);
-    const requestHash = createHash("sha256").update(normalizeForHash(body)).digest("hex");
-
-    const { data, error } = await createAdminSupabaseClient().rpc("create_pos_sale", {
-      p_idempotency_key: body.idempotencyKey,
-      p_request_hash: requestHash,
-      p_cashier_profile_id: actor.userId,
-      p_tender_type: body.tenderType,
-      p_amount_received: body.amountReceived,
+    const body = await parseJsonBody(request, posSaleRequestSchema, { maxBytes: 32_768 });
+    correlationId = body.idempotencyKey;
+    const tick = posTimer(correlationId);
+    const actor = await requirePosAccess(tick);
+    const requestHash = createHash("sha256").update(hashableSale(body)).digest("hex");
+    rpcStarted = true;
+    const { data, error } = await createAdminSupabaseClient().rpc("create_pos_sale_with_receipt", {
+      p_idempotency_key: body.idempotencyKey, p_request_hash: requestHash, p_cashier_profile_id: actor.userId,
+      p_tender_type: body.tenderType, p_amount_received: body.amountReceived,
       p_payment_reference: body.paymentReference?.trim() || null,
       p_items: body.items.map((item) => ({ menu_item_id: item.menuItemId, quantity: item.quantity }))
     });
-
     if (error) {
-      throw new Error(error.message);
+      tick("sale_rpc_completed", "failed");
+      // Only database rollback responses are definitive. Transport loss is not.
+      const rolledBack = error.code?.startsWith("23") || (error.code === "P0001" && /^(?:invalid_pos_|pos_item_unavailable|insufficient_cash_received|non_cash_tender_requires|Insufficient finished stock|Insufficient service-day stock)/.test(error.message));
+      return NextResponse.json({ ok: false, outcome: rolledBack ? "rejected" : "outcome_unknown",
+        message: rolledBack ? "Sale rejected by stock or payment validation. Check the original outcome before starting a different sale."
+          : "Sale outcome unknown. Check the original request; do not create a replacement.",
+        correlationId }, { status: rolledBack ? 409 : 503, headers: { "Cache-Control": "no-store" } });
     }
-
-    const sale = data?.[0];
-    if (!sale) {
-      throw new Error("The POS sale did not return a receipt.");
-    }
-
-    const committedTender = String(sale.tender_type);
-    let hardware: Awaited<ReturnType<typeof issuePosHardwareInstructions>> | { status: "unavailable" | "external_terminal"; message: string } = null;
-    if (committedTender === "mobile_money" || committedTender === "card") {
-      hardware = {
-        status: "external_terminal",
-        message: "Visa POS terminal receipt applies. Local receipt printer and cash drawer were not triggered."
-      };
-    } else if (isPosHardwareBridgeEnabled()) {
+    tick("sale_rpc_completed");
+    const receipt = decorateReceipt(data);
+    tick("receipt_data_prepared");
+    // Initial grants avoid another cloud round trip before local dispatch.
+    // They are response-only; the browser never persists bearer tokens.
+    let hardware = null;
+    if (receipt.tenderType === "cash" && receipt.hardwareEnabled) {
       try {
-        const receipt = await loadCanonicalPosReceipt(Number(sale.id), actor.userId);
-        hardware = await issuePosHardwareInstructions(receipt);
-      } catch (hardwareError) {
-        console.error("POS hardware authorization preparation failed after a committed sale.", hardwareError);
-        hardware = { status: "unavailable", message: "Sale complete. Hardware receipt authorization is unavailable." };
+        const [drawer, print] = await Promise.all([
+          issueWalkInHardwareAction(receipt.orderId, receipt.canonicalReceipt, "drawer", "original"),
+          issueWalkInHardwareAction(receipt.orderId, receipt.canonicalReceipt, "receipt", "original")
+        ]);
+        hardware = { drawer, receipt: print };
+        tick("hardware_authorization_prepared");
+        console.info(JSON.stringify({ event: "admin_pos_hardware_authorized", correlationId,
+          actionIds: [drawer?.actionId, print?.actionId] }));
+      } catch {
+        // The sale already committed. Authorization failure cannot turn it into a failed sale.
+        tick("hardware_authorization_prepared", "failed");
       }
     }
-
-    return NextResponse.json({
-      ok: true,
-      data: {
-        orderId: Number(sale.id),
-        orderNumber: String(sale.order_number),
-        status: String(sale.status),
-        totalAmount: Number(sale.total_amount),
-        tenderType: committedTender,
-        amountReceived: Number(sale.amount_received),
-        changeGiven: Number(sale.change_given),
-        hardware
-      }
-    });
+    tick("api_response_prepared");
+    return NextResponse.json({ ok: true, data: receipt, hardware, correlationId }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    if (error instanceof RequestValidationError) {
-      return NextResponse.json({ ok: false, message: error.message, issues: error.issues }, { status: 400 });
-    }
-
-    const message = error instanceof Error ? error.message : "Unable to create the POS sale.";
-    const status = error instanceof AdminAuthorizationError ? error.status : 500;
-    return NextResponse.json({ ok: false, message }, { status });
+    const invalid = error instanceof RequestValidationError || error instanceof RequestBodyTooLargeError;
+    const status = error instanceof AdminAuthorizationError ? error.status : invalid ? 400 : 503;
+    console.warn(JSON.stringify({ event: "admin_pos_request_failed", correlationId, rpcStarted, status }));
+    return NextResponse.json({ ok: false, outcome: invalid && !rpcStarted ? "rejected" : "outcome_unknown",
+      message: invalid ? "Invalid sale request. Review the original payload." :
+        status === 401 || status === 403 ? "Sign in as the original cashier to check this sale." : "Sale outcome unknown. Check the original request.",
+      correlationId }, { status, headers: { "Cache-Control": "no-store" } });
   }
 }

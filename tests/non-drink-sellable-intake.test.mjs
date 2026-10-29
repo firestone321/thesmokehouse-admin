@@ -24,7 +24,8 @@ test("non-drink ready-to-sell intake is always one-to-one and whole-numbered", (
   assert.match(actions, /\["sides", "accompaniments"\]\.includes/);
   assert.match(actions, /stockPoolPortionTypeId !== input\.direct_sellable_portion_type_id/);
   assert.match(form, /Restocking amount/);
-  assert.match(form, /Enter how many of the selected portion are being added\./);
+  assert.match(form, /Enter the quantity in \{selectedItem\.unitName\}/);
+  assert.match(form, /Each input unit adds \{selectedItem\.sellableUnitsPerInput\} sellable/);
 });
 
 test("raw inputs remain a separate choice", () => {
