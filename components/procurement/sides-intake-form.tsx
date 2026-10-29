@@ -560,7 +560,7 @@ export function SidesIntakeForm({
 
           <label className="space-y-2 text-sm text-[#6B7280]">
             <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">
-              {selectedItem?.directSellablePortionTypeId ? "Restocking amount" : receivesPieces ? "Pieces Received" : `Quantity received${selectedItem ? ` (${selectedItem.unitName})` : ""}`}
+              {selectedItem?.directSellablePortionTypeId ? `Restocking amount (${selectedItem.unitName})` : receivesPieces ? "Pieces Received" : `Quantity received${selectedItem ? ` (${selectedItem.unitName})` : ""}`}
             </span>
             <input
               type="number"
@@ -572,13 +572,15 @@ export function SidesIntakeForm({
             />
             {selectedItem?.directSellablePortionTypeId ? (
               <p className="text-xs leading-5 text-[#6B7280]">
-                Enter how many of the selected portion are being added.
+                Enter the quantity in {selectedItem.unitName}. Each input unit adds {selectedItem.sellableUnitsPerInput} sellable
+                {selectedItem.sellableUnitsPerInput === 1 ? " portion" : " portions"}
+                {selectedItem.portionLabel ? ` (${selectedItem.portionLabel})` : ""}.
               </p>
             ) : null}
           </label>
 
           <label className="space-y-2 text-sm text-[#6B7280]">
-            <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Unit cost</span>
+            <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Unit cost ({selectedItem.unitName})</span>
             <UgxAmountInput
               allowDecimals
               min="0"
