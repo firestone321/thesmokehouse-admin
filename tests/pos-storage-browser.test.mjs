@@ -34,7 +34,7 @@ test("real browser: IndexedDB survives refresh/restart, cashier isolation and We
     });
   }
   function send(method,params={},sessionId){
-    return new Promise((resolve,reject)=>{const id=++seq;pending.set(id,{resolve,reject});socket.send(JSON.stringify({id,method,params,...(sessionId?{sessionId}:{})}));});
+    return new Promise((resolve,reject)=>{const id=++seq;const timer=setTimeout(()=>{pending.delete(id);reject(Error("CDP timed out: "+method));},10000);pending.set(id,{resolve:value=>{clearTimeout(timer);resolve(value);},reject:error=>{clearTimeout(timer);reject(error);}});socket.send(JSON.stringify({id,method,params,...(sessionId?{sessionId}:{})}));});
   }
   async function tab(){
     const {targetId}=await send("Target.createTarget",{url:"about:blank"});
@@ -51,7 +51,11 @@ test("real browser: IndexedDB survives refresh/restart, cashier isolation and We
   }
   async function stop(){
     if(!child)return;const exited=new Promise(resolve=>child.once("exit",resolve));
-    await send("Browser.close").catch(()=>{});await exited;socket?.close();child=null;
+    const closing=send("Browser.close").catch(()=>{});
+    await Promise.race([exited,new Promise(resolve=>setTimeout(resolve,3000))]);
+    if(child.exitCode===null)child.kill();
+    await Promise.race([exited,new Promise(resolve=>setTimeout(resolve,3000))]);
+    socket?.close();for(const callback of pending.values())callback.reject(Error("Browser closed"));pending.clear();await closing;child=null;
   }
   try{
     await start();const first=await tab();
