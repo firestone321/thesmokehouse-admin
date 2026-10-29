@@ -70,6 +70,15 @@ test("real browser: IndexedDB survives refresh/restart, cashier isolation and We
     await stop();await start();const restarted=await tab();
     assert.equal(await evaluate(restarted,`(async()=>{const s=await import("/attempt-store.js");return (await s.readActiveAttempt("cashier-a")).payload.idempotencyKey;})()`),key);
     assert.deepEqual(await evaluate(restarted,`(async()=>{const s=await import("/attempt-store.js"),c=await import("/sale-contract.js");const a=c.restoreAttempt(await s.readActiveAttempt("cashier-a"));await s.saveAttempt(a);return [a.state,a.payload.idempotencyKey];})()`),["outcome_unknown",key]);
+    assert.deepEqual(await evaluate(restarted,`(async()=>{
+      const s=await import("/attempt-store.js"),c=await import("/sale-contract.js");
+      const active=await s.readActiveAttempt("cashier-a");
+      const old=c.newAttempt("cashier-a",{...active.payload,idempotencyKey:crypto.randomUUID()});
+      old.state="committed";await s.saveAttempt(old,false);
+      return [(await s.readActiveAttempt("cashier-a")).payload.idempotencyKey,
+        (await s.readAttempt("cashier-a",old.payload.idempotencyKey)).state,
+        await s.readAttempt("cashier-b",old.payload.idempotencyKey)];
+    })()`),[key,"committed",null]);
   }finally{
     await stop();await new Promise(r=>server.close(r));
     if(!profile.startsWith(path.join(os.tmpdir(),"smokehouse-pos-browser-test-")))throw Error("Unsafe test cleanup target");

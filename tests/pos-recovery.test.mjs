@@ -10,9 +10,9 @@ const payload={idempotencyKey:"00000000-0000-4000-8000-000000000001",tenderType:
 const receipt={orderId:1,orderNumber:"1001",status:"confirmed",totalAmount:100,tenderType:"cash",amountReceived:100,changeGiven:0,hardwareEnabled:true,
   canonicalReceipt:{saleId:"1001",date:"2026-10-18T10:00:00Z",items:[{name:"Test",quantity:1,unitPrice:100,total:100}],subtotal:100,total:100,paymentMethod:"cash"}};
 
-function harness({prior=null,fetchImpl,drawerState="submitted"}={}) {
+function harness({prior=null,fetchImpl,drawerState="submitted",recordedAttempts=[]}={}) {
   let active=prior?structuredClone(prior):null,locked=false;
-  const recorded=[],states=[],hardware=[],requests=[];
+  const records=new Map([...recordedAttempts.map(a=>[a.payload.idempotencyKey,structuredClone(a)]),...(prior?[[prior.payload.idempotencyKey,structuredClone(prior)]]:[])]),states=[],hardware=[],requests=[],committed=[];
   const slots=[];let cursor=0;const effects=[];
   const react={
     useState:(initial)=>{const i=cursor++;if(!(i in slots))slots[i]=initial;return [slots[i],v=>{slots[i]=typeof v==="function"?v(slots[i]):v;}];},
@@ -22,8 +22,9 @@ function harness({prior=null,fetchImpl,drawerState="submitted"}={}) {
   };
   const storage={
     readActiveAttempt:async()=>active?structuredClone(active):null,
-    saveAttempt:async(a)=>{active=structuredClone(a);states.push(a.state);if(a.state==="committed")recorded.push(structuredClone(a));},
-    listRecordedAttempts:async()=>recorded,closeAttempt:async()=>{active=null;},watchAttempts:()=>()=>{},
+    saveAttempt:async(a,activate=true)=>{if(activate)active=structuredClone(a);records.set(a.payload.idempotencyKey,structuredClone(a));states.push(a.state);},
+    readAttempt:async(owner,key)=>{const a=records.get(key);return a?.ownerId===owner?structuredClone(a):null;},
+    listRecordedAttempts:async()=>[...records.values()].filter(a=>a.state==="committed").map(a=>structuredClone(a)),closeAttempt:async()=>{active=null;},watchAttempts:()=>()=>{},
     withSaleLock:async(_owner,work)=>{if(locked)throw Error("Another tab");locked=true;try{return await work();}finally{locked=false;}}
   };
   const module=loadTs("lib/pos/use-pos-sale.ts",{
@@ -32,10 +33,10 @@ function harness({prior=null,fetchImpl,drawerState="submitted"}={}) {
     "./hardware-client":{submitHardware:async(a,kind)=>{hardware.push(kind);return {...a.hardware[kind],state:kind==="drawer"?drawerState:"submitted"};},lookupHardware:async(a,k)=>({...a.hardware[k],state:"submitted"})},
     "./timing":{posTimer:()=>()=>{}}
   });
-  function render(){cursor=0;const value=module.usePosSale("cashier");react.mounted=true;return value;}
+  function render(){cursor=0;const value=module.usePosSale("cashier",value=>committed.push(value));react.mounted=true;return value;}
   return {
     mount:async()=>{render();for(const effect of effects)effect();await new Promise(r=>setImmediate(r));return render();},
-    render,read:()=>active,states,hardware,requests,
+    render,read:()=>active,latest:()=>[...records.values()].at(-1),states,hardware,requests,committed,
     async execute(work){const originalFetch=globalThis.fetch,originalWindow=globalThis.window;
       globalThis.window={addEventListener(){},removeEventListener(){},confirm:()=>true};
       globalThis.fetch=async(url,init)=>{requests.push({url,body:init?.body?JSON.parse(init.body):null});return fetchImpl?fetchImpl(url,init):{ok:true,json:async()=>({ok:true,data:receipt})};};
@@ -47,12 +48,12 @@ test("cash sale is durable before POST and hardware starts only after commitment
   const h=harness({fetchImpl:async()=>{assert.equal(h.read().state,"submitting");assert.equal(h.hardware.length,0);return {ok:true,json:async()=>({ok:true,data:receipt})};}});
   const ui=await initialized(h);
   await h.execute(()=>ui.submit({...payload,idempotencyKey:undefined}));
-  assert.equal(h.read().state,"committed");assert.deepEqual(h.hardware,["drawer","receipt"]);assert.deepEqual(h.states.slice(0,3),["prepared","submitting","committed"]);
+  assert.equal(h.latest().state,"committed");assert.deepEqual(h.hardware,["drawer","receipt"]);assert.deepEqual(h.states.slice(0,3),["prepared","submitting","committed"]);
 });
 for(const tenderType of ["card","mobile_money"])test(tenderType+" is recorded without local hardware",async()=>{
   const h=harness({fetchImpl:async()=>({ok:true,json:async()=>({ok:true,data:{...receipt,tenderType,hardwareEnabled:false}})})});
   const ui=await initialized(h);await h.execute(()=>ui.submit({...payload,tenderType,paymentReference:"1234"}));
-  assert.equal(h.read().state,"committed");assert.deepEqual(h.hardware,[]);
+  assert.equal(h.latest().state,"committed");assert.deepEqual(h.hardware,[]);
 });
 test("double click and slow response do not create two requests",async()=>{
   let release;const gate=new Promise(r=>release=r);
@@ -67,14 +68,14 @@ test("connection loss preserves identity and restores an already committed sale 
   assert.deepEqual(h.hardware,[]);
   const reopened=harness({prior:pending,fetchImpl:async()=>({ok:true,json:async()=>({ok:true,outcome:"committed",data:receipt})})});
   const restored=await initialized(reopened);await reopened.execute(()=>restored.checkOutcome());
-  assert.equal(reopened.read().state,"committed");assert.deepEqual(reopened.hardware,[]);
+  assert.equal(reopened.latest().state,"committed");assert.deepEqual(reopened.hardware,[]);
   assert.ok(reopened.requests.every(r=>!r.body)); // lookup only, no sale POST
 });
 test("not-found recovery resubmits the same immutable payload/key and never automatically replays hardware",async()=>{
   const prior=newAttempt("cashier",payload);prior.state="outcome_unknown";let count=0;
   const h=harness({prior,fetchImpl:async()=>++count===1?{ok:true,json:async()=>({ok:true,outcome:"not_found"})}:{ok:true,json:async()=>({ok:true,data:receipt})}});
   const ui=await initialized(h);await h.execute(()=>ui.checkOutcome());await h.execute(()=>h.render().retryOriginal());
-  assert.deepEqual(h.requests[1].body,payload);assert.equal(h.read().state,"committed");assert.deepEqual(h.hardware,[]);
+  assert.deepEqual(h.requests[1].body,payload);assert.equal(h.latest().state,"committed");assert.deepEqual(h.hardware,[]);
 });
 test("known rollback is rejected; transport failure before a response remains unknown",async()=>{
   const h=harness({fetchImpl:async()=>({ok:false,json:async()=>({ok:false,outcome:"rejected",message:"Stock validation"})})});
@@ -89,12 +90,12 @@ test("unresolved sale cannot be replaced; hardware failure leaves committed sale
   const prior=newAttempt("cashier",payload);prior.state="outcome_unknown";
   const h=harness({prior});const ui=await initialized(h);await h.execute(()=>ui.startNew());assert.equal(h.read().payload.idempotencyKey,payload.idempotencyKey);
   const second=harness({drawerState:"outcome_unknown"});const fresh=await initialized(second);await second.execute(()=>fresh.submit(payload));
-  assert.equal(second.read().state,"committed");assert.deepEqual(second.hardware,["drawer","receipt"]);
+  assert.equal(second.latest().state,"committed");assert.deepEqual(second.hardware,["drawer","receipt"]);
 });
 test("controlled reprint calls receipt only, never sale posting or drawer",async()=>{
   const prior=newAttempt("cashier",payload);prior.state="committed";prior.receipt=receipt;
-  const h=harness({prior});const ui=await initialized(h);await h.execute(()=>ui.reprint());
-  assert.deepEqual(h.hardware,["receipt"]);assert.equal(h.requests.length,0);assert.notEqual(h.read().hardware.receipt.requestId,"original");
+  const h=harness({prior});const ui=await initialized(h);await h.execute(()=>ui.reprint(payload.idempotencyKey));
+  assert.deepEqual(h.hardware,["receipt"]);assert.equal(h.requests.length,0);assert.notEqual(h.latest().hardware.receipt.requestId,"original");
 });
 test("payload snapshot is immutable and hashing preserves canonical item ordering",()=>{
   const input=structuredClone(payload),attempt=newAttempt("cashier",input);input.items[0].quantity=20;
@@ -194,5 +195,47 @@ test("fresh response-only hardware grants avoid another cloud call; aged grants 
 });
 test("response-only tokens never enter the durable committed sale",async()=>{
   const h=harness({fetchImpl:async()=>({ok:true,json:async()=>({ok:true,data:receipt,hardware:{drawer:{authorization:"synthetic-do-not-persist"}}})})});
-  const ui=await initialized(h);await h.execute(()=>ui.submit(payload));assert.doesNotMatch(JSON.stringify(h.read()),/synthetic-do-not-persist/);
+  const ui=await initialized(h);await h.execute(()=>ui.submit(payload));assert.doesNotMatch(JSON.stringify(h.latest()),/synthetic-do-not-persist/);
+});
+
+test("confirmed sale automatically releases entry; consecutive sales use distinct keys without a reset click",async()=>{
+  const h=harness();const ui=await initialized(h);
+  await h.execute(()=>ui.submit(payload));
+  assert.equal(h.read(),null);assert.equal(h.committed.length,1);
+  const firstKey=h.latest().payload.idempotencyKey;
+  await h.execute(()=>h.render().submit(payload));
+  assert.equal(h.read(),null);assert.notEqual(h.latest().payload.idempotencyKey,firstKey);
+  assert.equal(h.requests.filter(r=>r.url==="/api/admin/pos/sales").length,2);
+  assert.deepEqual(h.hardware,["drawer","receipt","drawer","receipt"]);
+});
+test("previously confirmed active sale moves to history on reopen without hardware replay",async()=>{
+  const prior=newAttempt("cashier",payload);prior.state="committed";prior.receipt=receipt;prior.hardware.drawer.state="pending";
+  const h=harness({prior});await initialized(h);
+  assert.equal(h.read(),null);assert.equal(h.latest().hardware.drawer.state,"outcome_unknown");
+  assert.deepEqual(h.hardware,[]);assert.equal(h.requests.length,0);
+});
+test("hardware uncertainty remains in history without requiring a manual next sale",async()=>{
+  const h=harness({drawerState:"outcome_unknown"});const ui=await initialized(h);
+  await h.execute(()=>ui.submit(payload));
+  assert.equal(h.read(),null);assert.equal(h.latest().state,"committed");
+  assert.equal(h.latest().hardware.drawer.state,"outcome_unknown");assert.equal(h.committed.length,1);
+});
+test("receipt-only history operations never activate an old sale or disturb a pending identity",async()=>{
+  const historical=newAttempt("cashier",payload);historical.state="committed";historical.receipt=receipt;
+  const pending=newAttempt("cashier",{...payload,idempotencyKey:"00000000-0000-4000-8000-000000000002"});pending.state="outcome_unknown";
+  const h=harness({prior:pending,recordedAttempts:[historical]});const ui=await initialized(h);
+  await h.execute(()=>ui.reprint(historical.payload.idempotencyKey));
+  assert.equal(h.read().payload.idempotencyKey,pending.payload.idempotencyKey);
+  assert.equal(h.read().state,"outcome_unknown");
+  assert.deepEqual(h.hardware,["receipt"]);assert.equal(h.requests.length,0);
+});
+test("recorded-sales panel is collapsed by default and contains no next-sale gate",()=>{
+  const React=require("react"),{renderToStaticMarkup}=require("react-dom/server");
+  const {RecordedSales}=loadTs("components/pos/recorded-sales.tsx",{"@/lib/ops/utils":{formatCurrency:n=>"UGX "+n}});
+  const a=newAttempt("cashier",payload);a.state="committed";a.receipt=receipt;
+  const html=renderToStaticMarkup(React.createElement(RecordedSales,{attempts:[a],busy:false,onReprint(){},onCheckHardware(){}}));
+  assert.match(html,/<summary[^>]*>Recent recorded sales on this browser/);
+  assert.doesNotMatch(html,/<details[^>]*\bopen(?:\s|=|>)/);
+  assert.doesNotMatch(html,/Start next sale/);
+  assert.match(html,/Reprint recorded receipt only/);assert.match(html,/Sale 1001/);
 });

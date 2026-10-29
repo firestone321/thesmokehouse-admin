@@ -80,7 +80,7 @@ Physical output can still be delayed by previously executing jobs, printer/spool
 - **Check hardware status (no replay)** reads the original bridge's durable record. It does not print or pulse. Use the original POS PC; “no record” on another machine does not prove the action never ran.
 - **Reprint recorded receipt only** creates a distinct, explicitly requested print action. A prior uncertain print warns that a physical receipt may already exist.
 - There is intentionally no “retry uncertain drawer” button. Staff must inspect the drawer/Windows queue and resolve the incident through a supervised process.
-- “Start next sale” closes only a committed/rejected attempt's active pointer; recorded receipts remain locally reviewable. Hardware processing holds that cashier's coordination lock until its bounded requests settle; other terminals/cashiers are not locked by this browser lock.
+- Confirmed sales automatically release the active pointer after their initial hardware attempts settle; no manual next-sale click is required. Entry fields clear on confirmation. Completed receipts and hardware tools remain in collapsed Recent recorded sales history. Hardware history updates never replace a pending sale's active pointer. Rejected sales may be explicitly cleared; unresolved sale identities remain protected. Hardware processing holds that cashier's coordination lock until its bounded requests settle.
 - IndexedDB stores only required sale fields and committed receipt data. No bearer token or payment credential is stored. Terminal references are retained as part of the exact retry payload; protect the staff browser profile and do not clear its data during unresolved attempts.
 - Browser persistence is local to this origin/profile, not a backup or cross-device ledger. Private mode, browser-data deletion, storage eviction and hardware disk loss remain limitations. Sign out does not move pending work to another browser.
 
@@ -96,7 +96,7 @@ No new environment variables or dependencies are required. POS_TEST_CHROME optio
 
 ## Validation
 
-Verified local results: 47 Admin tests and 14 bridge tests passed; Admin type-check and production build passed; bridge build passed. Scoped Admin lint reported zero errors and two pre-existing img-element warnings. No sale function was executed against Supabase; read-only catalog verification subsequently confirmed Phase 100 live. No physical output was tested by the agent.
+Verified local results: 52 Admin tests and 14 bridge tests passed; Admin type-check and production build passed; bridge build passed. Scoped Admin lint reported zero errors and two pre-existing img-element warnings. No sale function was executed against Supabase; read-only catalog verification subsequently confirmed Phase 100 live. No physical output was tested by the agent.
 
 Commands:
 - Admin: node --test tests/*.test.mjs
@@ -160,3 +160,11 @@ Bridge:
 - Updated one stale procurement test assertion to reflect that already-committed quantity/unit wording; no procurement behavior was changed.
 - Reran all 47 Admin tests, including the isolated real-browser restart/tab-lock test.
 - Updated Admin deployment is authorized by the user. Controlled physical cash-sale/reprint acceptance remains pending after deployment.
+
+## Workflow refinement — 2026-10-29
+
+User decision: confirmed sales must not require a manual Start next sale step. Match the existing collapsed Recent recorded sales panel. Keep unresolved transaction recovery visible, and retain all receipt/drawer safeguards. Change due remains visible for cash handling.
+
+Implemented automatic confirmed-sale archiving (including on reopening an older browser session), default-collapsed receipt/hardware history, receipt-only actions scoped to their stored sale identity, and automatic entry clearing on confirmation. No bridge, payment, stock or database schema changes. Pending/unknown attempts still block replacement transactions. All 52 Admin tests passed, including consecutive-sale, restart, history isolation and collapsed-render checks.
+
+Read-only database acceptance: orders 181 and 182 each have one UGX 2000 cash tender, one completed request binding, one sale activity record and one expected stock deduction. The user reported drawer activation before receipt output. Physical receipt-only reprint observation remains outstanding.

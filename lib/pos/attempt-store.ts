@@ -35,10 +35,16 @@ export async function readActiveAttempt(ownerId: string): Promise<SaleAttempt | 
     };
   });
 }
-export async function saveAttempt(attempt: SaleAttempt): Promise<void> {
+export async function readAttempt(ownerId: string, key: string): Promise<SaleAttempt | null> {
+  return transaction("readonly", (tx, result) => {
+    const request = tx.objectStore("attempts").get(key);
+    request.onsuccess = () => result(request.result?.ownerId === ownerId ? request.result : null);
+  });
+}
+export async function saveAttempt(attempt: SaleAttempt, activate = true): Promise<void> {
   await transaction<void>("readwrite", (tx, result) => {
     tx.objectStore("attempts").put(attempt);
-    tx.objectStore("active").put({ ownerId: attempt.ownerId, key: attempt.payload.idempotencyKey });
+    if (activate) tx.objectStore("active").put({ ownerId: attempt.ownerId, key: attempt.payload.idempotencyKey });
     result(undefined);
   });
   // Other tabs reload state; no sale payload or payment reference crosses this channel.

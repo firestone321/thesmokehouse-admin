@@ -1,12 +1,12 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { closeAttempt, listRecordedAttempts, readActiveAttempt, saveAttempt, watchAttempts, withSaleLock } from "./attempt-store";
-import { isUnresolved, newAttempt, restoreAttempt, type SaleAttempt, type SalePayload } from "./sale-contract";
+import { closeAttempt, listRecordedAttempts, readActiveAttempt, readAttempt, saveAttempt, watchAttempts, withSaleLock } from "./attempt-store";
+import { isUnresolved, newAttempt, restoreAttempt, type SaleAttempt, type SalePayload, type SaleReceipt } from "./sale-contract";
 import { dispatchCashHardware } from "./hardware-dispatch";
 import { lookupHardware, submitHardware, type HardwareKind, type Instructions } from "./hardware-client";
 import { posTimer } from "./timing";
 
-export function usePosSale(ownerId: string) {
+export function usePosSale(ownerId: string, onCommitted?: (receipt: SaleReceipt) => void) {
   const [attempt, setAttempt] = useState<SaleAttempt | null>(null);
   const [history, setHistory] = useState<SaleAttempt[]>([]);
   const [ready, setReady] = useState(false);
@@ -25,7 +25,10 @@ export function usePosSale(ownerId: string) {
       try {
         await withSaleLock(ownerId, async () => {
           const prior = await readActiveAttempt(ownerId);
-          if (prior) await saveAttempt(restoreAttempt(prior));
+          if (prior) {
+            await saveAttempt(restoreAttempt(prior));
+            if (prior.state === "committed") await closeAttempt(ownerId);
+          }
         });
       } catch (error) {
         if (!disposed) setMessage(error instanceof Error ? error.message : "Unable to restore pending sale.");
@@ -37,21 +40,30 @@ export function usePosSale(ownerId: string) {
     return () => { disposed = true; unsubscribe(); window.removeEventListener("focus", update); };
   }, [ownerId, refresh]);
 
-  async function persist(value: SaleAttempt) {
+  async function persist(value: SaleAttempt, activate = true) {
     const next = { ...value, updatedAt: Date.now() };
-    await saveAttempt(next); setAttempt(next); return next;
+    await saveAttempt(next, activate); if (activate) setAttempt(next); return next;
   }
   async function run(work: () => Promise<void>) {
     if (running.current || !ready) return;
     running.current = true; setBusy(true); setMessage(null);
-    try { await withSaleLock(ownerId, work); }
+    try {
+      await withSaleLock(ownerId, async () => {
+        try { await work(); }
+        finally {
+          const current = await readActiveAttempt(ownerId);
+          // Release the active pointer only for a confirmed sale; retain its history.
+          if (current?.state === "committed") await closeAttempt(ownerId);
+        }
+      });
+    }
     catch (error) { setMessage(error instanceof Error ? error.message : "Operation could not be preserved. Review the original sale."); }
     finally { running.current = false; setBusy(false); await refresh().catch(() => setMessage("Unable to reload local state. Do not start a replacement sale.")); }
   }
-  async function perform(value: SaleAttempt, kind: HardwareKind, initial?: Instructions | null): Promise<SaleAttempt> {
-    let current = await persist({ ...value, hardware: { ...value.hardware, [kind]: { ...value.hardware[kind], state: "pending" } } });
+  async function perform(value: SaleAttempt, kind: HardwareKind, initial?: Instructions | null, activate = true): Promise<SaleAttempt> {
+    let current = await persist({ ...value, hardware: { ...value.hardware, [kind]: { ...value.hardware[kind], state: "pending" } } }, activate);
     const result = await submitHardware(current, kind, initial);
-    current = await persist({ ...current, hardware: { ...current.hardware, [kind]: result } });
+    current = await persist({ ...current, hardware: { ...current.hardware, [kind]: result } }, activate);
     return current;
   }
   async function post(value: SaleAttempt, initial: boolean) {
@@ -73,6 +85,7 @@ export function usePosSale(ownerId: string) {
       await persist({ ...current, state: "outcome_unknown", message: "Sale outcome unknown. Confirmation was lost. Keep this request identity." }); return;
     }
     current = await persist({ ...current, state: "committed", receipt: result.data, message: "Sale recorded successfully." });
+    onCommitted?.(result.data);
     // Restoring/retrying a sale NEVER automatically replays hardware.
     if (initial && current.receipt?.tenderType === "cash" && current.receipt.hardwareEnabled) {
       await dispatchCashHardware(
@@ -103,6 +116,7 @@ export function usePosSale(ownerId: string) {
         if (result.outcome === "committed") {
           await persist({ ...current, state: "committed", receipt: result.data,
             message: "Original sale restored. Hardware was not replayed; review its status separately." });
+          onCommitted?.(result.data);
         } else {
           await persist({ ...current, state: "prepared", message: "No committed sale found for this cashier and key. Retry only this preserved request; another request may still be in flight." });
         }
@@ -126,34 +140,28 @@ export function usePosSale(ownerId: string) {
       await closeAttempt(ownerId); setAttempt(null);
     });
   }
-  async function reprint() {
+  async function reprint(key: string) {
     await run(async () => {
-      let current = await readActiveAttempt(ownerId);
+      const stored = await readAttempt(ownerId, key);
+      let current = stored ? restoreAttempt(stored) : null;
       if (current?.state !== "committed" || current.receipt?.tenderType !== "cash" || !current.receipt.hardwareEnabled) throw new Error("A committed local-printer cash sale is required.");
       if (current.hardware.receipt.state === "outcome_unknown" &&
         !window.confirm("The earlier receipt may already have printed. Submit a separate reprint? The drawer will not open.")) return;
-      current = await persist({ ...current, hardware: { ...current.hardware, receipt: { state: "not_requested", requestId: crypto.randomUUID() } } });
-      await perform(current, "receipt");
+      current = await persist({ ...current, hardware: { ...current.hardware, receipt: { state: "not_requested", requestId: crypto.randomUUID() } } }, false);
+      await perform(current, "receipt", undefined, false);
     });
   }
-  async function checkHardware() {
+  async function checkHardware(key: string) {
     await run(async () => {
-      let current = await readActiveAttempt(ownerId); if (current?.state !== "committed") return;
+      let current = await readAttempt(ownerId, key); if (current?.state !== "committed") return;
       for (const kind of ["drawer", "receipt"] as const) {
         if (!["pending", "outcome_unknown"].includes(current.hardware[kind].state)) continue;
         try {
           const operation = await lookupHardware(current, kind);
-          current = await persist({ ...current, hardware: { ...current.hardware, [kind]: operation } });
+          current = await persist({ ...current, hardware: { ...current.hardware, [kind]: operation } }, false);
         } catch { setMessage("Hardware status unavailable. Verify the original POS PC and bridge. No action was repeated."); }
       }
     });
   }
-  async function reviewRecorded(value: SaleAttempt) {
-    await run(async () => {
-      if (await readActiveAttempt(ownerId)) throw new Error("Close the current sale before opening history.");
-      if (value.ownerId !== ownerId || value.state !== "committed") throw new Error("Sale review is not permitted.");
-      await persist(restoreAttempt(value));
-    });
-  }
-  return { attempt, history, ready, busy, message, submit, checkOutcome, retryOriginal, startNew, reprint, checkHardware, reviewRecorded };
+  return { attempt, history, ready, busy, message, submit, checkOutcome, retryOriginal, startNew, reprint, checkHardware };
 }
