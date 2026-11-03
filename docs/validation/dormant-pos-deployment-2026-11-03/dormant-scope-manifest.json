@@ -1,0 +1,45 @@
+{
+  "baseMain": "88d60fcecf1c5101e2f58a331d10a87c6d9a8eb8",
+  "featureHead": "eb57f8e3cc9e19223d1f2a5b8c5b210d798e9089",
+  "runtimeFiles": [
+    {
+      "path": "components/pos/pos-sale-workspace.tsx",
+      "sha256": "bc4cb9d8a80282b4354c5d314de0b7994aa0b34e64cd75c21d7a042c5bde774a"
+    },
+    {
+      "path": "components/pos/recorded-sales.tsx",
+      "sha256": "bbd1a9168dcb9715ffbc467769eb96e02bba992c6cbda62563a74637b710ebee"
+    },
+    {
+      "path": "lib/pos/attempt-store.ts",
+      "sha256": "c431768237727f0c62c7cb461266cb1a966eff13b4dfc8a61117cd29207c6aed"
+    },
+    {
+      "path": "lib/pos/sale-contract.ts",
+      "sha256": "3addeeb6cbef6d29d44ca417d718fc2b64676bec9239fa679ecb40295b93da49"
+    },
+    {
+      "path": "lib/pos/use-pos-sale.ts",
+      "sha256": "120ce800b5d9fda2e5fd331d9c639595d76803f3aae61e4b0dfee698ff71262f"
+    },
+    {
+      "path": "lib/pos/local-bridge.ts",
+      "sha256": "b3cd22fec9d95300f54dc4ed2b0c03b68ecdad3f89a65e772423a339e7b568e4"
+    },
+    {
+      "path": "lib/pos/offline-cash-input.ts",
+      "sha256": "805327cb9b96723706b3f3efdac0b91ea87266f32f28f722ca06645054ef6af6"
+    },
+    {
+      "path": "lib/pos/offline-display.ts",
+      "sha256": "7935c7815daf6161742cb6d45e24baa9161be3670520dd51b6d14242910b5693"
+    }
+  ],
+  "validationSupport": [
+    "tests/pos-test-loader.mjs",
+    "tests/pos-storage-browser.test.mjs",
+    "tests/pos-offline-display.test.mjs",
+    "tests/pos-offline-cash-input.test.mjs"
+  ],
+  "scope": "isolated main snapshot plus eight listed runtime files; no branch or commit created"
+}

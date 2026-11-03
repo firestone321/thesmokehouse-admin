@@ -1,5 +1,7 @@
-const CACHE_NAME = "smokehouse-admin-v3";
+const CACHE_NAME = "smokehouse-admin-v6";
 const OFFLINE_URL = "/offline";
+const POS_SHELL_URL = "/pos-shell";
+const ORDERS_SHELL_URL = "/orders-shell";
 const POS_PRINT_DB_NAME = "smokehouse-pos-print-jobs-v1";
 const POS_PRINT_STORE = "jobs";
 const APP_ASSETS = [
@@ -15,7 +17,25 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
       .open(CACHE_NAME)
-      .then((cache) => cache.addAll(APP_ASSETS))
+      .then(async (cache) => {
+        await cache.addAll(APP_ASSETS);
+        // Only the public, data-free shell is cached. Authenticated /pos HTML is never cached.
+        for(const shellUrl of [POS_SHELL_URL,ORDERS_SHELL_URL]){
+        const shell=await fetch(shellUrl,{credentials:"omit",cache:"reload"});
+        if(!shell.ok||shell.redirected)throw Error("Public POS shell unavailable");
+        const html=await shell.clone().text();
+        // A disabled deployment must replace an earlier executable shell with its
+        // data-free disabled response. Never recache legacy POS shells without a marker.
+        if(shellUrl===POS_SHELL_URL && !/<meta(?=[^>]*name="smokehouse-offline-pos")(?=[^>]*content="enabled")[^>]*>/i.test(html)){
+          if(/<meta(?=[^>]*name="smokehouse-offline-pos")(?=[^>]*content="disabled")[^>]*>/i.test(html))await cache.put(shellUrl,shell);
+          else await cache.delete(shellUrl);
+          continue;
+        }
+        const assets=[...new Set([...html.matchAll(/(?:src|href)="([^" ]+)"/g)].map(m=>m[1].replaceAll("&amp;","&")).filter(u=>u.startsWith("/_next/static/")))];
+        await cache.addAll(assets);
+        await cache.put(shellUrl,shell);
+        }
+      })
       .then(() => self.skipWaiting())
   );
 });
@@ -39,8 +59,11 @@ self.addEventListener("fetch", (event) => {
 
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request).catch(async () => {
-        const cachedOfflinePage = await caches.match(OFFLINE_URL);
+      fetch(request).then(async response => {
+        if(["/pos","/orders"].includes(requestUrl.pathname) && response.status >= 500){return (await caches.match(requestUrl.pathname==="/orders"?ORDERS_SHELL_URL:POS_SHELL_URL)) || response;}
+        return response;
+      }).catch(async () => {
+        const cachedOfflinePage = await caches.match(requestUrl.pathname === "/pos" ? POS_SHELL_URL : requestUrl.pathname === "/orders" ? ORDERS_SHELL_URL : OFFLINE_URL);
         return cachedOfflinePage || Response.error();
       })
     );

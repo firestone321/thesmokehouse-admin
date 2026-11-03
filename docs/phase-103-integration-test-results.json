@@ -1,0 +1,281 @@
+{
+  "sourceVersion": "17.6",
+  "localVersion": "18",
+  "schemaSha256": "c2af9af25b057683fa0f07379b200631592107d749ab0cdc15b5b61bdceebd64",
+  "sourcePhase103Present": false,
+  "ownershipPreserved": true,
+  "tests": [
+    {
+      "name": "Restore full public/auth schema with constraints, RLS, ACLs and triggers",
+      "status": "PASS",
+      "detail": "{\"tables\" : 84, \"triggers\" : 34}"
+    },
+    {
+      "name": "DDL rollback leaves no Phase 103 tables or functions",
+      "status": "PASS"
+    },
+    {
+      "name": "Phase 103 applies without replacing existing POS, stock or reconciliation functions",
+      "status": "PASS"
+    },
+    {
+      "name": "Forward migrations roll back cleanly, preserve financial functions and legacy daily-stock OID/columns",
+      "status": "PASS"
+    },
+    {
+      "name": "Full-schema synthetic setup and baseline stock reconciliation",
+      "status": "PASS",
+      "detail": {
+        "orders": 0,
+        "tenders": 0,
+        "requests": 0,
+        "allocations": 0,
+        "resources": 0,
+        "movements": 4
+      }
+    },
+    {
+      "name": "Existing order numbering remains unique beyond three digits",
+      "status": "PASS"
+    },
+    {
+      "name": "Existing Phase 2 RPC runs with real order/payment/stock triggers",
+      "status": "PASS"
+    },
+    {
+      "name": "35% minimum uses stock remaining after existing paid reservations",
+      "status": "PASS"
+    },
+    {
+      "name": "Stock reconciliation recognizes funded offline reservations",
+      "status": "PASS"
+    },
+    {
+      "name": "Daily stock display accounts for every reserved physical unit",
+      "status": "PASS"
+    },
+    {
+      "name": "Normal online POS cannot consume allocation-held stock and rejection rolls back",
+      "status": "PASS"
+    },
+    {
+      "name": "Funding does not create a tender or inflate daily cash reports",
+      "status": "PASS",
+      "detail": {
+        "cash": 8000,
+        "close": 8000
+      }
+    },
+    {
+      "name": "Allocation snapshot prices remain unchanged after menu price edits",
+      "status": "PASS"
+    },
+    {
+      "name": "Banned cashier cannot receive offline grant snapshot",
+      "status": "PASS"
+    },
+    {
+      "name": "Real row-level security and ACLs deny browser roles offline RPCs/tables",
+      "status": "PASS"
+    },
+    {
+      "name": "Undersized/expired funding and second terminal epoch are rejected without mutation",
+      "status": "PASS"
+    },
+    {
+      "name": "Injected failure after first physical hold rolls back all rows and stock",
+      "status": "PASS"
+    },
+    {
+      "name": "Default funding reserves seven of twenty units with full-schema constraints",
+      "status": "PASS"
+    },
+    {
+      "name": "Concurrent allocation versus online Admin sale cannot oversell shared stock",
+      "status": "PASS",
+      "detail": [
+        {
+          "succeeded": true,
+          "reason": null
+        },
+        {
+          "succeeded": false,
+          "reason": "Insufficient finished stock"
+        }
+      ]
+    },
+    {
+      "name": "Shared-source portions reserve source units rather than invented child stock",
+      "status": "PASS"
+    },
+    {
+      "name": "Composite menu snapshot freezes all stock requirements and holds every resource",
+      "status": "PASS"
+    },
+    {
+      "name": "Unused migration creates no changes to immutable day-close snapshots",
+      "status": "PASS"
+    },
+    {
+      "name": "Zero allocation reporting preserves all legacy values",
+      "status": "PASS"
+    },
+    {
+      "name": "Multiple allocations aggregate source units without changing per-serving fields",
+      "status": "PASS"
+    },
+    {
+      "name": "Critical stock drift detection remains active",
+      "status": "PASS"
+    },
+    {
+      "name": "Expiry or reconciled state alone never clears unproven allocation holds",
+      "status": "PASS"
+    },
+    {
+      "name": "Cross-day allocation reporting is attributed to funding service day",
+      "status": "PASS"
+    },
+    {
+      "name": "Larger funding requires manager authority and does not mutate stock on rejection",
+      "status": "PASS"
+    },
+    {
+      "name": "Concurrent terminal funding cannot fund the same stock twice",
+      "status": "PASS"
+    },
+    {
+      "name": "Concurrent sequence-backed order number generation remains unique",
+      "status": "PASS"
+    },
+    {
+      "name": "Appended reporting fields preserve every original daily-stock value",
+      "status": "PASS"
+    },
+    {
+      "name": "New reporting RPCs preserve service-only access",
+      "status": "PASS"
+    },
+    {
+      "name": "Closed-day snapshots remain immutable and are not recomputed",
+      "status": "PASS"
+    },
+    {
+      "name": "Real online POS orders cross the 999 boundary without renumbering history",
+      "status": "PASS"
+    }
+  ],
+  "platformAdapters": [
+    {
+      "extension": "supabase_vault",
+      "status": "not installed locally; no stub used"
+    }
+  ],
+  "reconciliationAfterFunding": {
+    "generated_at": "2026-10-30T14:58:16.607091+03:00",
+    "critical_count": 0,
+    "warning_count": 0,
+    "sections": [
+      {
+        "key": "paid_missing_stock",
+        "count": 0,
+        "items": [],
+        "title": "Paid orders missing stock reservation",
+        "severity": "critical",
+        "description": "Paid orders that have not reserved/finalized stock."
+      },
+      {
+        "key": "unpaid_in_kitchen",
+        "count": 0,
+        "items": [],
+        "title": "Unpaid orders in kitchen flow",
+        "severity": "critical",
+        "description": "Orders not marked paid but already confirmed, in prep, ready, or completed."
+      },
+      {
+        "key": "paid_not_in_flow",
+        "count": 0,
+        "items": [],
+        "title": "Paid orders outside staff flow",
+        "severity": "critical",
+        "description": "Paid orders still new/cancelled without fulfillment review."
+      },
+      {
+        "key": "cancelled_provider_paid",
+        "count": 0,
+        "items": [],
+        "title": "Cancelled local orders with paid provider attempt",
+        "severity": "critical",
+        "description": "Local cancellation conflicts with provider-paid evidence."
+      },
+      {
+        "key": "finished_stock_drift",
+        "count": 0,
+        "items": [],
+        "title": "Finished stock differs from latest movement",
+        "severity": "critical",
+        "description": "Durable stock balance does not match the latest movement result."
+      },
+      {
+        "key": "daily_stock_drift",
+        "count": 0,
+        "items": [],
+        "title": "Daily stock differs from paid order totals",
+        "severity": "critical",
+        "description": "Service-day reserved/sold counts differ from paid orders plus separately funded offline holds."
+      },
+      {
+        "key": "negative_stock",
+        "count": 0,
+        "items": [],
+        "title": "Negative finished stock",
+        "severity": "critical",
+        "description": "Finished stock quantity is below zero."
+      },
+      {
+        "key": "stale_payment_recoveries",
+        "count": 0,
+        "items": [],
+        "title": "Stale pending payment recoveries",
+        "severity": "warning",
+        "description": "Recovery rows are due, stalled, or failed."
+      }
+    ]
+  },
+  "dailyStockDisplay": {
+    "actual": {
+      "finished": 11,
+      "reserved": 9,
+      "remaining": 11
+    },
+    "displayed": {
+      "stock_date": "2026-10-30",
+      "portion_type_id": 1,
+      "portion_code": "phase103_main",
+      "portion_name": "Synthetic main",
+      "portion_label": null,
+      "protein_name": null,
+      "packaging_type_name": null,
+      "starting_quantity": 20,
+      "reserved_quantity": 3,
+      "sold_quantity": 0,
+      "waste_quantity": 0,
+      "remaining_quantity": 11,
+      "is_initialized": true,
+      "allocation_stock_portion_type_id": 1,
+      "offline_allocation_held_quantity": 6,
+      "stock_starting_quantity": 20,
+      "stock_reserved_quantity": 9,
+      "stock_sold_quantity": 0,
+      "stock_waste_quantity": 0,
+      "stock_remaining_quantity": 11
+    }
+  },
+  "phase3BDependencies": [
+    "Partial cloud settlement and full settlement/release require the unimplemented atomic ingestion writer. Local partial/exhausted consumption must keep the full server hold; tested by bridge SQLite budget tests. No settlement path is fabricated here."
+  ],
+  "objects": {
+    "functions": 95,
+    "tables": 60
+  }
+}

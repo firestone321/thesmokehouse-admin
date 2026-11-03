@@ -5,8 +5,10 @@ import { isUnresolved, newAttempt, restoreAttempt, type SaleAttempt, type SalePa
 import { dispatchCashHardware } from "./hardware-dispatch";
 import { lookupHardware, submitHardware, type HardwareKind, type Instructions } from "./hardware-client";
 import { posTimer } from "./timing";
+import { bridgeCall, localState, localReceipt, type LocalSession } from "./local-bridge";
+import { buildOfflineCashInput } from "./offline-cash-input";
 
-export function usePosSale(ownerId: string, onCommitted?: (receipt: SaleReceipt) => void) {
+export function usePosSale(ownerId: string, onCommitted?: (receipt: SaleReceipt) => void, localSession?: LocalSession | null) {
   const [attempt, setAttempt] = useState<SaleAttempt | null>(null);
   const [history, setHistory] = useState<SaleAttempt[]>([]);
   const [ready, setReady] = useState(false);
@@ -66,7 +68,31 @@ export function usePosSale(ownerId: string, onCommitted?: (receipt: SaleReceipt)
     current = await persist({ ...current, hardware: { ...current.hardware, [kind]: result } }, activate);
     return current;
   }
+  function requireLocal(value:SaleAttempt){
+    if(!localSession || value.local?.terminalId!==localSession.terminalId || value.local.epoch!==localSession.epoch || value.ownerId!==localSession.cashierId || value.local.bridgeUrl!==localSession.bridgeUrl)throw Error("Sign in to the original local terminal to recover this sale.");return localSession;
+  }
+  async function finishLocal(value:SaleAttempt,result:unknown){
+    const receipt=localReceipt(result);const envelope=(result as any).sale.envelope;if(envelope.transactionId!==value.payload.idempotencyKey||envelope.cashierId!==value.ownerId||envelope.terminalId!==value.local?.terminalId||envelope.epoch!==value.local?.epoch)throw Error("Local sale identity mismatch.");
+    await persist({...value,state:"committed",receipt,hardware:{drawer:{requestId:"original",state:"pending"},receipt:{requestId:"original",state:"pending"}},message:"Recorded on this terminal. Cloud synchronization pending. Hardware is managed by the bridge."});onCommitted?.(receipt);
+  }
+  async function postLocal(value:SaleAttempt){
+    const session=requireLocal(value);
+    await persist({...value,state:"submitting"});
+    try{await localState(session);const prior=await bridgeCall(session,"lookup",{transactionId:value.payload.idempotencyKey});if(prior.sale){await finishLocal(value,prior);return;}await bridgeCall(session,"prepare",value.local!.input);await finishLocal(value,await bridgeCall(session,"commit",value.local!.input));}
+    catch(error){await persist({...value,state:"outcome_unknown",message:(error instanceof Error?error.message:"Local outcome unknown.")+" Keep the original request; check its outcome before retrying."});}
+  }
+  async function submitLocal(input:Omit<SalePayload,"idempotencyKey">,expectedTotal?:number){await run(async()=>{
+    if(!localSession||localSession.cashierId!==ownerId)throw Error("Sign in to local cash POS as this cashier first.");
+    if(await readActiveAttempt(ownerId))throw Error("Resolve the original sale first. No local replacement was created.");
+    const state=await localState(localSession);if(state.draft)throw Error("An existing local preparation requires review before a new sale.");
+    const payload={...input,idempotencyKey:crypto.randomUUID()};
+    const cash=buildOfflineCashInput({transactionId:payload.idempotencyKey,catalogVersion:state.catalog.catalogVersion,catalog:state.catalog.items,items:input.items,amountReceived:input.amountReceived,tenderType:input.tenderType,unresolvedCloudAttempt:false});
+    if(expectedTotal!==undefined&&cash.expectedTotal!==expectedTotal)throw Error("Authorized prices changed. Review the cart before paying.");
+    const value={...newAttempt(ownerId,payload),local:{bridgeUrl:localSession.bridgeUrl,terminalId:localSession.terminalId,epoch:localSession.epoch,input:cash}};
+    await persist(value);await postLocal(value);
+  });}
   async function post(value: SaleAttempt, initial: boolean) {
+    if(value.local){await postLocal(value);return;}
     let current = await persist({ ...value, state: "submitting", message: undefined });
     const tick = posTimer(current.payload.idempotencyKey);
     let result;
@@ -109,6 +135,11 @@ export function usePosSale(ownerId: string, onCommitted?: (receipt: SaleReceipt)
     await run(async () => {
       const prior = await readActiveAttempt(ownerId); if (!prior) return;
       const current = restoreAttempt(prior);
+      if(current.local){try{
+        const result=await bridgeCall(requireLocal(current),"lookup",{transactionId:current.payload.idempotencyKey});
+        if(result.sale)await finishLocal(current,result);
+        else await persist({...current,state:"prepared",message:"No local commitment found. Retry only this preserved local request; another request may still be in flight."});
+      }catch{await persist({...current,state:"needs_review",message:"Local outcome unavailable. Sign in to the original terminal; no replacement was created."});}return;}
       try {
         const response = await fetch("/api/admin/pos/sales/" + current.payload.idempotencyKey, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
         const result = await response.json();
@@ -144,6 +175,14 @@ export function usePosSale(ownerId: string, onCommitted?: (receipt: SaleReceipt)
     await run(async () => {
       const stored = await readAttempt(ownerId, key);
       let current = stored ? restoreAttempt(stored) : null;
+      if(current?.local && current.state==="committed"){
+        const session=requireLocal(current);
+        if(current.hardware.receipt.state==="outcome_unknown"&&!window.confirm("The earlier receipt may already have printed. Submit a separate receipt-only reprint?"))return;
+        const requestId=crypto.randomUUID();
+        current=await persist({...current,hardware:{...current.hardware,receipt:{requestId,state:"pending"}}},false);
+        try{await bridgeCall(session,"reprint",{transactionId:key,requestId});await persist({...current,hardware:{...current.hardware,receipt:{requestId,state:"submitted",message:"Receipt-only request accepted by the bridge; physical output is unverified."}}},false);}
+        catch{await persist({...current,hardware:{...current.hardware,receipt:{requestId,state:"outcome_unknown",message:"Receipt outcome unknown. The drawer was not requested."}}},false);}return;
+      }
       if (current?.state !== "committed" || current.receipt?.tenderType !== "cash" || !current.receipt.hardwareEnabled) throw new Error("A committed local-printer cash sale is required.");
       if (current.hardware.receipt.state === "outcome_unknown" &&
         !window.confirm("The earlier receipt may already have printed. Submit a separate reprint? The drawer will not open.")) return;
@@ -154,6 +193,17 @@ export function usePosSale(ownerId: string, onCommitted?: (receipt: SaleReceipt)
   async function checkHardware(key: string) {
     await run(async () => {
       let current = await readAttempt(ownerId, key); if (current?.state !== "committed") return;
+      if(current.local){
+        const result=await bridgeCall(requireLocal(current),"lookup",{transactionId:key});
+        if(!Array.isArray(result.hardware))throw Error("Local hardware status unavailable.");
+        const hardware={...current.hardware};
+        for(const kind of ["drawer","receipt"] as const){
+          const id="offline:"+key+":"+kind+":"+hardware[kind].requestId;
+          const row=result.hardware.find((r:any)=>r.id===id&&r.kind===kind);
+          if(row){const state:Record<string,"pending"|"submitted"|"outcome_unknown"|"failed">={ready:"pending",pending:"pending",submitted:"submitted",outcome_unknown:"outcome_unknown",rejected:"failed"};if(!state[row.state])throw Error("Unknown local hardware state.");hardware[kind]={...hardware[kind],state:state[row.state],message:"Bridge ledger status; physical output is unverified."};}
+        }
+        await persist({...current,hardware},false);return;
+      }
       for (const kind of ["drawer", "receipt"] as const) {
         if (!["pending", "outcome_unknown"].includes(current.hardware[kind].state)) continue;
         try {
@@ -163,5 +213,5 @@ export function usePosSale(ownerId: string, onCommitted?: (receipt: SaleReceipt)
       }
     });
   }
-  return { attempt, history, ready, busy, message, submit, checkOutcome, retryOriginal, startNew, reprint, checkHardware };
+  return { attempt, history, ready, busy, message, submit, submitLocal, checkOutcome, retryOriginal, startNew, reprint, checkHardware };
 }

@@ -514,6 +514,8 @@ function mapDailyStockRow(row: any): DailyStockRow {
     soldQuantity: normalizeNumber(row.sold_quantity),
     wasteQuantity: normalizeNumber(row.waste_quantity),
     remainingQuantity,
+    offlineAllocationHeldQuantity: normalizeNumber(row.offline_allocation_held_quantity),
+    allocationStockPortionTypeId: normalizeNumber(row.allocation_stock_portion_type_id ?? row.portion_type_id),
     isInitialized: Boolean(row.is_initialized),
     isLowStock: isDailyStockLow(startingQuantity, remainingQuantity),
     stockWarningLevel

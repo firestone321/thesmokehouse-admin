@@ -1,5 +1,5 @@
 import "server-only";
-import { importJWK, SignJWT, type JWK } from "jose";
+import { importJWK, SignJWT, calculateJwkThumbprint, type JWK } from "jose";
 import { z } from "zod";
 
 export function offlinePosEnabled() { return process.env.POS_OFFLINE_ENABLED === "true"; }
@@ -25,7 +25,18 @@ export async function signOfflineGrant(snapshot:unknown,cashierId:string,now=Dat
   const jwk=JSON.parse(Buffer.from(encoded,"base64url").toString("utf8")) as JWK;
   if(jwk.kty!=="OKP"||jwk.crv!=="Ed25519"||!jwk.d) throw Error("Offline signing key must be private Ed25519.");
   const grant={version:1,grantId:crypto.randomUUID(),...data,cashierId,issuedAt,expiresAt,permissions:["cash","reprint"]};
-  return new SignJWT({grant}).setProtectedHeader({alg:"EdDSA",typ:"JWT"}).setIssuer(issuer)
+  return new SignJWT({grant}).setProtectedHeader({alg:"EdDSA",typ:"JWT",kid:await calculateJwkThumbprint(jwk)}).setIssuer(issuer)
     .setAudience("smokehouse-offline-pos-v1").setIssuedAt(issuedAt/1000).setExpirationTime(expiresAt/1000)
     .sign(await importJWK(jwk,"EdDSA"));
+}
+
+export async function signJournalBinding(terminalId:string,epoch:string,journalId:string,managerId:string){
+ const encoded=process.env.POS_OFFLINE_GRANT_PRIVATE_JWK_B64,issuer=process.env.POS_OFFLINE_GRANT_ISSUER;
+ if(!encoded||!issuer)throw Error("Journal binding signing configuration missing");
+ const jwk=JSON.parse(Buffer.from(encoded,"base64url").toString("utf8")) as JWK;
+ const {createPrivateKey,createPublicKey}=await import("node:crypto");
+ const publicJwk=createPublicKey(createPrivateKey({key:jwk as import("node:crypto").JsonWebKey,format:"jwk"})).export({format:"jwk"}) as JWK;
+ return new SignJWT({binding:{mode:"identity-binding-only",terminalId,epoch,journalId,managerId}})
+ .setProtectedHeader({alg:"EdDSA",kid:await calculateJwkThumbprint(publicJwk)}).setIssuer(issuer)
+ .setAudience("smokehouse-offline-journal-binding-v1").setIssuedAt().sign(await importJWK(jwk,"EdDSA"));
 }

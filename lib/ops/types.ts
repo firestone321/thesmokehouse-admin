@@ -255,6 +255,9 @@ export interface DailyStockRow {
   isInitialized: boolean;
   isLowStock: boolean;
   stockWarningLevel: "healthy" | "low" | "elevated" | "critical" | "empty";
+  /** Physical source units, independent of per-serving reserved/sold counts. */
+  offlineAllocationHeldQuantity?: number;
+  allocationStockPortionTypeId?: number;
 }
 
 export interface MenuCategoryRecord {

@@ -27,7 +27,7 @@ export function RecordedSales({ attempts, busy, onCheckHardware, onReprint }: {
               </div>
               <p className="text-sm">Payment recorded · {receipt.tenderType.replaceAll("_", " ")}</p>
               {receipt.changeGiven > 0 ? <p className="font-semibold">Change due: {formatCurrency(receipt.changeGiven)}</p> : null}
-              {receipt.tenderType === "cash" && receipt.hardwareEnabled ? (
+              {attempt.local ? <div className="space-y-2 text-sm"><p>Receipt: {attempt.hardware.receipt.state.replaceAll("_"," ")}. Drawer: {attempt.hardware.drawer.state.replaceAll("_"," ")}. Physical output is unverified.</p><button type="button" disabled={busy} onClick={()=>onCheckHardware(key)} className="rounded-xl border px-4 py-2">Check receipt and drawer status</button><p>Recorded in the terminal journal. The bridge manages synchronization, drawer and receipt actions; browser recovery never repeats them.</p><button type="button" disabled={busy} onClick={()=>onReprint(key)} className="rounded-xl border px-4 py-2">Reprint recorded receipt only</button></div> : receipt.tenderType === "cash" && receipt.hardwareEnabled ? (
                 <div className="space-y-2 text-sm">
                   <p>Receipt: {attempt.hardware.receipt.state.replaceAll("_", " ")}. {attempt.hardware.receipt.message}</p>
                   <p>Drawer: {attempt.hardware.drawer.state.replaceAll("_", " ")}. {attempt.hardware.drawer.message}</p>

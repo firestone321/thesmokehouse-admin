@@ -21,6 +21,7 @@ export type HardwareOperation = { state: HardwareState; requestId: string; messa
 export type SaleAttempt = {
   ownerId: string; payload: SalePayload; state: SaleState; updatedAt: number;
   receipt?: SaleReceipt; message?: string;
+  local?: { bridgeUrl:string; terminalId:string; epoch:string; input: {transactionId:string;catalogVersion:string;expectedTotal:number;amountReceived:number;items:Array<{menuItemId:number;quantity:number}>} };
   hardware: { drawer: HardwareOperation; receipt: HardwareOperation };
 };
 export function newAttempt(ownerId: string, payload: SalePayload): SaleAttempt {

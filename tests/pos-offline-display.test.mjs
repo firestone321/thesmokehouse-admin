@@ -1,0 +1,14 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {loadTs} from "./pos-test-loader.mjs";
+const {displaySnapshot,saveDisplaySnapshot,loadDisplaySnapshot,reconcileOfflineDisplay}=loadTs("lib/pos/offline-display.ts");
+const source={id:1,name:"Online",basePrice:999,availableQuantity:999,categoryName:"Goat",imageUrl:"https://example.invalid/img.jpg",description:"Plate",portionLabel:"Small"};
+const bridge={menuItemId:1,name:"Authorized",unitPrice:2000,available:3};
+const storage=()=>{const d=new Map();return {getItem:k=>d.get(k)||null,setItem:(k,v)=>d.set(k,v)};};
+test("snapshot excludes financial fields",()=>{const x=displaySnapshot([source])[0];assert.equal(x.categoryName,"Goat");assert.equal(x.basePrice,undefined);assert.equal(x.availableQuantity,undefined);assert.equal(x.name,undefined)});
+test("session snapshots are scoped to cashier",()=>{const s=storage();saveDisplaySnapshot(s,"a",[source]);assert.equal(loadDisplaySnapshot(s,"a").length,1);assert.equal(loadDisplaySnapshot(s,"b").length,0)});
+test("bridge is authoritative for product membership and financial data",()=>{const x=reconcileOfflineDisplay([bridge],displaySnapshot([source,{...source,id:2}]));assert.equal(x.length,1);assert.equal(x[0].name,"Authorized");assert.equal(x[0].basePrice,2000);assert.equal(x[0].availableQuantity,3);assert.equal(x[0].categoryName,"Goat")});
+test("missing display data uses placeholders",()=>{const x=reconcileOfflineDisplay([bridge],[])[0];assert.equal(x.imageUrl,null);assert.equal(x.categoryName,"Other")});
+test("invalid bridge and duplicate product identifiers fail closed",()=>{assert.throws(()=>reconcileOfflineDisplay([bridge,bridge],[]));assert.throws(()=>reconcileOfflineDisplay([{...bridge,unitPrice:-1}],[]));assert.throws(()=>reconcileOfflineDisplay([{...bridge,available:-1}],[]))});
+test("unsafe images are discarded",()=>{assert.equal(displaySnapshot([{...source,imageUrl:"javascript:alert(1)"}])[0].imageUrl,null)});
+test("invalid or oversized snapshots are rejected",()=>{const s=storage();s.setItem("smokehouse-pos-display-v1:a","x".repeat(350001));assert.deepEqual(loadDisplaySnapshot(s,"a"),[]);s.setItem("smokehouse-pos-display-v1:a","{");assert.deepEqual(loadDisplaySnapshot(s,"a"),[])});

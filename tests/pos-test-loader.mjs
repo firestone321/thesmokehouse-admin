@@ -9,6 +9,6 @@ export function loadTs(file, mocks = {}) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true, jsx: ts.JsxEmit.ReactJSX }
   }).outputText;
   new Function("require", "module", "exports", output)(
-    (id) => id in mocks ? mocks[id] : require(id), module, module.exports);
+    (id) => { if(id in mocks)return mocks[id]; const relative=path.resolve(path.dirname(path.resolve(file)),id+".ts"); if(id.startsWith(".")&&fs.existsSync(relative))return loadTs(relative,mocks); return require(id); }, module, module.exports);
   return module.exports;
 }

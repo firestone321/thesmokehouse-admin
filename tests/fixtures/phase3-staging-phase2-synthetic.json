@@ -1,0 +1,140 @@
+{
+  "version": 1,
+  "status": "fixture specification only; no loader or database execution has been validated",
+  "baseline": "Phase 2 schema before migration 103",
+  "timezone": "Africa/Kampala",
+  "historical_service_date": "2026-02-14",
+  "isolation": "Use only a verified isolated synthetic staging target; never load against production. Disable real outbound integrations.",
+  "actors": [
+    {
+      "id": "10000000-0000-4000-8000-000000000001",
+      "email": "phase3-manager@example.invalid",
+      "role": "manager"
+    },
+    {
+      "id": "10000000-0000-4000-8000-000000000002",
+      "email": "phase3-cashier@example.invalid",
+      "role": "cashier"
+    }
+  ],
+  "inventory": {
+    "shared_source_code": "phase3_fixture_source",
+    "opening_units": 40,
+    "production_units": 4,
+    "waste_units": 1,
+    "sales_units": 6,
+    "expected_remaining_units": 37,
+    "movements": [
+      {
+        "kind": "opening adjustment",
+        "delta": 40,
+        "result": 40
+      },
+      {
+        "kind": "production",
+        "delta": 4,
+        "result": 44
+      },
+      {
+        "kind": "sale cash",
+        "delta": -3,
+        "result": 41
+      },
+      {
+        "kind": "sale card",
+        "delta": -2,
+        "result": 39
+      },
+      {
+        "kind": "sale mobile",
+        "delta": -1,
+        "result": 38
+      },
+      {
+        "kind": "waste",
+        "delta": -1,
+        "result": 37
+      }
+    ]
+  },
+  "products": [
+    {
+      "code": "phase3_fixture_small",
+      "price_ugx": 2000,
+      "shared_source_units_per_item": 1
+    },
+    {
+      "code": "phase3_fixture_large",
+      "price_ugx": 4000,
+      "shared_source_units_per_item": 2
+    }
+  ],
+  "historical_orders": [
+    {
+      "key": "phase3-fixture-cash-001",
+      "created_at": "2026-02-14T08:00:00Z",
+      "product": "phase3_fixture_small",
+      "quantity": 3,
+      "tender": "cash",
+      "amount_ugx": 6000,
+      "amount_received_ugx": 6000
+    },
+    {
+      "key": "phase3-fixture-card-001",
+      "created_at": "2026-02-14T09:00:00Z",
+      "product": "phase3_fixture_large",
+      "quantity": 1,
+      "tender": "card",
+      "payment_reference": "SYNTHETIC-CARD-001",
+      "amount_ugx": 4000,
+      "amount_received_ugx": 4000
+    },
+    {
+      "key": "phase3-fixture-mobile-001",
+      "created_at": "2026-02-14T10:00:00Z",
+      "product": "phase3_fixture_small",
+      "quantity": 1,
+      "tender": "mobile_money",
+      "payment_reference": "SYNTHETIC-MOBILE-001",
+      "amount_ugx": 2000,
+      "amount_received_ugx": 2000
+    }
+  ],
+  "historical_signed_close": {
+    "id": "20000000-0000-4000-8000-000000000001",
+    "closed_by": "10000000-0000-4000-8000-000000000001",
+    "closed_at": "2026-02-14T20:00:00Z",
+    "opening_float_ugx": 10000,
+    "cash_sales_ugx": 6000,
+    "expected_cash_including_float_ugx": 16000,
+    "counted_cash_ugx": 16000,
+    "cash_difference_ugx": 0,
+    "note": "Synthetic manager sign-off; not a cryptographic-signature claim. Populate actual close fields using verified Phase 2 semantics."
+  },
+  "later_tests": [
+    {
+      "name": "initial allocation arithmetic",
+      "eligible_units": 37,
+      "target_percent": 65,
+      "expected_ceiling_units": 25,
+      "expected_unallocated_units": 12,
+      "preconditions": "one eligible stock resource; no other holds or sales"
+    },
+    {
+      "name": "consumption-limited replenishment arithmetic",
+      "funded_units": 25,
+      "settled_consumption_units": 4,
+      "expected_max_restore_units": 4,
+      "expected_units_after_restore": 25,
+      "preconditions": "no other consumption, holds, returns, policy changes or unavailable stock"
+    }
+  ],
+  "loader_requirements": [
+    "Implement and review a staging-only loader; this JSON is not an executable seed.",
+    "Use actual Phase 2 schema, constraints, RPCs and close semantics; validate role/auth setup and timestamps.",
+    "Fail closed unless target project and database are independently verified isolated staging; require a deliberate synthetic opt-in marker and refuse existing fixture keys.",
+    "Insert coherent Phase 2 history before migration 103; do not bypass stock, immutability, financial, or close protections to force a pass.",
+    "Compare row counts, canonical content hashes, tender totals, stock movements and close snapshots before and after migrations.",
+    "Never contact payment providers or send messages; never use real personal data or production credentials."
+  ]
+}

@@ -1,6 +1,9 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { localState, loginLocal, type LocalSession } from "@/lib/pos/local-bridge";
+import { reconcileOfflineDisplay, displaySnapshot } from "@/lib/pos/offline-display";
+import { saveDisplaySnapshot } from "@/lib/pos/offline-display";
 import { usePosSale } from "@/lib/pos/use-pos-sale";
 import { RecordedSales } from "@/components/pos/recorded-sales";
 import type { SaleReceipt } from "@/lib/pos/sale-contract";
@@ -11,6 +14,11 @@ import type { OnlineReceiptPrintBacklogSnapshot } from "@/lib/ops/types";
 import type { PosMenuItem, PosTenderType } from "@/lib/pos/types";
 
 type BasketLine = PosMenuItem & { quantity: number };
+function PosImage({src,small=false}:{src:string|null;small?:boolean}){
+  const [failed,setFailed]=useState(false);useEffect(()=>setFailed(false),[src]);
+  return src&&!failed?<img src={src} alt="" onError={()=>setFailed(true)} className="h-full w-full object-cover"/>:<div className={small?"flex h-full w-full items-center justify-center text-lg":"flex h-full w-full items-center justify-center text-2xl"}>🍽️</div>;
+}
+
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-UG", {
     style: "currency",
@@ -49,14 +57,37 @@ export function PosSaleWorkspace({
   cashierId,
   menuItems,
   onlineReceiptPrintBacklog,
-  canRecordSales
+  canRecordSales, bridgeUrl, offlineOnly = false
 }: {
   cashierEmail: string | null;
   cashierId: string;
   menuItems: PosMenuItem[];
   onlineReceiptPrintBacklog: OnlineReceiptPrintBacklogSnapshot;
   canRecordSales: boolean;
+  bridgeUrl?: string; offlineOnly?:boolean;
 }) {
+  useEffect(() => {
+    try { if(!offlineOnly){saveDisplaySnapshot(window.sessionStorage, cashierId, menuItems); if(bridgeUrl)window.localStorage.setItem("smokehouse-pos-entry-v1",JSON.stringify({cashierId,bridgeUrl}));} }
+    catch { /* Display data is optional and never authorizes sales. */ }
+  }, [cashierId, menuItems, bridgeUrl, offlineOnly]);
+  const [mode,setMode]=useState<"online"|"offline">(offlineOnly?"offline":"online");
+  const [localSession,setLocalSession]=useState<LocalSession|null>(null);
+  const [localItems,setLocalItems]=useState<PosMenuItem[]>([]);
+  const [localPin,setLocalPin]=useState("");
+  const [localStatus,setLocalStatus]=useState("");
+  const [dismissedStatus,setDismissedStatus]=useState("");
+  useEffect(()=>setDismissedStatus(""),[localStatus]);
+  async function refreshLocal(session:LocalSession){const state=await localState(session);setLocalItems(reconcileOfflineDisplay(state.catalog.items,displaySnapshot(menuItems)));setLocalStatus(String(state.pendingCount)+" local sales pending synchronization. Cash only on this terminal.");return state;}
+  async function enterLocal(){setError(null);try{
+    if(!bridgeUrl)throw Error("Local bridge is not configured.");
+    const session=await loginLocal(bridgeUrl,cashierId,localPin);setLocalPin("");const state=await refreshLocal(session);
+    if(sale.attempt?.local){setLocalSession(session);setMode("offline");return;}
+    const authorized=reconcileOfflineDisplay(state.catalog.items,displaySnapshot(menuItems));
+    const reconciled=basket.map(line=>{const item=authorized.find(i=>i.id===line.id);if(!item||line.quantity>item.availableQuantity)throw Error("This basket exceeds the authorized local allocation. Review it before switching.");return {...item,quantity:line.quantity};});
+    setLocalSession(session);setMode("offline");document.querySelector("details[data-pos-connection]")?.removeAttribute("open");setBasket(reconciled);setCashReceived("");setTenderType("cash");
+  }catch(e){setError(e instanceof Error?e.message:"Local authorization unavailable.");}}
+  useEffect(()=>{if(!localSession)return;const timer=setInterval(()=>{void refreshLocal(localSession).catch(()=>setLocalStatus("Local authorization or bridge unavailable. Payment will be blocked until verified."));},15000);return ()=>clearInterval(timer);},[localSession]);
+  const activeMenu=mode==="offline"?localItems:menuItems;
   const [basket, setBasket] = useState<BasketLine[]>([]);
   const [query, setQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
@@ -69,7 +100,8 @@ export function PosSaleWorkspace({
     setBasket([]); setCashReceived(""); setPaymentReference(""); setError(null);
     setChangeDue(receipt.changeGiven > 0 ? { orderNumber: receipt.orderNumber, amount: receipt.changeGiven } : null);
   }, []);
-  const sale = usePosSale(cashierId, onCommitted);
+  const sale = usePosSale(cashierId, onCommitted, localSession);
+  useEffect(()=>{setLocalSession(null);setLocalItems([]);setMode(offlineOnly?"offline":"online");setBasket([]);setCashReceived("");setLocalPin("");},[cashierId,offlineOnly]);
   const controlsLocked = !sale.ready || sale.busy || !!sale.attempt;
 
   const total = useMemo(
@@ -77,12 +109,12 @@ export function PosSaleWorkspace({
     [basket]
   );
   const normalizedQuery = query.trim().toLowerCase();
-  const visibleItems = menuItems.filter(
+  const visibleItems = activeMenu.filter(
     (item) =>
       (selectedCategory === "All" || item.categoryName === selectedCategory) &&
       (!normalizedQuery || `${item.name} ${item.categoryName}`.toLowerCase().includes(normalizedQuery))
   );
-  const allCategories = Array.from(new Set(menuItems.map((item) => item.categoryName)));
+  const allCategories = Array.from(new Set(activeMenu.map((item) => item.categoryName)));
   const categories = Array.from(new Set(visibleItems.map((item) => item.categoryName)));
   const change = tenderType === "cash" && cashReceived !== "" ? Math.max(0, Number(cashReceived) - total) : 0;
 
@@ -92,6 +124,7 @@ export function PosSaleWorkspace({
     setError(null);
     setBasket((current) => {
       const existing = current.find((line) => line.id === item.id);
+      if(item.availableQuantity<1)return current;
       if (!existing) return [...current, { ...item, quantity: 1 }];
       if (existing.quantity >= Math.min(20, item.availableQuantity)) return current;
       return current.map((line) => (line.id === item.id ? { ...line, quantity: line.quantity + 1 } : line));
@@ -132,6 +165,11 @@ export function PosSaleWorkspace({
       return;
     }
 
+    if(mode==="offline"){
+      if(tenderType!=="cash"){setError("Card and mobile money require online mode.");return;}
+      await sale.submitLocal({tenderType,amountReceived,items:basket.map(line=>({menuItemId:line.id,quantity:line.quantity}))},total);
+      if(localSession)await refreshLocal(localSession).catch(()=>{});return;
+    }
     await sale.submit({
       tenderType, amountReceived, paymentReference: paymentReference.trim() || undefined,
       items: basket.map((line) => ({ menuItemId: line.id, quantity: line.quantity }))
@@ -154,6 +192,13 @@ export function PosSaleWorkspace({
           </div>
         </div>
         <div className="mt-4 max-w-2xl"><PosPrintStationToggle /></div>
+        {bridgeUrl ? <details data-pos-connection className="mt-2 text-xs text-[#4B5563]"><summary>Cash POS connection: {mode}</summary>
+          <label>Local cashier PIN <input type="password" inputMode="numeric" autoComplete="off" maxLength={12} value={localPin} onChange={e=>setLocalPin(e.target.value)} className="m-2 rounded border px-2 py-1" /></label>
+          <button type="button" disabled={sale.busy||!!(sale.attempt&&!sale.attempt.local)} onClick={()=>void enterLocal()} className="rounded border px-2 py-1">Authorize local cash mode</button>
+          {!offlineOnly?<button type="button" disabled={sale.busy||!!sale.attempt||basket.length>0} onClick={()=>{setMode("online");setLocalSession(null);setLocalItems([]);setLocalStatus("");}} className="ml-2 rounded border px-2 py-1">Use online POS</button>:null}
+          <p>Local mode checks this basket against authorized prices and funded stock. Clear the basket before returning online. Never re-enter an uncertain cloud payment as a local sale.</p>
+        </details>:null}
+        {mode==="offline"&&localStatus!==dismissedStatus?<p role="status" className="mt-2 text-xs text-[#4B5563]">{localStatus}<button type="button" aria-label="Dismiss local status" className="ml-2" onClick={()=>setDismissedStatus(localStatus)}>×</button></p>:null}
         <div className="mt-4"><OnlineReceiptPrintBacklogCard snapshot={onlineReceiptPrintBacklog} /></div>
       </section>
 
@@ -203,7 +248,7 @@ export function PosSaleWorkspace({
                     <button key={item.id} type="button" onClick={() => addItem(item)} className={`overflow-hidden rounded-[22px] border text-left transition focus:outline-none focus:ring-4 focus:ring-[#111418]/15 ${categoryCardColors[categories.indexOf(category) % categoryCardColors.length]}`}>
                       <div className="flex gap-3 p-3">
                         <div className="h-20 w-20 shrink-0 overflow-hidden rounded-[18px] bg-white/70">
-                          {item.imageUrl ? <img src={item.imageUrl} alt="" className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-2xl">🍽️</div>}
+                          <PosImage src={item.imageUrl}/>
                         </div>
                         <div className="min-w-0 flex-1 py-1">
                           <div className="flex items-start justify-between gap-2"><span className="text-base font-bold leading-5">{item.name}</span><span className="shrink-0 rounded-full bg-white/80 px-2 py-1 text-[11px] font-bold text-[#287241]">{item.availableQuantity} left</span></div>
@@ -226,18 +271,18 @@ export function PosSaleWorkspace({
           <div className="mt-4 space-y-3 border-y border-[#EEF2F6] py-4">
             {basket.map((line) => (
               <div key={line.id} className="flex items-center justify-between gap-3">
-                <div className="flex min-w-0 items-center gap-2"><div className="h-11 w-11 shrink-0 overflow-hidden rounded-xl bg-[#F8FAFB]">{line.imageUrl ? <img src={line.imageUrl} alt="" className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-lg">🍽️</div>}</div><div className="min-w-0"><p className="truncate text-sm font-semibold">{line.name}</p><p className="text-xs text-[#6B7280]">{formatCurrency(line.basePrice)} each</p></div></div>
+                <div className="flex min-w-0 items-center gap-2"><div className="h-11 w-11 shrink-0 overflow-hidden rounded-xl bg-[#F8FAFB]"><PosImage src={line.imageUrl} small/></div><div className="min-w-0"><p className="truncate text-sm font-semibold">{line.name}</p><p className="text-xs text-[#6B7280]">{formatCurrency(line.basePrice)} each</p></div></div>
                 <div className="flex items-center gap-2"><button type="button" onClick={() => changeQuantity(line.id, line.quantity - 1)} className="h-8 w-8 rounded-full border border-[#D7DDE4] font-semibold">−</button><span className="w-5 text-center text-sm font-semibold">{line.quantity}</span><button type="button" onClick={() => changeQuantity(line.id, line.quantity + 1)} className="h-8 w-8 rounded-full border border-[#D7DDE4] font-semibold">+</button></div>
               </div>
             ))}
             {basket.length === 0 ? <p className="text-sm text-[#6B7280]">Tap an available item to add it.</p> : null}
           </div>
           <div className="mt-4 flex items-end justify-between"><span className="text-sm text-[#6B7280]">Total</span><span className="text-2xl font-semibold">{formatCurrency(total)}</span></div>
-          <fieldset className="mt-5"><legend className="text-sm font-semibold">Payment method</legend><div className="mt-2 grid grid-cols-3 gap-2">{(["cash", "mobile_money", "card"] as const).map((method) => <button key={method} type="button" onClick={() => { setTenderType(method); setError(null); }} className={`min-h-20 rounded-2xl border px-2 text-sm font-bold transition ${tenderType === method ? method === "cash" ? "border-[#287241] bg-[#EAF8EF] text-[#166534] ring-2 ring-[#287241]/20" : method === "mobile_money" ? "border-[#6D4CC7] bg-[#F2EEFF] text-[#5637AC] ring-2 ring-[#6D4CC7]/20" : "border-[#286AA6] bg-[#EDF7FF] text-[#1D5B91] ring-2 ring-[#286AA6]/20" : "border-[#D7DDE4] bg-white text-[#4B5563]"}`}>{method === "cash" ? "💵" : method === "mobile_money" ? "📱" : "💳"}<span className="mt-1 block text-xs">{tenderLabel(method)}</span></button>)}</div></fieldset>
+          <fieldset className="mt-5"><legend className="text-sm font-semibold">Payment method</legend><div className="mt-2 grid grid-cols-3 gap-2">{(["cash", "mobile_money", "card"] as const).map((method) => <button key={method} type="button" disabled={mode==="offline"&&method!=="cash"} onClick={() => { setTenderType(method); setError(null); }} className={`min-h-20 rounded-2xl border px-2 text-sm font-bold transition ${tenderType === method ? method === "cash" ? "border-[#287241] bg-[#EAF8EF] text-[#166534] ring-2 ring-[#287241]/20" : method === "mobile_money" ? "border-[#6D4CC7] bg-[#F2EEFF] text-[#5637AC] ring-2 ring-[#6D4CC7]/20" : "border-[#286AA6] bg-[#EDF7FF] text-[#1D5B91] ring-2 ring-[#286AA6]/20" : "border-[#D7DDE4] bg-white text-[#4B5563]"}`}>{method === "cash" ? "💵" : method === "mobile_money" ? "📱" : "💳"}<span className="mt-1 block text-xs">{tenderLabel(method)}</span></button>)}</div></fieldset>
           {tenderType === "cash" ? <label className="mt-4 grid gap-2 text-sm font-semibold">Cash received <span className="text-xs font-normal text-[#6B7280]">Type numbers normally; commas are added automatically.</span><div className="relative"><span className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-sm font-bold text-[#4B5563]">UGX</span><UgxAmountInput value={cashReceived} onValueChange={setCashReceived} placeholder="0" className="w-full rounded-2xl border-2 border-[#287241] bg-[#F2FBF5] py-3 pl-14 pr-4 text-lg font-bold" aria-label="Cash received in Ugandan shillings" /></div></label> : <label className="mt-4 grid gap-2 text-sm font-semibold">Pesapal terminal reference<span className="text-xs font-normal text-[#6B7280]">Enter the full 11-digit reference or its last 4 digits.</span><input value={paymentReference} onChange={(event) => setPaymentReference(event.target.value.replace(/\D/g, ""))} inputMode="numeric" pattern="(?:[0-9]{4}|[0-9]{11})" maxLength={11} placeholder="Full reference or last 4 digits" className="rounded-2xl border-2 border-[#4267B2] bg-[#F3F6FF] px-4 py-3 text-sm font-normal" /></label>}
           {tenderType === "cash" && cashReceived !== "" ? <p className={`mt-2 rounded-xl px-3 py-2 text-sm font-semibold ${Number(cashReceived) >= total ? "bg-[#EAF8EF] text-[#166534]" : "bg-[#FFF4E5] text-[#B45309]"}`}>{Number(cashReceived) >= total ? `Change: ${formatCurrency(change)}` : `Still needed: ${formatCurrency(total - Number(cashReceived))}`}</p> : null}
           {!canRecordSales ? <p className="mt-5 rounded-2xl bg-[#F3F4F6] px-4 py-3 text-sm font-semibold text-[#6B7280]">POS view only. A cashier, manager, or admin records sales.</p> : null}
-          <button type="button" disabled={!canRecordSales || sale.busy || basket.length === 0 || (tenderType !== "cash" && !/^(?:\d{4}|\d{11})$/.test(paymentReference.trim()))} onClick={takePayment} className="mt-5 w-full rounded-2xl bg-[#166534] px-4 py-4 text-base font-bold text-white shadow-[0_10px_22px_rgba(22,101,52,0.22)] disabled:cursor-not-allowed disabled:bg-[#9CA3AF]">{!canRecordSales ? "View only" : sale.busy ? (sale.attempt?.state === "committed" ? "Finishing hardware…" : "Recording sale…") : "Take payment and create sale"}</button>
+          <button type="button" disabled={!canRecordSales || sale.busy || (mode==="offline"&&(!localSession||tenderType!=="cash")) || basket.length === 0 || (tenderType !== "cash" && !/^(?:\d{4}|\d{11})$/.test(paymentReference.trim()))} onClick={takePayment} className="mt-5 w-full rounded-2xl bg-[#166534] px-4 py-4 text-base font-bold text-white shadow-[0_10px_22px_rgba(22,101,52,0.22)] disabled:cursor-not-allowed disabled:bg-[#9CA3AF]">{!canRecordSales ? "View only" : sale.busy ? (sale.attempt?.state === "committed" ? "Finishing hardware…" : "Recording sale…") : "Take payment and create sale"}</button>
           <p className="mt-3 text-xs leading-5 text-[#6B7280]">One payment method per sale for now. Split payments remain pending proprietor approval.</p>
         </aside>
       </fieldset>

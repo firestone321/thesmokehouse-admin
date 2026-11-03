@@ -1,0 +1,98 @@
+[
+  {
+    "name": "actual workspace retains online checkout",
+    "status": "PASS"
+  },
+  {
+    "name": "existing unsubmitted cart reconciles into authorized local mode",
+    "status": "PASS"
+  },
+  {
+    "name": "shared cart commits SQLite sale with drawer then receipt",
+    "status": "PASS"
+  },
+  {
+    "name": "duplicate click creates one local sale and one hardware pair",
+    "status": "PASS"
+  },
+  {
+    "name": "read-only local hardware status check never repeats actions",
+    "status": "PASS"
+  },
+  {
+    "name": "actual workspace receipt-only reprint never opens drawer",
+    "status": "PASS"
+  },
+  {
+    "name": "interrupted preparation retries original durable identity",
+    "status": "PASS"
+  },
+  {
+    "name": "refresh retains original local request across sign-in",
+    "status": "PASS"
+  },
+  {
+    "name": "interrupted commitment recovers without duplicate SQLite sale",
+    "status": "PASS"
+  },
+  {
+    "name": "public service-worker shell renders same POS during navigation outage",
+    "status": "PASS"
+  },
+  {
+    "name": "offline-started workspace records cash in real SQLite",
+    "status": "PASS"
+  },
+  {
+    "name": "offline card and mobile-money controls remain disabled",
+    "status": "PASS"
+  },
+  {
+    "name": "offline refresh requires and accepts local authorization",
+    "status": "PASS"
+  },
+  {
+    "name": "no horizontal overflow at 1440px",
+    "status": "PASS"
+  },
+  {
+    "name": "no horizontal overflow at 900px",
+    "status": "PASS"
+  },
+  {
+    "name": "normal online product card/cart geometry and style match HEAD at 1440px",
+    "status": "PASS"
+  },
+  {
+    "name": "normal online product card/cart geometry and style match HEAD at 900px",
+    "status": "PASS"
+  },
+  {
+    "name": "bridge unavailability blocks actual workspace commitment",
+    "status": "PASS"
+  },
+  {
+    "name": "restored bridge permits a new ordinary cash sale after read-only readiness failure",
+    "status": "PASS"
+  },
+  {
+    "name": "reconnection drains actual outbox using synthetic cloud acknowledgements without hardware replay",
+    "status": "PASS"
+  },
+  {
+    "name": "insufficient funded stock blocks stale displayed cart at checkout",
+    "status": "PASS"
+  },
+  {
+    "name": "invalid local PIN rejected by bridge",
+    "status": "PASS"
+  },
+  {
+    "name": "expired bridge authorization blocks checkout",
+    "status": "PASS"
+  },
+  {
+    "name": "ambiguous cloud attempt remains original-key locked across refresh and never converts to SQLite",
+    "status": "PASS"
+  }
+]

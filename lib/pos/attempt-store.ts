@@ -31,7 +31,7 @@ export async function readActiveAttempt(ownerId: string): Promise<SaleAttempt | 
     pointer.onsuccess = () => {
       if (!pointer.result) return result(null);
       const request = tx.objectStore("attempts").get(pointer.result.key);
-      request.onsuccess = () => result(request.result?.ownerId === ownerId ? request.result : null);
+      request.onsuccess = () => { if(!request.result||request.result.ownerId!==ownerId){tx.abort();return;} result(request.result); };
     };
   });
 }

@@ -1,0 +1,50 @@
+{
+  "date": "2026-11-03",
+  "adminFocused": {
+    "passed": 49,
+    "failed": 0
+  },
+  "bridgeFull": {
+    "passed": 105,
+    "failed": 0,
+    "newActivationTests": 8
+  },
+  "actualWorkspace": {
+    "passed": 24,
+    "failed": 0
+  },
+  "productionEnabled": {
+    "passed": 7,
+    "failed": 0
+  },
+  "legacyV5ProductionWorker": {
+    "passed": 7,
+    "failed": 0
+  },
+  "productionDisabled": {
+    "passed": 4,
+    "failed": 0
+  },
+  "builds": [
+    "disabled passed",
+    "enabled passed"
+  ],
+  "typescript": [
+    "Admin passed",
+    "bridge passed"
+  ],
+  "authority": "local bridge deployment gate; a cloud-only flag cannot instantly revoke disconnected terminals",
+  "sourceHashes": {
+    "app\\pos-shell\\page.tsx": "9f35f071b7bc8a8352884fd9df8055809610084765593b57cf2356d77521fc88",
+    "public\\sw.js": "3c2ebce1997a910dbddf9d7a9437873fd65ad0c4ec90b8f8092d2f95a07d84e2",
+    "lib\\pos\\local-bridge.ts": "2f933c33cd5f3e519fdd045bc28e9ed19d60da4729b8e6b9f52ec5624f35ba9c",
+    "scripts\\test-pos-activation-production.mjs": "9c999f693c95b03138b2ed021c82429e33e87734174691641ae0e884b427430b",
+    "tests\\pos-offline-activation.test.mjs": "5f7da8d0b16f59a1ce5d5a936f08004fd646b3c340a6d688b1954faa1a248cbc",
+    "C:\\Users\\jurug\\OneDrive\\VS Code\\Web Development\\smokehouse-pos-bridge\\src\\offline\\activation.ts": "9a711cc8859cd1673116150142425ccff7122bcc13ab6754ecdd693bc6114527",
+    "C:\\Users\\jurug\\OneDrive\\VS Code\\Web Development\\smokehouse-pos-bridge\\src\\offline\\router.ts": "496afb4a31d45daafdd05c5ea9e2abe56372028d75099a8a6ecfe00ad4ee3032",
+    "C:\\Users\\jurug\\OneDrive\\VS Code\\Web Development\\smokehouse-pos-bridge\\src\\offline\\runtime.ts": "7e1d24e1b07ac64aad39bd7d0f644646c38333327cf9305b22ab83da240d69f3",
+    "C:\\Users\\jurug\\OneDrive\\VS Code\\Web Development\\smokehouse-pos-bridge\\tests\\offline-activation.test.ts": "45511255a474545a9c7bcc225579a8c72d81fcddfcaa3067610b4fb1ecef592a"
+  },
+  "noProductionAccess": true,
+  "releaseArchiveUnchangedSha256": "FB5833103D10C1FC7C1C8D522A1B17070970182F35CEB6459045B4056F87B7AB"
+}

@@ -10,6 +10,7 @@ function isProtectedPath(pathname: string) {
 }
 
 export async function proxy(request: NextRequest) {
+  if(["/pos-shell","/orders-shell"].includes(request.nextUrl.pathname))return NextResponse.next();
   if (isLocalAuthBypassEnabledForRequest(request)) {
     if (request.nextUrl.pathname === "/login") {
       return NextResponse.redirect(new URL("/dashboard", request.url));

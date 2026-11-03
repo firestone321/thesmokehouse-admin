@@ -1,0 +1,42 @@
+[
+  {
+    "route": "grant",
+    "status": 404,
+    "pass": true
+  },
+  {
+    "route": "ingest",
+    "status": 503,
+    "pass": true
+  },
+  {
+    "route": "lookup",
+    "status": 404,
+    "pass": true
+  },
+  {
+    "route": "operations",
+    "status": 503,
+    "pass": true
+  },
+  {
+    "route": "manage",
+    "status": 403,
+    "pass": true
+  },
+  {
+    "route": "recovery",
+    "status": 403,
+    "pass": true
+  },
+  {
+    "route": "/pos unauthenticated",
+    "status": 307,
+    "pass": true
+  },
+  {
+    "route": "/pos-shell publicly present despite disabled flags",
+    "status": 200,
+    "pass": true
+  }
+]

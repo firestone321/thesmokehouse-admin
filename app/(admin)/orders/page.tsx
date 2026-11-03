@@ -1,4 +1,5 @@
-import Link from "next/link";
+import {OfflineOrders} from "@/components/orders/offline-orders";
+import {OrdersHeader} from "@/components/orders/orders-header";
 import { SchemaSetupNotice } from "@/components/admin/schema-setup-notice";
 import { BusinessTruthHealthCard } from "@/components/orders/business-truth-health-card";
 import { PushQueueHealthCard } from "@/components/orders/push-queue-health-card";
@@ -55,26 +56,7 @@ export default async function OrdersPage({
 
   return (
     <div className="space-y-4 text-[#111418]">
-      <section className="surface-card rounded-[32px] px-5 py-5">
-        <p className="text-[11px] uppercase tracking-[0.22em] text-[#6B7280]">Orders</p>
-        <div className="mt-3 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold sm:text-3xl">Live order flow</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6B7280]">
-              This list is now backed by Supabase orders, items, payment state, and status event history. Paid orders
-              enter the kitchen flow automatically, so staff only need to pick them up at prep time.
-            </p>
-          </div>
-
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end xl:min-w-[760px]">
-            <Link
-              href="/orders/history"
-              className="rounded-2xl border border-[#D7DDE4] bg-white px-4 py-2.5 text-sm font-semibold text-[#111418]"
-            >
-              Order history
-            </Link>
-
-            <form action={processPendingPaymentRecoveriesAction}>
+      <OrdersHeader status={status} search={search} recoveryForm={<form action={processPendingPaymentRecoveriesAction}>
               <input type="hidden" name="returnTo" value={returnTo} />
               <button
                 type="submit"
@@ -82,48 +64,9 @@ export default async function OrdersPage({
               >
                 Recover payments
               </button>
-            </form>
+            </form>}/>
 
-            <form className="grid flex-1 gap-3 sm:grid-cols-[180px_minmax(0,1fr)_auto]">
-              <label className="space-y-2 text-sm text-[#6B7280]">
-                <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Status</span>
-                <select
-                  name="status"
-                  defaultValue={status}
-                  className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
-                >
-                  <option value="all">All statuses</option>
-                  <option value="new">New</option>
-                  <option value="confirmed">Confirmed</option>
-                  <option value="in_prep">In prep</option>
-                  <option value="ready">Ready</option>
-                  <option value="completed">Completed</option>
-                  <option value="cancelled">Cancelled</option>
-                </select>
-              </label>
-
-              <label className="space-y-2 text-sm text-[#6B7280]">
-                <span className="block text-[11px] uppercase tracking-[0.18em] text-[#9CA3AF]">Search</span>
-                <input
-                  type="search"
-                  name="search"
-                  defaultValue={search}
-                  placeholder="Order number, customer, phone"
-                  className="w-full rounded-2xl border border-[#D7DDE4] bg-white px-3 py-2.5 text-[#111418]"
-                />
-              </label>
-
-              <button
-                type="submit"
-                className="self-end rounded-2xl bg-[#111418] px-4 py-2.5 text-sm font-semibold text-white"
-              >
-                Apply
-              </button>
-            </form>
-          </div>
-        </div>
-      </section>
-
+      {process.env.OFFLINE_ORDERS_ENABLED==="true"&&/^http:\/\/127\.0\.0\.1:\d+$/.test(process.env.POS_HARDWARE_BRIDGE_URL||"")?<OfflineOrders userId={adminProfile.userId} bridgeUrl={process.env.POS_HARDWARE_BRIDGE_URL!}/>:null}
       {pushQueueMessage ? (
         <section
           className={`rounded-[24px] px-4 py-4 text-sm leading-6 ${

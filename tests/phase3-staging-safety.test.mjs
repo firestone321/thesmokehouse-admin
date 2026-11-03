@@ -1,0 +1,16 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {assertStagingIdentity,captureHistorical,compareHistorical,rowDigest} from '../scripts/phase3-staging-safety.mjs';
+const ref='abcdefghijklmnopqrst', host=`db.${ref}.supabase.co`;
+const good={allowlist:[ref],projectRef:ref,verifiedProjectRef:ref,host,verifiedHost:host,approved:true,migrationHistory:['102_previous'],expectedHistory:['102_previous']};
+test('accepts independently matched allowlisted staging identity',()=>assert.equal(assertStagingIdentity(good),true));
+for(const [name,patch] of Object.entries({unknown:{allowlist:[]},differentProject:{verifiedProjectRef:'bbbbbbbbbbbbbbbbbbbb'},differentHost:{verifiedHost:'db.bad.supabase.co'},forbiddenProject:{forbiddenRefs:[ref]},forbiddenHost:{forbiddenHosts:[host]},noApproval:{approved:false},prior103:{migrationHistory:['103_offline']},unexpectedFormat:{migrationHistory:[113]},unknownHistory:{migrationHistory:['other']},missingExpected:{expectedHistory:undefined}})) test(`rejects ${name}`,()=>assert.throws(()=>assertStagingIdentity({...good,...patch})));
+test('canonical row digest ignores object key order',()=>assert.equal(rowDigest({a:1,b:2}),rowDigest({b:2,a:1})));
+const snap=(orders,sequence={last_value:'13',is_called:true})=>captureHistorical({orders},sequence);
+const order={key:'1',row:{amount:2000}};
+test('unchanged evidence passes',()=>assert.equal(compareHistorical(snap([order]),snap([order])).ok,true));
+test('detects mutation',()=>assert.equal(compareHistorical(snap([order]),snap([{key:'1',row:{amount:1}}])).ok,false));
+test('detects deletion',()=>assert.equal(compareHistorical(snap([order]),snap([])).ok,false));
+test('reports additions separately',()=>assert.deepEqual(compareHistorical(snap([order]),snap([order,{key:'2',row:{amount:1}}])).additions,['orders/2']));
+test('detects sequence change',()=>assert.equal(compareHistorical(snap([order]),snap([order],{last_value:'14',is_called:true})).ok,false));
+test('refuses duplicate row keys',()=>assert.throws(()=>snap([order,order])));

@@ -1,0 +1,51 @@
+[
+  {
+    "route": "grant",
+    "status": 404,
+    "pass": true
+  },
+  {
+    "route": "ingest",
+    "status": 404,
+    "pass": true
+  },
+  {
+    "route": "lookup",
+    "status": 404,
+    "pass": true
+  },
+  {
+    "route": "operations",
+    "status": 404,
+    "pass": true
+  },
+  {
+    "route": "manage",
+    "status": 404,
+    "pass": true
+  },
+  {
+    "route": "recovery",
+    "status": 404,
+    "pass": true
+  },
+  {
+    "route": "/pos unauthenticated",
+    "status": 307,
+    "pass": true
+  },
+  {
+    "route": "/pos-shell",
+    "status": 404,
+    "pass": true
+  },
+  {
+    "route": "/orders-shell",
+    "status": 404,
+    "pass": true
+  },
+  {
+    "route": "service worker excludes offline shells",
+    "pass": true
+  }
+]

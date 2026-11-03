@@ -37,12 +37,11 @@ test("real browser: IndexedDB survives refresh/restart, cashier isolation and We
     return new Promise((resolve,reject)=>{const id=++seq;const timer=setTimeout(()=>{pending.delete(id);reject(Error("CDP timed out: "+method));},10000);pending.set(id,{resolve:value=>{clearTimeout(timer);resolve(value);},reject:error=>{clearTimeout(timer);reject(error);}});socket.send(JSON.stringify({id,method,params,...(sessionId?{sessionId}:{})}));});
   }
   async function tab(){
-    const {targetId}=await send("Target.createTarget",{url:"about:blank"});
+    const {targetId}=await send("Target.createTarget",{url:origin});
     const {sessionId}=await send("Target.attachToTarget",{targetId,flatten:true});
-    await send("Page.enable",{},sessionId);
-    const loaded=new Promise(resolve=>{const listener=msg=>{if(msg.method==="Page.loadEventFired"&&msg.sessionId===sessionId){listeners.delete(listener);resolve();}};listeners.add(listener);});
-    await send("Page.navigate",{url:origin},sessionId);await loaded;
-    return sessionId;
+    const deadline=Date.now()+20000;
+    while(Date.now()<deadline){if(await evaluate(sessionId,"document.readyState==='complete' && location.origin==="+JSON.stringify(origin)))return sessionId;await new Promise(r=>setTimeout(r,50));}
+    throw Error("Synthetic storage page did not load");
   }
   async function evaluate(sessionId,expression){
     const result=await send("Runtime.evaluate",{expression,awaitPromise:true,returnByValue:true},sessionId);
@@ -83,6 +82,13 @@ test("real browser: IndexedDB survives refresh/restart, cashier isolation and We
         (await s.readAttempt("cashier-a",old.payload.idempotencyKey)).state,
         await s.readAttempt("cashier-b",old.payload.idempotencyKey)];
     })()`),[key,"committed",null]);
+    assert.equal(await evaluate(restarted,`(async()=>{
+      const s=await import("/attempt-store.js");
+      const active=await s.readActiveAttempt("cashier-a");
+      const db=await new Promise((resolve,reject)=>{const r=indexedDB.open("smokehouse-walk-in-sales-v1",1);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});
+      await new Promise((resolve,reject)=>{const tx=db.transaction("active","readwrite");tx.objectStore("active").put({ownerId:"cashier-a",key:crypto.randomUUID()});tx.oncomplete=resolve;tx.onerror=reject});db.close();
+      try{await s.readActiveAttempt("cashier-a");return false;}catch{return true;}finally{await s.saveAttempt(active);}
+    })()`),true);
   }finally{
     await stop();await new Promise(r=>server.close(r));
     if(!profile.startsWith(path.join(os.tmpdir(),"smokehouse-pos-browser-test-")))throw Error("Unsafe test cleanup target");

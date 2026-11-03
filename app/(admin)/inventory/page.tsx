@@ -189,6 +189,9 @@ export default async function InventoryPage({
                   <div className="rounded-[18px] bg-[#F8FAFB] px-3 py-3">
                     <p className="text-[10px] uppercase tracking-[0.18em] text-[#9CA3AF]">Reserved</p>
                     <p className="mt-1 font-semibold text-[#111418]">{row.reservedQuantity}</p>
+                    {(row.offlineAllocationHeldQuantity ?? 0) > 0 && (
+                      <p className="mt-2 text-xs">Offline allocation: {row.offlineAllocationHeldQuantity} physical stock units held{row.allocationStockPortionTypeId !== row.portionTypeId ? " in the shared source pool" : ""}.</p>
+                    )}
                   </div>
                   <div className="rounded-[18px] bg-[#F8FAFB] px-3 py-3">
                     <p className="text-[10px] uppercase tracking-[0.18em] text-[#9CA3AF]">Sold / waste</p>
