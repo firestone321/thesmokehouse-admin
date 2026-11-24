@@ -1330,14 +1330,15 @@ export async function processProcurementReceiptToFinishedStockAction(formData: F
     }
 
     if (receipt.protein_code === "goat_chunks") {
-      if (input.traveller_goat_weight_kg === null) {
-        throw new Error("Traveller goat allocation weight is required.");
+      if (input.traveller_goat_weight_kg === null || input.standalone_goat_400_weight_kg === null) {
+        throw new Error("Traveller goat and 400g goat allocation weights are required.");
       }
-      const { error } = await supabase.rpc("process_traveller_goat_receipt_allocation", {
+      const { error } = await supabase.rpc("process_goat_chops_four_way_allocation", {
         p_procurement_receipt_id: input.procurement_receipt_id,
         p_post_roast_packed_weight_kg: input.post_roast_packed_weight_kg,
         p_country_platter_weight_kg: input.country_platter_weight_kg,
         p_traveller_weight_kg: input.traveller_goat_weight_kg,
+        p_standalone_400_weight_kg: input.standalone_goat_400_weight_kg,
         p_note: input.note
       });
       if (error) throw new Error(`Unable to process traveller goat allocation: ${error.message}`);
@@ -1346,11 +1347,13 @@ export async function processProcurementReceiptToFinishedStockAction(formData: F
         action: "resupply.receipt_processed",
         entityType: "procurement_receipt",
         entityId: input.procurement_receipt_id,
-        summary: (actor.email ?? "A staff account") + " allocated goat stock across traveller, platter, and standalone portions.",
+        summary: (actor.email ?? "A staff account") + " allocated goat stock across traveller, platter, 400g and 250g portions.",
         metadata: {
           post_roast_packed_weight_kg: input.post_roast_packed_weight_kg,
           country_platter_weight_kg: input.country_platter_weight_kg,
-          traveller_goat_weight_kg: input.traveller_goat_weight_kg
+          traveller_goat_weight_kg: input.traveller_goat_weight_kg,
+          standalone_goat_400_weight_kg: input.standalone_goat_400_weight_kg,
+          standalone_goat_250_weight_kg: Number((input.post_roast_packed_weight_kg - input.country_platter_weight_kg - input.traveller_goat_weight_kg - input.standalone_goat_400_weight_kg).toFixed(3))
         }
       });
       revalidateProcurementPaths();

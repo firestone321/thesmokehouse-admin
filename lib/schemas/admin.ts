@@ -365,6 +365,7 @@ export const processProcurementReceiptToFinishedStockActionSchema = z.object({
   post_roast_packed_weight_kg: nullableNumber(0, maxNumericValue),
   country_platter_weight_kg: nullableNumber(0, maxNumericValue),
   traveller_goat_weight_kg: nullableNumber(0, maxNumericValue),
+  standalone_goat_400_weight_kg: nullableNumber(0, maxNumericValue),
   note: longTextSchema
 });
 

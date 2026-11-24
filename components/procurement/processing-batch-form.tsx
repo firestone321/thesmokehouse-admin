@@ -123,6 +123,7 @@ export function ProcessingBatchForm({
   const [postRoastPackedWeightKg, setPostRoastPackedWeightKg] = useState<string>("");
   const [countryPlatterWeightKg, setCountryPlatterWeightKg] = useState<string>("0");
   const [travellerGoatWeightKg, setTravellerGoatWeightKg] = useState<string>("0");
+  const [standaloneGoat400WeightKg, setStandaloneGoat400WeightKg] = useState<string>("");
   const [quantityProduced, setQuantityProduced] = useState<string>("");
   const [birdsAllocatedToHalves, setBirdsAllocatedToHalves] = useState<string>("0");
   const [birdsAllocatedToQuarters, setBirdsAllocatedToQuarters] = useState<string>("0");
@@ -171,6 +172,7 @@ export function ProcessingBatchForm({
     const packedWeightKg = Number(postRoastPackedWeightKg);
     const countryPlatterWeight = Number(countryPlatterWeightKg);
     const travellerWeight = isTravellerGoat ? Number(travellerGoatWeightKg) : 0;
+    const goat400Weight = isTravellerGoat ? Number(standaloneGoat400WeightKg) : 0;
     const standalonePortionWeightKg = parsePortionWeightKg(meatAllocatorStandalonePortion?.portionLabel);
     const countryPlatterPortionWeightKg = parsePortionWeightKg(meatAllocatorCountryPlatterPortion?.portionLabel);
 
@@ -182,23 +184,33 @@ export function ProcessingBatchForm({
       countryPlatterWeight > packedWeightKg ||
       !Number.isFinite(travellerWeight) ||
       travellerWeight < 0 ||
-      countryPlatterWeight + travellerWeight > packedWeightKg ||
+      !Number.isFinite(goat400Weight) ||
+      goat400Weight < 0 ||
+      (isTravellerGoat && standaloneGoat400WeightKg.trim() === "") ||
+      countryPlatterWeight + travellerWeight + goat400Weight > packedWeightKg + 0.0000001 ||
       !standalonePortionWeightKg ||
-      !countryPlatterPortionWeightKg
+      !countryPlatterPortionWeightKg ||
+      (isTravellerGoat && (standalonePortionWeightKg !== 0.4 || countryPlatterPortionWeightKg !== 0.3))
     ) {
       return null;
     }
 
-    const countryPlatterQuantity = Math.floor(countryPlatterWeight / countryPlatterPortionWeightKg);
-    const standaloneWeightKg = packedWeightKg - countryPlatterWeight - travellerWeight;
-    const travellerQuantity = Math.floor(travellerWeight / 0.25);
-    const standaloneQuantity = Math.floor(standaloneWeightKg / standalonePortionWeightKg);
+    // Work in whole grams so values such as 0.6 kg do not lose a pack to floating-point rounding.
+    const grams = (value: number) => Math.round(value * 1000);
+    const countryPlatterQuantity = isTravellerGoat ? Math.floor(grams(countryPlatterWeight) / 300) : Math.floor(countryPlatterWeight / countryPlatterPortionWeightKg);
+    const remainingGrams = grams(packedWeightKg) - grams(countryPlatterWeight) - grams(travellerWeight) - grams(goat400Weight);
+    if (remainingGrams < 0) return null;
+    const standaloneWeightKg = isTravellerGoat ? remainingGrams / 1000 : packedWeightKg - countryPlatterWeight - travellerWeight;
+    const travellerQuantity = Math.floor(grams(travellerWeight) / 250);
+    const standaloneQuantity = isTravellerGoat ? Math.floor(grams(goat400Weight) / 400) : Math.floor(standaloneWeightKg / standalonePortionWeightKg);
+    const goat250Quantity = isTravellerGoat ? Math.floor(remainingGrams / 250) : 0;
     const trimWeightKg = Number(
       (
         packedWeightKg -
         countryPlatterQuantity * countryPlatterPortionWeightKg -
         standaloneQuantity * standalonePortionWeightKg -
-        travellerQuantity * 0.25
+        travellerQuantity * 0.25 -
+        goat250Quantity * 0.25
       ).toFixed(3)
     );
 
@@ -206,6 +218,7 @@ export function ProcessingBatchForm({
       countryPlatterQuantity,
       travellerQuantity,
       standaloneQuantity,
+      goat250Quantity,
       standaloneWeightKg,
       trimWeightKg
     };
@@ -213,6 +226,7 @@ export function ProcessingBatchForm({
     countryPlatterWeightKg,
     isTravellerGoat,
     travellerGoatWeightKg,
+    standaloneGoat400WeightKg,
     meatAllocatorCountryPlatterPortion?.portionLabel,
     meatAllocatorStandalonePortion?.portionLabel,
     postRoastPackedWeightKg
@@ -253,6 +267,8 @@ export function ProcessingBatchForm({
   useEffect(() => {
     setPostRoastPackedWeightKg("");
     setCountryPlatterWeightKg("0");
+    setTravellerGoatWeightKg("0");
+    setStandaloneGoat400WeightKg("");
     if (selectedReceipt?.processingMode === "whole_bird") {
       const initialBirds = wholeChickenCountIsValid ? String(totalBirds) : "0";
       setBirdsAllocatedToHalves(initialBirds);
@@ -406,11 +422,11 @@ export function ProcessingBatchForm({
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <p className="inline-flex rounded-full bg-[#F2D4B3] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-[#70452C]">
-                        Step 1 · Country Platter allocation
+                        {isTravellerGoat ? "Goat chops allocation" : "Step 1 · Country Platter allocation"}
                       </p>
-                      <h3 className="mt-3 text-lg font-semibold text-[#2D2219]">Set aside platter meat first</h3>
+                      <h3 className="mt-3 text-lg font-semibold text-[#2D2219]">{isTravellerGoat ? "Divide the roasted goat" : "Set aside platter meat first"}</h3>
                       <p className="mt-1 max-w-xl text-sm leading-6 text-[#6B625B]">
-                        Put the cooked meat for Country Platter packs aside before the remaining meat is packed for normal orders.
+                        {isTravellerGoat ? "Enter the amounts for 400g chops, Country Platter and travellers. The balance becomes 250g chops." : "Put the cooked meat for Country Platter packs aside before the remaining meat is packed for normal orders."}
                       </p>
                     </div>
                     <span className="flex size-10 items-center justify-center rounded-2xl border border-[#D4A373] bg-[#FFFDF9] text-xl" aria-hidden="true">
@@ -434,7 +450,13 @@ export function ProcessingBatchForm({
                     />
                   </label>
 
-                  <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:items-stretch">
+                  <div className={isTravellerGoat ? "mt-5 grid gap-3 lg:grid-cols-2 lg:items-stretch" : "mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:items-stretch"}>
+                    {isTravellerGoat ? <label className="grid gap-2 rounded-[22px] border-2 border-[#D4A373] bg-[#FFFDF9] p-4 text-sm text-[#6B7280] shadow-sm">
+                      <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#76513E]">400g standalone chops</span>
+                      <span className="text-base font-semibold text-[#2D2219]">Weight to set aside (kg)</span>
+                      <input type="number" min="0" max={postRoastPackedWeightKg || undefined} step="0.001" name="standalone_goat_400_weight_kg" required disabled={!selectedReceipt || selectedReceipt.hasProcessingBatch} value={standaloneGoat400WeightKg} onChange={(event) => setStandaloneGoat400WeightKg(event.target.value)} placeholder="Enter 0 if none" className={processingFieldClassName} />
+                      <span className="text-xs leading-5 text-[#6B625B]">This meat is packed as standalone 400g chops.</span>
+                    </label> : null}
                     <label className="grid gap-2 rounded-[22px] border-2 border-[#B85C38] bg-[#FFFDF9] p-4 text-sm text-[#6B7280] shadow-sm">
                       <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#9B4B2F]">2. Country Platter</span>
                       <span className="text-base font-semibold text-[#2D2219]">Weight to set aside (kg)</span>
@@ -454,32 +476,43 @@ export function ProcessingBatchForm({
                       <span className="text-xs leading-5 text-[#6B625B]">This meat is reserved for Country Platter packs.</span>
                     </label>
 
-                    <div className="hidden items-center justify-center text-2xl font-semibold text-[#9B4B2F] lg:flex" aria-hidden="true">→</div>
+                    {!isTravellerGoat ? <div className="hidden items-center justify-center text-2xl font-semibold text-[#9B4B2F] lg:flex" aria-hidden="true">→</div> : null}
 
-                    <div className="grid gap-2 rounded-[22px] border border-[#D8C7B5] bg-[#FFFDF9]/70 p-4 text-sm text-[#6B7280]">
+                    {!isTravellerGoat ? <div className="grid gap-2 rounded-[22px] border border-[#D8C7B5] bg-[#FFFDF9]/70 p-4 text-sm text-[#6B7280]">
                       <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#76513E]">3. Standalone orders</p>
                       <p className="text-base font-semibold text-[#2D2219]">Weight left for usual packs</p>
                       <output className="flex min-h-12 items-center rounded-2xl border border-[#D8C7B5] bg-[#F5EEE5] px-3 py-3 text-xl font-bold text-[#4C372A]">
-                        {meatAllocation ? formatWeightKg(meatAllocation.standaloneWeightKg) : "Enter total weight first"}
+                        {meatAllocation ? formatWeightKg(meatAllocation.standaloneWeightKg) : "Check weights"}
                       </output>
                       <p className="text-xs leading-5 text-[#6B625B]">This is filled automatically. No typing is needed here.</p>
-                    </div>
+                    </div> : null}
                   </div>
 
                   {isTravellerGoat ? (
-                    <label className="mt-4 grid gap-2 rounded-[22px] border border-[#D4A373] bg-white p-4 text-sm text-[#6B7280]">
-                      <span className="text-sm font-semibold text-[#2D2219]">Goat for traveller 250 g packs (kg)</span>
-                      <input type="number" min="0" max={postRoastPackedWeightKg || undefined} step="0.001" name="traveller_goat_weight_kg" required disabled={!selectedReceipt || selectedReceipt.hasProcessingBatch} value={travellerGoatWeightKg} onChange={(event) => setTravellerGoatWeightKg(event.target.value)} className={processingFieldClassName} />
-                      <span className="text-xs">This weight is set aside during processing. The remainder after Country Platter and traveller allocations becomes standalone goat portions.</span>
-                    </label>
+                    <div className="mt-4 grid gap-3 lg:grid-cols-2 lg:items-stretch">
+                      <div className="grid gap-2 rounded-[22px] border border-[#D8C7B5] bg-[#FFFDF9]/70 p-4 text-sm text-[#6B7280]">
+                        <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#76513E]">250g standalone chops</p>
+                        <p className="text-base font-semibold text-[#2D2219]">Remaining weight for 250g chops</p>
+                        <output className="flex min-h-12 items-center rounded-2xl border border-[#D8C7B5] bg-[#F5EEE5] px-3 py-3 text-xl font-bold text-[#4C372A]">
+                          {meatAllocation ? formatWeightKg(meatAllocation.standaloneWeightKg) : "Check weights"}
+                        </output>
+                        <p className="text-xs leading-5 text-[#6B625B]">This balance updates automatically.</p>
+                      </div>
+                      <label className="grid gap-2 rounded-[22px] border border-[#D4A373] bg-white p-4 text-sm text-[#6B7280]">
+                        <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#76513E]">250g traveller portions</span>
+                        <span className="text-base font-semibold text-[#2D2219]">Weight to set aside (kg)</span>
+                        <input type="number" min="0" max={postRoastPackedWeightKg || undefined} step="0.001" name="traveller_goat_weight_kg" required disabled={!selectedReceipt || selectedReceipt.hasProcessingBatch} value={travellerGoatWeightKg} onChange={(event) => setTravellerGoatWeightKg(event.target.value)} className={processingFieldClassName} />
+                        <span className="text-xs">This is reserved for traveller portions.</span>
+                      </label>
+                    </div>
                   ) : null}
                   <div className="mt-4 rounded-2xl border border-[#E3C4A5] bg-[#FFFDF9] px-4 py-3 text-sm leading-6 text-[#4C372A]">
                     {meatAllocation ? (
                       <>
-                        You are setting aside <strong>{countryPlatterWeightKg || "0"} kg</strong> for Country Platter{isTravellerGoat ? <> and <strong>{travellerGoatWeightKg || "0"} kg</strong> for traveller goat</> : null} and leaving <strong>{formatWeightKg(meatAllocation.standaloneWeightKg)}</strong> for standalone orders.
+                        You are setting aside <strong>{countryPlatterWeightKg || "0"} kg</strong> for Country Platter{isTravellerGoat ? <>, <strong>{travellerGoatWeightKg || "0"} kg</strong> for traveller goat and <strong>{standaloneGoat400WeightKg || "0"} kg</strong> for 400g chops</> : null} and leaving <strong>{formatWeightKg(meatAllocation.standaloneWeightKg)}</strong> for {isTravellerGoat ? "250g chops" : "standalone orders"}.
                       </>
                     ) : (
-                      <>Enter the usable cooked weight, then decide how much to set aside for Country Platter.</>
+                      <>{isTravellerGoat ? "Enter the roasted weight and 400g allocation. The allocations cannot exceed the total." : "Enter the usable cooked weight, then decide how much to set aside for Country Platter."}</>
                     )}
                   </div>
                 </div>
@@ -503,7 +536,7 @@ export function ProcessingBatchForm({
                     </p>
                   </article>
                   <article className="rounded-[22px] border border-[#E5E1DC] bg-[#FAFAF9] px-4 py-4">
-                    <p className={processingLabelClassName}>Standalone packs</p>
+                    <p className={processingLabelClassName}>{isTravellerGoat ? "400g standalone packs" : "Standalone packs"}</p>
                     <p className="mt-2 text-xl font-semibold text-[#111418]">
                       {meatAllocation?.standaloneQuantity ?? 0}
                     </p>
@@ -511,6 +544,7 @@ export function ProcessingBatchForm({
                       {formatPortionLabel(meatAllocatorStandalonePortion ?? { name: "Standalone portion", portionLabel: null })}
                     </p>
                   </article>
+                  {isTravellerGoat ? <article className="rounded-[22px] border border-[#E5E1DC] bg-[#FAFAF9] px-4 py-4"><p className={processingLabelClassName}>250g standalone packs</p><p className="mt-2 text-xl font-semibold text-[#111418]">{meatAllocation?.goat250Quantity ?? 0}</p><p className="mt-1 text-xs leading-5 text-[#6B7280]">Smoked Goat Chops (250g)</p></article> : null}
                   <article className="rounded-[22px] border border-[#E5E1DC] bg-[#FAFAF9] px-4 py-4">
                     {isTravellerGoat ? <p className="mb-2 text-xs font-semibold">Traveller goat: {meatAllocation?.travellerQuantity ?? 0} packs of 250 g</p> : null}
                     <p className={processingLabelClassName}>Trim / hold</p>
@@ -647,7 +681,7 @@ export function ProcessingBatchForm({
                     {meatAllocation ? (
                       <>
                         <p className="mt-2 text-sm leading-6 text-[#6B7280]">
-                          {formatWeightKg(meatAllocation.standaloneWeightKg)} remains for standalone packs after the Country Platter allocation.
+                          {isTravellerGoat ? <>{formatWeightKg(meatAllocation.standaloneWeightKg)} remains for standalone 250g chops after the 400g, Country Platter and traveller allocations.</> : <>{formatWeightKg(meatAllocation.standaloneWeightKg)} remains for standalone packs after the Country Platter allocation.</>}
                         </p>
                         <p className="mt-2 text-sm leading-6 text-[#6B7280]">
                           Full packs are added to stock. {formatWeightKg(meatAllocation.trimWeightKg)} is recorded as trim / hold and is not sellable stock.
@@ -655,7 +689,7 @@ export function ProcessingBatchForm({
                       </>
                     ) : (
                       <p className="mt-2 text-sm leading-6 text-[#6B7280]">
-                        Enter the usable cooked weight and the amount to set aside for Country Platter packs to see the split.
+                        {isTravellerGoat ? "Enter the usable cooked weight and allocations for 400g chops, Country Platter and travellers to see the split." : "Enter the usable cooked weight and the amount to set aside for Country Platter packs to see the split."}
                       </p>
                     )}
                   </>
@@ -724,7 +758,7 @@ export function ProcessingBatchForm({
                 !selectedReceipt ||
                 selectedReceipt.hasProcessingBatch ||
                 (isWholeChicken && !wholeChickenCountIsValid) ||
-                (isMeatAllocator && (!meatAllocation || meatAllocation.countryPlatterQuantity + meatAllocation.standaloneQuantity <= 0))
+                (isMeatAllocator && (!meatAllocation || meatAllocation.countryPlatterQuantity + meatAllocation.standaloneQuantity + meatAllocation.travellerQuantity + meatAllocation.goat250Quantity <= 0))
               }
               className="min-h-12 rounded-2xl bg-[#111418] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#2D2219] hover:shadow-md focus:outline-none focus:ring-4 focus:ring-[#111418]/10 disabled:cursor-not-allowed disabled:opacity-50"
             >
