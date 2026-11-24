@@ -19,7 +19,7 @@ export function usePosSale(ownerId: string, onCommitted?: (receipt: SaleReceipt)
   }, [ownerId]);
   useEffect(() => {
     let disposed = false;
-    const update = () => { void refresh().catch(() => { if (!disposed) setMessage("Unable to read local sale storage. Stop and review."); }); };
+    const update = () => { void refresh().then(() => { if (!disposed) setReady(true); }).catch((error) => { if (!disposed) { setReady(false); setMessage(error instanceof Error ? error.message : "Unable to read local sale storage. Stop and review."); } }); };
     const unsubscribe = watchAttempts(update);
     void (async () => {
       try {
@@ -34,7 +34,7 @@ export function usePosSale(ownerId: string, onCommitted?: (receipt: SaleReceipt)
         if (!disposed) setMessage(error instanceof Error ? error.message : "Unable to restore pending sale.");
       }
       try { if (!disposed) { await refresh(); setReady(true); } }
-      catch { if (!disposed) setMessage("Local sale storage is unavailable. Sale submission is disabled."); }
+      catch (error) { if (!disposed) { setReady(false); setMessage(error instanceof Error ? error.message : "Local sale storage is unavailable. Sale submission is disabled."); } }
     })();
     window.addEventListener("focus", update);
     return () => { disposed = true; unsubscribe(); window.removeEventListener("focus", update); };
@@ -58,7 +58,7 @@ export function usePosSale(ownerId: string, onCommitted?: (receipt: SaleReceipt)
       });
     }
     catch (error) { setMessage(error instanceof Error ? error.message : "Operation could not be preserved. Review the original sale."); }
-    finally { running.current = false; setBusy(false); await refresh().catch(() => setMessage("Unable to reload local state. Do not start a replacement sale.")); }
+    finally { running.current = false; setBusy(false); await refresh().catch((error) => { setReady(false); setMessage(error instanceof Error ? error.message : "Unable to reload local state. Do not start a replacement sale."); }); }
   }
   async function perform(value: SaleAttempt, kind: HardwareKind, initial?: Instructions | null, activate = true): Promise<SaleAttempt> {
     let current = await persist({ ...value, hardware: { ...value.hardware, [kind]: { ...value.hardware[kind], state: "pending" } } }, activate);
@@ -129,7 +129,7 @@ export function usePosSale(ownerId: string, onCommitted?: (receipt: SaleReceipt)
   async function retryOriginal() {
     await run(async () => {
       const current = await readActiveAttempt(ownerId);
-      if (!current || current.state !== "prepared") throw new Error("Check the original outcome before retrying.");
+      if (!current || !["prepared", "outcome_unknown", "needs_review"].includes(current.state)) throw new Error("This preserved sale cannot be retried in its current state.");
       await post(current, false);
     });
   }

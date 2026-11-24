@@ -77,6 +77,12 @@ test("not-found recovery resubmits the same immutable payload/key and never auto
   const ui=await initialized(h);await h.execute(()=>ui.checkOutcome());await h.execute(()=>h.render().retryOriginal());
   assert.deepEqual(h.requests[1].body,payload);assert.equal(h.latest().state,"committed");assert.deepEqual(h.hardware,[]);
 });
+test("an unknown outcome can be retried directly using the original key without hardware replay",async()=>{
+  const prior=newAttempt("cashier",payload);prior.state="outcome_unknown";
+  const h=harness({prior,fetchImpl:async()=>({ok:true,json:async()=>({ok:true,data:receipt})})});
+  const ui=await initialized(h);await h.execute(()=>ui.retryOriginal());
+  assert.deepEqual(h.requests[0].body,payload);assert.equal(h.latest().state,"committed");assert.deepEqual(h.hardware,[]);
+});
 test("known rollback is rejected; transport failure before a response remains unknown",async()=>{
   const h=harness({fetchImpl:async()=>({ok:false,json:async()=>({ok:false,outcome:"rejected",message:"Stock validation"})})});
   const ui=await initialized(h);await h.execute(()=>ui.submit(payload));assert.equal(h.read().state,"rejected");assert.deepEqual(h.hardware,[]);

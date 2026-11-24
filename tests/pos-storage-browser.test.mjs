@@ -79,6 +79,16 @@ test("real browser: IndexedDB survives refresh/restart, cashier isolation and We
         (await s.readAttempt("cashier-a",old.payload.idempotencyKey)).state,
         await s.readAttempt("cashier-b",old.payload.idempotencyKey)];
     })()`),[key,"committed",null]);
+    assert.match(await evaluate(restarted,`(async()=>{
+      const db=await new Promise((resolve,reject)=>{const r=indexedDB.open("smokehouse-walk-in-sales-v1",1);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
+      await new Promise((resolve,reject)=>{const t=db.transaction("active","readwrite");t.objectStore("active").put({ownerId:"broken",key:"00000000-0000-4000-8000-000000000099"});t.oncomplete=resolve;t.onerror=()=>reject(t.error);});db.close();
+      const s=await import("/attempt-store.js");try{await s.readActiveAttempt("broken");return "UNSAFE";}catch(e){return e.message;}
+    })()`),/incomplete.*00000000-0000-4000-8000-000000000099/);
+    assert.match(await evaluate(restarted,`(async()=>{
+      const s=await import("/attempt-store.js"),c=await import("/sale-contract.js");
+      const a=c.newAttempt("broken-hardware",{idempotencyKey:"00000000-0000-4000-8000-000000000098",tenderType:"cash",amountReceived:100,items:[{menuItemId:1,quantity:1}]});a.hardware.drawer.state="invalid";await s.saveAttempt(a);
+      try{await s.readActiveAttempt("broken-hardware");return "UNSAFE";}catch(e){return e.message;}
+    })()`),/incomplete.*00000000-0000-4000-8000-000000000098/);
   }finally{
     await stop();await new Promise(r=>server.close(r));
     if(!profile.startsWith(path.join(os.tmpdir(),"smokehouse-pos-browser-test-")))throw Error("Unsafe test cleanup target");

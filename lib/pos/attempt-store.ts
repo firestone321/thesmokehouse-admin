@@ -26,14 +26,30 @@ async function transaction<T>(mode: IDBTransactionMode, run: (tx: IDBTransaction
   } finally { db.close(); }
 }
 export async function readActiveAttempt(ownerId: string): Promise<SaleAttempt | null> {
-  return transaction("readonly", (tx, result) => {
+  const value = await transaction<SaleAttempt | null | { invalid: true; key?: string }>("readonly", (tx, result) => {
     const pointer = tx.objectStore("active").get(ownerId);
     pointer.onsuccess = () => {
       if (!pointer.result) return result(null);
-      const request = tx.objectStore("attempts").get(pointer.result.key);
-      request.onsuccess = () => result(request.result?.ownerId === ownerId ? request.result : null);
+      const key = pointer.result.key;
+      if (typeof key !== "string" || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(key)) return result({ invalid: true });
+      const request = tx.objectStore("attempts").get(key);
+      request.onsuccess = () => {
+        const a = request.result as SaleAttempt | undefined;
+        const valid = a && a.ownerId === ownerId && a.payload?.idempotencyKey === key &&
+          ["prepared", "submitting", "committed", "rejected", "outcome_unknown", "needs_review"].includes(a.state) &&
+          ["cash", "card", "mobile_money"].includes(a.payload.tenderType) && Number.isFinite(a.payload.amountReceived) &&
+          Array.isArray(a.payload.items) && a.payload.items.length > 0 &&
+          a.payload.items.every((item) => item && Number.isInteger(item.menuItemId) && Number.isInteger(item.quantity) && item.quantity > 0) &&
+          Number.isFinite(a.updatedAt) && a.hardware?.drawer && a.hardware?.receipt &&
+          [a.hardware.drawer, a.hardware.receipt].every((action) =>
+            ["not_requested", "pending", "submitted", "failed", "outcome_unknown"].includes(action.state) && typeof action.requestId === "string" && action.requestId.length > 0) &&
+          (a.state !== "committed" || !!a.receipt?.orderNumber);
+        result(valid ? a : { invalid: true, key });
+      };
     };
   });
+  if (value && "invalid" in value) throw new Error(`Preserved sale data is incomplete${value.key ? ` (reference ${value.key})` : ""}. Ask a manager to review this POS. Do not clear storage or record the payment again.`);
+  return value;
 }
 export async function readAttempt(ownerId: string, key: string): Promise<SaleAttempt | null> {
   return transaction("readonly", (tx, result) => {

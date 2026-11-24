@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePosSale } from "@/lib/pos/use-pos-sale";
 import { RecordedSales } from "@/components/pos/recorded-sales";
 import type { SaleReceipt } from "@/lib/pos/sale-contract";
@@ -64,13 +64,16 @@ export function PosSaleWorkspace({
   const [cashReceived, setCashReceived] = useState("");
   const [paymentReference, setPaymentReference] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [separateDraft, setSeparateDraft] = useState(false);
   const [changeDue, setChangeDue] = useState<{ orderNumber: string; amount: number } | null>(null);
   const onCommitted = useCallback((receipt: SaleReceipt) => {
     setBasket([]); setCashReceived(""); setPaymentReference(""); setError(null);
     setChangeDue(receipt.changeGiven > 0 ? { orderNumber: receipt.orderNumber, amount: receipt.changeGiven } : null);
   }, []);
   const sale = usePosSale(cashierId, onCommitted);
-  const controlsLocked = !sale.ready || sale.busy || !!sale.attempt;
+  useEffect(() => { if (!sale.attempt) setSeparateDraft(false); }, [sale.attempt]);
+  const controlsLocked = !sale.ready || sale.busy || (!!sale.attempt && !separateDraft);
+  const paymentLocked = controlsLocked || !!sale.attempt;
 
   const total = useMemo(
     () => basket.reduce((sum, item) => sum + item.basePrice * item.quantity, 0),
@@ -111,7 +114,7 @@ export function PosSaleWorkspace({
   }
 
   async function takePayment() {
-    if (controlsLocked) return;
+    if (paymentLocked) return;
     setError(null);
     if (!canRecordSales) {
       setError("POS view only. Ask a cashier, manager, or admin to record a sale.");
@@ -140,6 +143,25 @@ export function PosSaleWorkspace({
 
   return (
     <div className="space-y-4 text-[#111418]">
+      {sale.attempt ? (
+        <section role="alert" className="rounded-2xl border border-[#D38B2A] bg-[#FFF0CF] p-4 text-sm space-y-2">
+          <p className="font-bold">Previous sale needs checking: {sale.attempt.state.replaceAll("_", " ")}.</p>
+          <p>Order: {sale.attempt.receipt?.orderNumber || "Not available yet; the sale may still have been recorded."}</p>
+          <p className="break-all">Original sale reference: {sale.attempt.payload.idempotencyKey}</p>
+          <p>Last updated: {new Date(sale.attempt.updatedAt).toLocaleString("en-UG")}. Payment: {tenderLabel(sale.attempt.payload.tenderType)}; received: {formatCurrency(sale.attempt.payload.amountReceived)}.</p>
+          <p>Items (current menu names): {sale.attempt.payload.items.map((line) => `${line.quantity} × ${menuItems.find((item) => item.id === line.menuItemId)?.name ?? `item ${line.menuItemId}`}`).join(", ")}.</p>
+          <p>{sale.attempt.message || "Check the original sale before taking another payment. Do not enter the same payment again; ask a manager if it cannot be resolved."}</p>
+          <div className="flex flex-wrap gap-2">
+            {sale.attempt.state !== "committed" ? <button type="button" disabled={sale.busy || !sale.ready} onClick={() => void sale.checkOutcome()} className="min-h-[44px] rounded-xl border border-[#286AA6] bg-[#EDF7FF] px-4 py-2 font-semibold text-[#1D5B91] focus:outline-none focus:ring-4 focus:ring-[#286AA6]/20 disabled:opacity-50">1. Check Sale Status</button> : null}
+            {["prepared", "outcome_unknown", "needs_review"].includes(sale.attempt.state) ? <button type="button" disabled={sale.busy || !sale.ready} onClick={() => void sale.retryOriginal()} className="min-h-[44px] rounded-xl border border-[#166534] bg-[#166534] px-4 py-2 font-bold text-white shadow-sm focus:outline-none focus:ring-4 focus:ring-[#287241]/30 disabled:opacity-50">2. Retry Same Sale</button> : null}
+            {sale.attempt.state === "rejected" || sale.attempt.state === "committed" ? <button type="button" disabled={sale.busy || !sale.ready} onClick={() => void sale.startNew()} className="rounded-xl border px-4 py-2">{sale.attempt.state === "committed" ? "Finish confirmed sale" : "Close rejected sale"}</button> : null}
+            {!separateDraft && sale.attempt.state !== "committed" ? <button type="button" disabled={sale.busy || !sale.ready} onClick={() => { setBasket([]); setCashReceived(""); setPaymentReference(""); setError(null); setSeparateDraft(true); }} className="rounded-xl border px-4 py-2">Prepare a different basket</button> : null}
+          </div>
+          {separateDraft ? <p>The new basket is a draft. Taking payment stays blocked until the previous sale is resolved. It will be cleared if the previous sale is confirmed.</p> : null}
+        </section>
+      ) : null}
+      {!sale.ready && !sale.attempt ? <p role="alert" className="rounded-2xl border border-amber-300 bg-amber-50 p-4">Checking preserved sales. If this does not finish, ask a manager to review local POS storage. Do not re-enter an uncertain payment.</p> : null}
+      {sale.message ? <p role="alert" className="rounded-2xl border border-amber-300 bg-amber-50 p-4">{sale.message}</p> : null}
       <section className="surface-card rounded-[32px] px-5 py-5">
         <p className="text-[11px] uppercase tracking-[0.22em] text-[#6B7280]">Walk-in POS</p>
         <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -159,19 +181,6 @@ export function PosSaleWorkspace({
 
       {error ? <section className="rounded-[22px] border border-[#F4C7C7] bg-[#FFF8F8] px-4 py-3 text-sm text-[#9F2D2D]">{error}</section> : null}
 
-      {sale.message ? <p role="alert" className="rounded-2xl border border-amber-300 bg-amber-50 p-4">{sale.message}</p> : null}
-      {sale.attempt && sale.attempt.state !== "committed" ? (
-        <section aria-live="polite" className="surface-card rounded-2xl p-4 space-y-3">
-          <p className="font-bold">Sale status: {sale.attempt.state.replaceAll("_", " ")}</p>
-          <p className="text-sm">{sale.attempt.message}</p>
-          {sale.attempt.state !== "rejected" ? <p className="text-sm">Original request preserved. Do not record the same payment as a new sale.</p> : null}
-          <div className="flex flex-wrap gap-2">
-            <button type="button" disabled={sale.busy} onClick={() => void sale.checkOutcome()} className="rounded-xl border px-4 py-2">Check original sale outcome</button>
-            {sale.attempt.state === "prepared" ? <button type="button" disabled={sale.busy} onClick={() => void sale.retryOriginal()} className="rounded-xl border px-4 py-2">Retry preserved request</button> : null}
-            {sale.attempt.state === "rejected" ? <button type="button" disabled={sale.busy} onClick={async () => { await sale.startNew(); setBasket([]); setCashReceived(""); setPaymentReference(""); setError(null); }} className="rounded-xl border px-4 py-2">Clear rejected sale</button> : null}
-          </div>
-        </section>
-      ) : null}
       {changeDue ? <p role="status" className="rounded-xl bg-[#EAF8EF] px-4 py-3 font-semibold text-[#166534]">Change for sale {changeDue.orderNumber}: {formatCurrency(changeDue.amount)}</p> : null}
       <RecordedSales attempts={sale.history} busy={sale.busy || !!sale.attempt}
         onCheckHardware={(key) => void sale.checkHardware(key)}
@@ -237,7 +246,7 @@ export function PosSaleWorkspace({
           {tenderType === "cash" ? <label className="mt-4 grid gap-2 text-sm font-semibold">Cash received <span className="text-xs font-normal text-[#6B7280]">Type numbers normally; commas are added automatically.</span><div className="relative"><span className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-sm font-bold text-[#4B5563]">UGX</span><UgxAmountInput value={cashReceived} onValueChange={setCashReceived} placeholder="0" className="w-full rounded-2xl border-2 border-[#287241] bg-[#F2FBF5] py-3 pl-14 pr-4 text-lg font-bold" aria-label="Cash received in Ugandan shillings" /></div></label> : <label className="mt-4 grid gap-2 text-sm font-semibold">Pesapal terminal reference<span className="text-xs font-normal text-[#6B7280]">Enter the full 11-digit reference or its last 4 digits.</span><input value={paymentReference} onChange={(event) => setPaymentReference(event.target.value.replace(/\D/g, ""))} inputMode="numeric" pattern="(?:[0-9]{4}|[0-9]{11})" maxLength={11} placeholder="Full reference or last 4 digits" className="rounded-2xl border-2 border-[#4267B2] bg-[#F3F6FF] px-4 py-3 text-sm font-normal" /></label>}
           {tenderType === "cash" && cashReceived !== "" ? <p className={`mt-2 rounded-xl px-3 py-2 text-sm font-semibold ${Number(cashReceived) >= total ? "bg-[#EAF8EF] text-[#166534]" : "bg-[#FFF4E5] text-[#B45309]"}`}>{Number(cashReceived) >= total ? `Change: ${formatCurrency(change)}` : `Still needed: ${formatCurrency(total - Number(cashReceived))}`}</p> : null}
           {!canRecordSales ? <p className="mt-5 rounded-2xl bg-[#F3F4F6] px-4 py-3 text-sm font-semibold text-[#6B7280]">POS view only. A cashier, manager, or admin records sales.</p> : null}
-          <button type="button" disabled={!canRecordSales || sale.busy || basket.length === 0 || (tenderType !== "cash" && !/^(?:\d{4}|\d{11})$/.test(paymentReference.trim()))} onClick={takePayment} className="mt-5 w-full rounded-2xl bg-[#166534] px-4 py-4 text-base font-bold text-white shadow-[0_10px_22px_rgba(22,101,52,0.22)] disabled:cursor-not-allowed disabled:bg-[#9CA3AF]">{!canRecordSales ? "View only" : sale.busy ? (sale.attempt?.state === "committed" ? "Finishing hardware…" : "Recording sale…") : "Take payment and create sale"}</button>
+          <button type="button" disabled={!canRecordSales || paymentLocked || basket.length === 0 || (tenderType !== "cash" && !/^(?:\d{4}|\d{11})$/.test(paymentReference.trim()))} onClick={takePayment} className="mt-5 w-full rounded-2xl bg-[#166534] px-4 py-4 text-base font-bold text-white shadow-[0_10px_22px_rgba(22,101,52,0.22)] disabled:cursor-not-allowed disabled:bg-[#9CA3AF]">{!canRecordSales ? "View only" : sale.busy ? (sale.attempt?.state === "committed" ? "Finishing hardware…" : "Recording sale…") : sale.attempt ? "Resolve previous sale before payment" : "Take payment and create sale"}</button>
           <p className="mt-3 text-xs leading-5 text-[#6B7280]">One payment method per sale for now. Split payments remain pending proprietor approval.</p>
         </aside>
       </fieldset>
